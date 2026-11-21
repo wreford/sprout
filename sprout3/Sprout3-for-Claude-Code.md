@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (121)
+node game-tests.js    # game tests (127)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 419 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 425 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4412,8 +4412,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
   ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
-  // two players: a duel with no guards; a takedown scores, the other comes back, five wins
-  const v = L.makeGame(src, { players: 2, me: 1 });
+  // two players: a duel with no guards; a takedown scores, the other comes back, five wins (no simulants here)
+  const duelSrc = src.replace(/^simulants : 2/m, "simulants : 0");
+  const v = L.makeGame(duelSrc, { players: 2, me: 1 });
   v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: two players make a duel, with no guards", f(v, "versus") === true && f(v, "agents").count() === 2 && f(v, "guards").count() === 0);
   const face = () => { put(v, 0, { x: 8.5, y: 7.5, angle: 0 }); put(v, 1, { x: 12.5, y: 7.5, angle: Math.PI }); };
@@ -4422,13 +4423,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: the one taken down comes back in a far corner", agent(v, 2).field("health") === 100 && agent(v, 2).field("down-at") === false && agent(v, 2).field("x") !== 12.5);
   for (let r = 0; r < 4; r++) { face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
-  const sees = n => { const o = L.makeGame(src, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+  const sees = n => { const o = L.makeGame(duelSrc, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
   for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
   ok("silvereye: fire starts the duel again", f(v, "over") === "" && f(v, "versus") === true && agent(v, 1).field("kills") === 0);
   // a mine laid by one player goes off under the other
-  const m = L.makeGame(src, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
+  const m = L.makeGame(duelSrc, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
   put(m, 0, { x: 4.5, y: 7.5, angle: 0 }); put(m, 1, { x: 2.5, y: 13.5, angle: 0 });
   m.tick(1 / 60, pad({ mine: true }), pad({}));
   put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
@@ -4436,6 +4437,31 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
+  // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
+  const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
+  const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));
+  ok("silvereye: a combat sim is you and the simulants, with no guards", f(c, "agents").count() === 4 && f(c, "guards").count() === 0 && f(c, "versus") === true && agent(c, 2).field("bot") === true);
+  for (let t = 0; t < 60 * 40; t++) c.tick(1 / 60, pad({}));
+  const kills = [1, 2, 3, 4].map(n => agent(c, n).field("kills")), roamed = [2, 3, 4].some(n => agent(c, n).field("x") !== [0, 0, 13.5, 13.5, 2.5][n]);
+  ok("silvereye: simulants roam the lab and take each other (and you) down", roamed && kills.slice(1).reduce((x, y) => x + y) > 0, kills);
+  const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
+  // credit: with three in the lab, a takedown counts only for the one who made it
+  const t3 = L.makeGame(src.replace(/^simulants : 2/m, "simulants : 1"), { players: 2, me: 1 }); t3.tick(1 / 60, pad({}), pad({}));
+  put(t3, 0, { x: 8.5, y: 7.5, angle: 0 }); put(t3, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(t3, 2, { x: 2.5, y: 13.5, angle: 0 });
+  for (let t = 0; t < 60; t++) t3.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: the takedown is credited to the one who made it", agent(t3, 1).field("kills") === 1 && agent(t3, 3).field("kills") === 0 && agent(t3, 2).field("last-by") === 1);
+  // aim mode: a narrower view, slower feet, and a steadier, harder shot
+  const z = L.makeGame(duelSrc, { players: 2, me: 1 }); z.tick(1 / 60, pad({}), pad({}));
+  put(z, 0, { x: 8.5, y: 7.5, angle: 0 }); put(z, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+  const wide = z.draw().find(x => x[0] === "view")[1][5];
+  z.tick(1 / 60, pad({ zoom: true, fire: true }), pad({}));
+  const narrow = z.draw().find(x => x[0] === "view")[1][5];
+  ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);
+  // the field of view is set across the screen, and the camera gets the matching angle top to bottom
+  const fv = L.makeGame(src, { W: 300, H: 330 }); fv.tick(1 / 60, pad({ fov: 100 }));
+  const tall = fv.draw().find(x => x[0] === "view")[1][5], want = 2 * Math.atan(Math.tan(50 * Math.PI / 180) * 330 / 300) * 180 / Math.PI;
+  ok("silvereye: the field of view is how wide you see across, set from the console", Math.abs(tall - want) < 1e-6, [tall, want]);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program
@@ -10423,6 +10449,8 @@ Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (
 -- Keys: WASD to move and strafe, arrows to turn, space to fire, M for a mine, T for a turret.
 -- In the editor's player: drag above or below the middle to walk, left or right to turn, tap the middle to fire.
 -- The turrets run turret-program: change it while you play and every turret thinks the new way, on both phones.
+-- Modes: Mission (the guards), Combat sim (you against simulants), Duel (two phones, simulants welcome).
+-- A love letter to GoldenEye 007 (Rare, 1997) and Perfect Dark (Rare, 2000): their ideas, our own lab and art.
 -- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
 
 level : [
@@ -10443,6 +10471,11 @@ level : [
   "#......#.......#"
   "################"
 ]
+mode : "mission"           -- "mission": the lab and its guards · "sim": you against simulants
+simulants : 2              -- simulants in a combat sim, and joining a duel
+simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
+fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
+zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 walk-speed : 2.6
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
 turn-speed : 2.4
@@ -10456,7 +10489,8 @@ sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
 sentry-damage : 34
 shot-damage : 50           -- your shot at a guard
-duel-damage : 34           -- a shot at the other player
+duel-damage : 34           -- a shot at another player
+steady-damage : 50         -- the same shot while aiming
 fire-every : 0.25          -- hold fire and it fires this often
 frag-limit : 5             -- takedowns to win a duel
 respawn-after : 2.5        -- seconds before you're back in a duel
@@ -10518,24 +10552,43 @@ turret-program : [t |
   [turn : clamp [off * 4, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]
 ]
 
+-- ---------------------------------------------------------------- the simulants' program
+-- Each frame every simulant is asked what to do. It sees: aim (where it faces), sees (is anyone in sight), dx and dy
+-- (to the nearest one it can see), far (how far that is), health, goal-dx and goal-dy (to where it's heading when it
+-- sees no one), clock and id. It answers walk and strafe (-1 to 1), turn (-1 to 1) and fire (true or false).
+simulant-program : [s |
+  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
+  off : wrap (want - (s aim))
+  [
+    turn : clamp [off * 3, -1, 1]
+    walk : cond [(s sees) and (s far < 2.5), -0.3, s sees, 0.6, any, 1 - (off abs) max 0]
+    strafe : cond [s sees, s clock * 1.7 + (s id) sin, any, 0]
+    fire : (s sees) and (off abs < 0.15)
+  ]
+]
+
 -- ---------------------------------------------------------------- the people
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false]]
+spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
+spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
+open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0]]
+simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
+sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
-  agents : [agent [1, 2.5, 2.5, 0.6]]
-  guards : [guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]
+  agents : [agent [1, 2.5, 2.5, 0.6]] .. (cond [mode = "sim", sims 2, any, []])
+  guards : mode = "sim" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
   mines : []
   turrets : []
   blasts : []
   over : ""
   over-at : 0
-  versus : false
+  versus : mode = "sim"
   shell : false
   clock : 0
   dt : 0
--- two players: the same lab with no guards, one player in each far corner
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]], guards : [], mines : [], turrets : [], blasts : [], over : "", versus : true]
+-- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -10558,6 +10611,7 @@ wants : [inp |
     mine : (inp held "mine" else false) or (key "m") or (tap and (near-mine-button [inp touch-x, inp touch-y]))
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
+    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false
   ]
 ]
 up : [a | a down-at = false]
@@ -10569,16 +10623,37 @@ can-set : [a | (up a) and (a asks sentry) and (a turret-wait <= 0) and (a sentri
 play : [game |
   dt : game dt
   now : game clock
+  -- a simulant looks for the nearest one it can see, and asks simulant-program what to do
+  think : [a |
+    foes : game agents keep [o | (o id != (a id)) and (up o) and (distance [a x, a y, o x, o y] < 12) and (clear-line [a x, a y, o x, o y])]
+    foe : foes smallest-by [o | distance [a x, a y, o x, o y]]
+    sees : foe != false
+    dx : sees [foe x - (a x)] else [0]
+    dy : sees [foe y - (a y)] else [0]
+    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id]
+    [
+      walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
+      turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
+      fire : said fire else false, mine : false, sentry : false, restart : false, zoom : false, fov : fov-across
+      hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
+    ]
+  ]
   -- everyone moves: the stick walks and strafes, the look drag and the keys turn
   moved-agents : game agents collect [a |
-    w : wants (a id = 2 [game input2] else [game input])
+    w : a bot [think a] else [wants (a id = 2 [game input2] else [game input])]
     looked : cond [(w look = false) or (a look = false), 0, any, w look - (a look)]
     heading : cond [up a, a angle + looked + (w turn * turn-speed * dt), any, a angle]
-    pace : cond [w walk > 1.05, walk-speed * run-boost, any, walk-speed] * dt
+    pace : cond [w zoom, walk-speed * 0.5, w walk > 1.05, walk-speed * run-boost, any, walk-speed] * dt
     dx : heading cos * (w walk) - (heading sin * (w strafe)) * pace
     dy : heading sin * (w walk) + (heading cos * (w strafe)) * pace
     went : cond [up a, slide [a x, a y, dx, dy], any, [x : a x, y : a y]]
-    a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w]
+    -- a simulant heads for whoever it saw last, or somewhere new once it gets there or gets stuck
+    stuck : cond [(a bot) and ((w walk abs) > 0.3) and (distance [a x, a y, went x, went y] < (pace * 0.2)), a stuck + dt, any, 0]
+    pick : open-cells @ ((noise [now * 3.1, a id] * (open-cells length)) floor + 1)
+    fresh : (distance [went x, went y, a goal-x, a goal-y] < 0.7) or (stuck > 0.6)
+    goal-x : cond [a bot not, a goal-x, w hunt-x != (a goal-x), w hunt-x, fresh, pick @ 1, any, a goal-x]
+    goal-y : cond [a bot not, a goal-y, w hunt-y != (a goal-y), w hunt-y, fresh, pick @ 2, any, a goal-y]
+    a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
   marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]])
@@ -10588,12 +10663,12 @@ play : [game |
     marks keep [m | (m who = "guard") or (m id != (a id))] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
-      (rel abs < (0.05 + (0.22 / gd))) and (gd < wall)
+      (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
     ] smallest-by [m | distance [a x, a y, m x, m y]]
   ]
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
   shooters : ready keep can-shoot
-  shot-keys : shooters keep [a | a aimed != false] collect [a | "[a aimed who] [a aimed id]"]
+  shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed]]
   (shooters length > 0) [sound "shoot"]
   -- mines and turrets, each with its owner
   droppers : ready keep can-drop
@@ -10616,7 +10691,7 @@ play : [game |
     t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots]]
   ]
   thought any [t | t fired] [sound "shoot"]
-  struck : [k | shot-keys count [h | h = k]]
+  struck : [k | shot-hits count [h | h key = k]]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hero : ready @ 1
@@ -10660,19 +10735,27 @@ play : [game |
   still : all-mines keep [m | (goes-off has m) not]
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
+  caught-by : [px py | goes-off keep [m | distance [m x, m y, px, py] < blast]]
   blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
   fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
   -- players: shots, turrets, guards and blasts hurt; one who goes down is out (alone) or back soon (a duel)
   hurt-agents : ready collect [a |
     k : "agent [a id]"
     blasted : caught [a x, a y] collect [d | blast - d * 60] sum
-    total : cond [up a, struck k * duel-damage + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
+    by-shot : shot-hits keep [h | h key = k]
+    by-turret : thought keep [t | t victim = k]
+    by-mine : caught-by [a x, a y]
+    shot-pain : by-shot collect [h | cond [h steady, steady-damage, any, duel-damage]] sum
+    total : cond [up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
+    -- who did it, for the score: the last to hurt you
+    by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
     life : a health - total
     a with [
       health : life max 0
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
-      fire-wait : cond [can-shoot a, fire-every, any, a fire-wait - dt]
+      last-by : by
+      fire-wait : cond [can-shoot a, fire-every * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
       mine-wait : cond [can-drop a, 0.5, any, a mine-wait - dt]
       turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
@@ -10683,13 +10766,13 @@ play : [game |
   ]
   (hurt-agents any [a | a hurt = 0.25]) [sound "hurt"]
   went-down : hurt-agents keep [a | a down-at = now]
-  scored : hurt-agents collect [a | a with [kills : a kills + (went-down count [d | d id != (a id)])]]
+  scored : hurt-agents collect [a | a with [kills : a kills + (went-down count [d | (d last-by = (a id)) and (d id != (a id))])]]
   -- in a duel you come back after a moment, at the corner farthest from the other player
   back : scored collect [a |
     due : (game versus) and ((up a) not) and (now - (a down-at else now) >= respawn-after)
     others : scored keep [o | o id != (a id)]
     spot : spawns smallest-by [s | 0 - (others collect [o | distance [s @ 1, s @ 2, o x, o y]] sum)]
-    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look]] else [a]
+    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov]] else [a]
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
@@ -10719,7 +10802,6 @@ update : [game |
 
 -- ---------------------------------------------------------------- drawing, in 3D
 eye : 1.55                -- how high your eyes are, in metres
-fov : 74                  -- how much you see, top to bottom, in degrees
 gun-turn : 0.1            -- which way the gun points, in radians
 fog-colour : #14161c
 props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
@@ -10736,7 +10818,10 @@ draw : [game |
   down : up you not
   -- the camera: your eyes, or the floor once you're down
   fog [fog-colour, 3, 15]
-  view [you x, cond [down, 0.35, any, eye], you y, you angle, cond [down, 0.5, any, 0], fov]
+  -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
+  across : you fov * (cond [you zoomed, zoom-view, any, 1])
+  tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
+  view [you x, cond [down, 0.35, any, eye], you y, you angle, cond [down, 0.5, any, 0], tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]
@@ -10769,7 +10854,8 @@ draw : [game |
   ]
   -- your gun, kicking back when it fires
   kick : cond [you flash > 0, 0.05, any, 0]
-  down not [hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]]
+  (down not) and (you zoomed not) [hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]]
+  (down not) and (you zoomed) [hold ["blaster_g", 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
@@ -10790,11 +10876,13 @@ draw : [game |
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
-  -- in a duel: the score, and who just went down
+  (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
+  -- in a match: the score, and a takedown that was yours
   game versus [
-    rival-kills : rivals collect [r | r kills] sum
-    text ["YOU [you kills] · [rival-kills] RIVAL", W / 2, H - 16, 12, cream]
-    rivals any [r | (up r not) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
+    best : rivals fold [0, [m r | m max (r kills)]]
+    rest : cond [rivals length = 1, "RIVAL", any, "TOP"]
+    text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
+    rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- the touch buttons, when there's no console around the screen
@@ -10812,7 +10900,10 @@ draw : [game |
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
-  (game versus) and (game over != "") and (game over != "p[you-id]") [ending ["YOU LOSE", red]]
+  verdict : [w | (w <= 2) ["YOU LOSE"] else ["SIM [w] WINS"]]
+  champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "p[you-id]")
+  winners : game agents keep [a | game over = "p[a id]"]
+  (game versus) and champion [ending [verdict (winners @ 1 id), red]]
 ]
 ````
 
@@ -11320,7 +11411,7 @@ const EX=[
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["swarm","game","Swarm","Thousands of drones fly at the core and turrets you program in Sprout shoot them down. Change turret-program while it runs. Fused loops, a SIMD spork kernel and WebGPU drawing keep it fast."],
- ["silvereye","game","SilverEye","A low-poly 3D shooter: sneak through a lab of guards with proximity mines and turrets you program. With Two players it becomes a duel, first to five. Best on its own page, taskiap.com/silvereye, on a pocket console with a stick"],
+ ["silvereye","game","SilverEye","A low-poly 3D shooter and a love letter to GoldenEye 007 and Perfect Dark: a lab of guards, a combat sim against simulants you program, or a duel for two phones. Proximity mines, aiming, turrets you program. Best on its own page, taskiap.com/silvereye, on a pocket console with a stick"],
  ["silvereye-2d","game","SilverEye 2D","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
  ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],

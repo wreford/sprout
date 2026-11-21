@@ -382,8 +382,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
   ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
-  // two players: a duel with no guards; a takedown scores, the other comes back, five wins
-  const v = L.makeGame(src, { players: 2, me: 1 });
+  // two players: a duel with no guards; a takedown scores, the other comes back, five wins (no simulants here)
+  const duelSrc = src.replace(/^simulants : 2/m, "simulants : 0");
+  const v = L.makeGame(duelSrc, { players: 2, me: 1 });
   v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: two players make a duel, with no guards", f(v, "versus") === true && f(v, "agents").count() === 2 && f(v, "guards").count() === 0);
   const face = () => { put(v, 0, { x: 8.5, y: 7.5, angle: 0 }); put(v, 1, { x: 12.5, y: 7.5, angle: Math.PI }); };
@@ -392,13 +393,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: the one taken down comes back in a far corner", agent(v, 2).field("health") === 100 && agent(v, 2).field("down-at") === false && agent(v, 2).field("x") !== 12.5);
   for (let r = 0; r < 4; r++) { face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
-  const sees = n => { const o = L.makeGame(src, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+  const sees = n => { const o = L.makeGame(duelSrc, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
   for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
   ok("silvereye: fire starts the duel again", f(v, "over") === "" && f(v, "versus") === true && agent(v, 1).field("kills") === 0);
   // a mine laid by one player goes off under the other
-  const m = L.makeGame(src, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
+  const m = L.makeGame(duelSrc, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
   put(m, 0, { x: 4.5, y: 7.5, angle: 0 }); put(m, 1, { x: 2.5, y: 13.5, angle: 0 });
   m.tick(1 / 60, pad({ mine: true }), pad({}));
   put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
@@ -406,6 +407,31 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
+  // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
+  const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
+  const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));
+  ok("silvereye: a combat sim is you and the simulants, with no guards", f(c, "agents").count() === 4 && f(c, "guards").count() === 0 && f(c, "versus") === true && agent(c, 2).field("bot") === true);
+  for (let t = 0; t < 60 * 40; t++) c.tick(1 / 60, pad({}));
+  const kills = [1, 2, 3, 4].map(n => agent(c, n).field("kills")), roamed = [2, 3, 4].some(n => agent(c, n).field("x") !== [0, 0, 13.5, 13.5, 2.5][n]);
+  ok("silvereye: simulants roam the lab and take each other (and you) down", roamed && kills.slice(1).reduce((x, y) => x + y) > 0, kills);
+  const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
+  // credit: with three in the lab, a takedown counts only for the one who made it
+  const t3 = L.makeGame(src.replace(/^simulants : 2/m, "simulants : 1"), { players: 2, me: 1 }); t3.tick(1 / 60, pad({}), pad({}));
+  put(t3, 0, { x: 8.5, y: 7.5, angle: 0 }); put(t3, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(t3, 2, { x: 2.5, y: 13.5, angle: 0 });
+  for (let t = 0; t < 60; t++) t3.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: the takedown is credited to the one who made it", agent(t3, 1).field("kills") === 1 && agent(t3, 3).field("kills") === 0 && agent(t3, 2).field("last-by") === 1);
+  // aim mode: a narrower view, slower feet, and a steadier, harder shot
+  const z = L.makeGame(duelSrc, { players: 2, me: 1 }); z.tick(1 / 60, pad({}), pad({}));
+  put(z, 0, { x: 8.5, y: 7.5, angle: 0 }); put(z, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+  const wide = z.draw().find(x => x[0] === "view")[1][5];
+  z.tick(1 / 60, pad({ zoom: true, fire: true }), pad({}));
+  const narrow = z.draw().find(x => x[0] === "view")[1][5];
+  ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);
+  // the field of view is set across the screen, and the camera gets the matching angle top to bottom
+  const fv = L.makeGame(src, { W: 300, H: 330 }); fv.tick(1 / 60, pad({ fov: 100 }));
+  const tall = fv.draw().find(x => x[0] === "view")[1][5], want = 2 * Math.atan(Math.tan(50 * Math.PI / 180) * 330 / 300) * 180 / Math.PI;
+  ok("silvereye: the field of view is how wide you see across, set from the console", Math.abs(tall - want) < 1e-6, [tall, want]);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program
