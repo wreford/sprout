@@ -29,7 +29,14 @@ export function makeView(canvas, base, opts) {
   const sun = new THREE.DirectionalLight(0xfff1dc, 1.35); sun.position.set(4, 10, 3); scene.add(sun);
   // light [sky colour, floor colour, key colour, strength]: each frame's lighting; without it, these defaults
   const LIGHT_DEFAULT = [0xdde6f5, 0x3a2e22, 0xfff1dc, 1];
-  const holdGroup = new THREE.Group(); camera.add(holdGroup);
+  // the gun in your hands has its own scene and camera, drawn over the world: it sits the same in the corner however
+  // wide the view is (a wide view would otherwise shrink it into the middle), lit by the same lights
+  const holdScene = new THREE.Scene(), holdCamera = new THREE.PerspectiveCamera(62, 0.75, 0.01, 10);
+  holdScene.add(holdCamera);
+  const holdHemi = new THREE.HemisphereLight(0xdde6f5, 0x3a2e22, 1.25), holdSun = new THREE.DirectionalLight(0xfff1dc, 1.35);
+  holdSun.position.set(-1.5, 2.5, 1.5); holdScene.add(holdHemi); holdScene.add(holdSun);
+  const holdGroup = new THREE.Group(); holdCamera.add(holdGroup);
+  renderer.autoClear = false;
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const textureLoader = new THREE.TextureLoader();
 
@@ -203,7 +210,13 @@ export function makeView(canvas, base, opts) {
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
     if (skyTexture) scene.background = skyTexture;
     if (!lightSet) { hemi.color.setHex(LIGHT_DEFAULT[0]); hemi.groundColor.setHex(LIGHT_DEFAULT[1]); sun.color.setHex(LIGHT_DEFAULT[2]); hemi.intensity = 1.25; sun.intensity = 1.35; }
-    renderer.render(scene, camera);
+    renderer.clear(); renderer.render(scene, camera);
+    if (holdGroup.children.some(c => c.visible)) {
+      holdHemi.color.copy(hemi.color); holdHemi.groundColor.copy(hemi.groundColor); holdHemi.intensity = hemi.intensity;
+      holdSun.color.copy(sun.color); holdSun.intensity = sun.intensity;
+      holdCamera.aspect = camera.aspect; holdCamera.updateProjectionMatrix();
+      renderer.clearDepth(); renderer.render(holdScene, holdCamera);
+    }
   }
   return { render, setLowRes: n => { opts.lowRes = n; }, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
 }

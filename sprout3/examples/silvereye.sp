@@ -865,9 +865,9 @@ draw : [game |
   (you armour > 0) [rect [W - 102, 21, you armour * 0.9, 3, "#5fa8ff"]]
   ]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
-  -- shots: what's in the clip, and spare; a bar while you reload
-  text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]
-  text [cond [you weapon = "heavy", "HEAVY", any, "BLASTER"], W - 30, H - 26, 8, "#9aa3b5"]
+  -- shots: what's in the clip, and spare (down on the left, clear of the gun in your hand); a bar while you reload
+  text ["[you clip] | [you ammo]", 32, H - 40, 13, cond [you clip = 0, red, any, cream]]
+  text [cond [you weapon = "heavy", "HEAVY", any, "BLASTER"], 32, H - 26, 8, "#9aa3b5"]
   (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours
