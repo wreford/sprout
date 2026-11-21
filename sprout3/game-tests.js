@@ -369,6 +369,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 7 && f(g, "pickups").part(7).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });

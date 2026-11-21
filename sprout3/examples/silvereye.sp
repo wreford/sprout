@@ -307,7 +307,9 @@ play : [game |
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
-  pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]]
+  -- a guard who goes down drops what they carried
+  drops : fallen keep [g | g fell = now] collect [g | [kind : "ammo", x : g x, y : g y, back-at : now + 0.5]]
+  pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]] .. drops
   (takes length > 0) [beep [990, 0.05]]
   -- players: shots, turrets, guards and blasts hurt; one who goes down is out (alone) or back soon (a duel)
   hurt-agents : ready collect [a |

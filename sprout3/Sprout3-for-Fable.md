@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 430 pass, 298 for the language and 132 for the games.
+- **Tests:** 431 pass, 298 for the language and 133 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (132)
+node game-tests.js    # game tests (133)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 430 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 431 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4472,6 +4472,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 7 && f(g, "pickups").part(7).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
@@ -10840,7 +10841,9 @@ play : [game |
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
-  pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]]
+  -- a guard who goes down drops what they carried
+  drops : fallen keep [g | g fell = now] collect [g | [kind : "ammo", x : g x, y : g y, back-at : now + 0.5]]
+  pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]] .. drops
   (takes length > 0) [beep [990, 0.05]]
   -- players: shots, turrets, guards and blasts hurt; one who goes down is out (alone) or back soon (a duel)
   hurt-agents : ready collect [a |
