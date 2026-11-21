@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 439 pass, 298 for the language and 141 for the games.
+- **Tests:** 440 pass, 298 for the language and 142 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (141)
+node game-tests.js    # game tests (142)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 439 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 440 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4567,6 +4567,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: simulants roam the lab and take each other (and you) down", roamed && kills.slice(1).reduce((x, y) => x + y) > 0, kills);
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
+  ok("silvereye: simulants are drawn as robots, players as soldiers", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 2 && both.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length === 1);
   // credit: with three in the lab, a takedown counts only for the one who made it
   const t3 = L.makeGame(src.replace(/^simulants : 2/m, "simulants : 1"), { players: 2, me: 1 }); t3.tick(1 / 60, pad({}), pad({}));
   put(t3, 0, { x: 8.5, y: 7.5, angle: 0 }); put(t3, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(t3, 2, { x: 2.5, y: 13.5, angle: 0 });
@@ -11010,9 +11011,10 @@ draw : [game |
   ]
   -- the other player
   rivals each [r |
-    clip : cond [up r not, "Death", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
+    -- simulants are machines, so they look like one: Quaternius's gunner robot
+    clip : cond [up r not, "Death", r bot and (r flash > 0), "Shoot", r bot and (r moving), "Run", r bot, "Idle", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
     time : cond [up r not, now - (r down-at else now), any, now]
-    model ["soldier", r x, 0, r y, r angle, 1.8, clip, time]
+    model [cond [r bot, "robot_gunner", any, "soldier"], r x, 0, r y, r angle, cond [r bot, 1.6, any, 1.8], clip, time]
     (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live

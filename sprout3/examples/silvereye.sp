@@ -446,9 +446,10 @@ draw : [game |
   ]
   -- the other player
   rivals each [r |
-    clip : cond [up r not, "Death", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
+    -- simulants are machines, so they look like one: Quaternius's gunner robot
+    clip : cond [up r not, "Death", r bot and (r flash > 0), "Shoot", r bot and (r moving), "Run", r bot, "Idle", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
     time : cond [up r not, now - (r down-at else now), any, now]
-    model ["soldier", r x, 0, r y, r angle, 1.8, clip, time]
+    model [cond [r bot, "robot_gunner", any, "soldier"], r x, 0, r y, r angle, cond [r bot, 1.6, any, 1.8], clip, time]
     (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live
