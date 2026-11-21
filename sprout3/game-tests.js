@@ -527,6 +527,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
   { const ah = h => { const t = L.makeGame(src, {}); t.tick(1 / 60, pad({})); put(t, 0, { x: 9.5, y: 7.5, angle: 0.14 }); t.tick(1 / 60, pad({ assist: h })); return agent(t, 1).field("aimed") !== false; };
     ok("silvereye: aim help is set by each player: more help locks on from further off the middle", ah(1.6) === true && ah(1) === false && ah(0) === false); }
+  { const cs = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 1"), {}); cs.tick(1 / 60, pad({}));
+    put(cs, 0, { x: 12.5, y: 7.5, angle: Math.PI }); put(cs, 1, { x: 8.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 120; t++) cs.tick(1 / 60, pad({ fire: true }));
+    const texts = cs.draw().filter(x => x[0] === "text").map(x => x[1][0]);
+    ok("silvereye: in a combat sim, player 2 is called a simulant, not a rival", texts.includes("YOU took down SIM 2") && !texts.some(t => /RIVAL$/.test(t) && /took down/.test(t)), texts); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

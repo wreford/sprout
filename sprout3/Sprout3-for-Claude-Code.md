@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (168)
+node game-tests.js    # game tests (169)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 471 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 472 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4562,6 +4562,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
   { const ah = h => { const t = L.makeGame(src, {}); t.tick(1 / 60, pad({})); put(t, 0, { x: 9.5, y: 7.5, angle: 0.14 }); t.tick(1 / 60, pad({ assist: h })); return agent(t, 1).field("aimed") !== false; };
     ok("silvereye: aim help is set by each player: more help locks on from further off the middle", ah(1.6) === true && ah(1) === false && ah(0) === false); }
+  { const cs = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 1"), {}); cs.tick(1 / 60, pad({}));
+    put(cs, 0, { x: 12.5, y: 7.5, angle: Math.PI }); put(cs, 1, { x: 8.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 120; t++) cs.tick(1 / 60, pad({ fire: true }));
+    const texts = cs.draw().filter(x => x[0] === "text").map(x => x[1][0]);
+    ok("silvereye: in a combat sim, player 2 is called a simulant, not a rival", texts.includes("YOU took down SIM 2") && !texts.some(t => /RIVAL$/.test(t) && /took down/.test(t)), texts); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11098,6 +11103,8 @@ draw : [game |
   you-id : cond [game versus, me, any, 1]
   you : game agents keep [a | a id = you-id] @ 1
   rivals : game agents keep [a | a id != you-id]
+  -- is player n a simulant? (numbers aren't enough: in a combat sim, number 2 is one)
+  is-sim : [n | game agents any [a | (a id = n) and (a bot)]]
   down : up you not
   -- the camera: your eyes, or the floor once you're down
   -- the air turns red while the alarm is up
@@ -11207,12 +11214,12 @@ draw : [game |
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
-    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", you last-by <= 2, "THE RIVAL", any, "SIM [you last-by]"]
+    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), "SIM [you last-by]", any, "THE RIVAL"]
     down and (game over = "") [text ["TAKEN DOWN BY [who-did]", W / 2, H / 2 + 22, 11, red]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately
-  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", n <= 2, "RIVAL", any, "SIM [n]"]]
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   -- the touch buttons, when there's no console around the screen
   game shell not [
@@ -11254,7 +11261,7 @@ draw : [game |
   game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
-  verdict : [w | (w <= 2) ["YOU LOSE"] else ["SIM [w] WINS"]]
+  verdict : [w | is-sim w ["SIM [w] WINS"] else ["YOU LOSE"]]
   champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")
   winners : game agents keep [a | game over = "p[a id]"]
   (game versus) and champion [ending [verdict (winners @ 1 id), red]]

@@ -505,6 +505,8 @@ draw : [game |
   you-id : cond [game versus, me, any, 1]
   you : game agents keep [a | a id = you-id] @ 1
   rivals : game agents keep [a | a id != you-id]
+  -- is player n a simulant? (numbers aren't enough: in a combat sim, number 2 is one)
+  is-sim : [n | game agents any [a | (a id = n) and (a bot)]]
   down : up you not
   -- the camera: your eyes, or the floor once you're down
   -- the air turns red while the alarm is up
@@ -614,12 +616,12 @@ draw : [game |
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
-    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", you last-by <= 2, "THE RIVAL", any, "SIM [you last-by]"]
+    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), "SIM [you last-by]", any, "THE RIVAL"]
     down and (game over = "") [text ["TAKEN DOWN BY [who-did]", W / 2, H / 2 + 22, 11, red]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately
-  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", n <= 2, "RIVAL", any, "SIM [n]"]]
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   -- the touch buttons, when there's no console around the screen
   game shell not [
@@ -661,7 +663,7 @@ draw : [game |
   game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
-  verdict : [w | (w <= 2) ["YOU LOSE"] else ["SIM [w] WINS"]]
+  verdict : [w | is-sim w ["SIM [w] WINS"] else ["YOU LOSE"]]
   champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")
   winners : game agents keep [a | game over = "p[a id]"]
   (game versus) and champion [ending [verdict (winners @ 1 id), red]]
