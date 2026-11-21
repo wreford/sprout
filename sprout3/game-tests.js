@@ -593,6 +593,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const wd = L.makeGame(src.replace(/^stage : 1/m, "stage : 3"), {}); wd.tick(1 / 60, pad({}));
     const w = S.partsOf(f(wd, "guards")).find(g => g.field("boss") === true);
     ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
+  { const bd = L.makeGame(src, {}); bd.tick(1 / 60, pad({})); put(bd, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 30; t++) bd.tick(1 / 60, pad({ fire: true }));
+    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length, before = soldiers();
+    for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
+    ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

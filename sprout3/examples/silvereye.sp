@@ -619,7 +619,9 @@ draw : [game |
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
-  game guards each [g |
+  -- the fallen blink and then are gone, after five seconds, as on the old consoles
+  gone : [t | (t != false) and (now - t > 5) and ((now - t > 6.2) or (now * 10 % 1 < 0.5))]
+  game guards keep [g | gone (g fell) not] each [g |
     near : distance [g x, g y, you x, you y] < 3
     big : g boss else false
     clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
@@ -627,12 +629,12 @@ draw : [game |
     model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8], clip, time]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
-  game scientists each [c |
+  game scientists keep [c | gone (c fell) not] each [c |
     clip : cond [c health <= 0, "Man_Death", alarm, "Man_Idle", any, "Man_Walk"]
     model ["worker", c x, 0, c y, c angle, 1.7, clip, cond [c health <= 0, now - (c fell else now), any, now]]
   ]
   -- the other player
-  rivals each [r |
+  rivals keep [r | gone (r down-at) not] each [r |
     -- simulants are machines, so they look like one: Quaternius's gunner robot
     clip : cond [up r not, "Death", r bot and (r flash > 0), "Shoot", r bot and (r moving), "Run", r bot, "Idle", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
     time : cond [up r not, now - (r down-at else now), any, now]

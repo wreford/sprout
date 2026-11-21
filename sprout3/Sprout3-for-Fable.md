@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 488 pass, 303 for the language and 185 for the games.
+- **Tests:** 489 pass, 303 for the language and 186 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (185)
+node game-tests.js    # game tests (186)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 488 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 489 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4701,6 +4701,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const wd = L.makeGame(src.replace(/^stage : 1/m, "stage : 3"), {}); wd.tick(1 / 60, pad({}));
     const w = S.partsOf(f(wd, "guards")).find(g => g.field("boss") === true);
     ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
+  { const bd = L.makeGame(src, {}); bd.tick(1 / 60, pad({})); put(bd, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 30; t++) bd.tick(1 / 60, pad({ fire: true }));
+    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length, before = soldiers();
+    for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
+    ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11368,7 +11373,9 @@ draw : [game |
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
-  game guards each [g |
+  -- the fallen blink and then are gone, after five seconds, as on the old consoles
+  gone : [t | (t != false) and (now - t > 5) and ((now - t > 6.2) or (now * 10 % 1 < 0.5))]
+  game guards keep [g | gone (g fell) not] each [g |
     near : distance [g x, g y, you x, you y] < 3
     big : g boss else false
     clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
@@ -11376,12 +11383,12 @@ draw : [game |
     model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8], clip, time]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
-  game scientists each [c |
+  game scientists keep [c | gone (c fell) not] each [c |
     clip : cond [c health <= 0, "Man_Death", alarm, "Man_Idle", any, "Man_Walk"]
     model ["worker", c x, 0, c y, c angle, 1.7, clip, cond [c health <= 0, now - (c fell else now), any, now]]
   ]
   -- the other player
-  rivals each [r |
+  rivals keep [r | gone (r down-at) not] each [r |
     -- simulants are machines, so they look like one: Quaternius's gunner robot
     clip : cond [up r not, "Death", r bot and (r flash > 0), "Shoot", r bot and (r moving), "Run", r bot, "Idle", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
     time : cond [up r not, now - (r down-at else now), any, now]
