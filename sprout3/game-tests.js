@@ -462,6 +462,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const mx = f(th, "mines").part(1).field("x");
     for (let t = 0; t < 40; t++) th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 5.5, y: 7.5, angle: -Math.PI / 2 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
     ok("silvereye: a mine is thrown ahead, and lands short of a wall", Math.abs(mx - 6.3) < 1e-9 && f(th, "mines").part(2).field("y") > 7.0, [mx, f(th, "mines").part(2).field("y")]); }
+  // the time limit: when it's up, the most takedowns wins; a tie is a draw
+  { const tl = L.makeGame(duelSrc.replace(/^time-limit : 300/m, "time-limit : 2"), { players: 2, me: 1 }); tl.tick(1 / 60, pad({}), pad({}));
+    for (let t = 0; t < 150; t++) tl.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: when time runs out with no takedowns, it's a draw", f(tl, "over") === "draw", f(tl, "over")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

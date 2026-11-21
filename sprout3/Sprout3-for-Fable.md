@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 451 pass, 302 for the language and 149 for the games.
+- **Tests:** 452 pass, 302 for the language and 150 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (149)
+node game-tests.js    # game tests (150)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 451 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 452 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4565,6 +4565,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const mx = f(th, "mines").part(1).field("x");
     for (let t = 0; t < 40; t++) th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 5.5, y: 7.5, angle: -Math.PI / 2 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
     ok("silvereye: a mine is thrown ahead, and lands short of a wall", Math.abs(mx - 6.3) < 1e-9 && f(th, "mines").part(2).field("y") > 7.0, [mx, f(th, "mines").part(2).field("y")]); }
+  // the time limit: when it's up, the most takedowns wins; a tie is a draw
+  { const tl = L.makeGame(duelSrc.replace(/^time-limit : 300/m, "time-limit : 2"), { players: 2, me: 1 }); tl.tick(1 / 60, pad({}), pad({}));
+    for (let t = 0; t < 150; t++) tl.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: when time runs out with no takedowns, it's a draw", f(tl, "over") === "draw", f(tl, "over")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10655,6 +10659,7 @@ pickup-back : 20           -- seconds before a pickup is back, in a match
 pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
 respawn-after : 2.5        -- seconds before you're back in a duel
+time-limit : 300           -- a match ends after this many seconds; the most takedowns wins
 
 -- ---------------------------------------------------------------- the map
 solid : [cx cy |
@@ -10746,6 +10751,7 @@ start :
   pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
   machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
+  match-start : 0
   feed : []
   blasts : []
   over : ""
@@ -10987,12 +10993,16 @@ play : [game |
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
+  -- time's up: the most takedowns wins, and a tie is a draw
+  top : back fold [0, [m a | m max (a kills)]]
+  leaders : back keep [a | a kills = top]
+  time-up : leaders length = 1 ["p[leaders @ 1 id]"] else ["draw"]
   -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
   intel : (game intel) or (takes any [t | t kind = "intel"])
   done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
   home : distance [(back @ 1) x, (back @ 1) y, lift @ 1, lift @ 2] < 1
   over : cond [
-    game versus, winner > 0 ["p[winner]"] else [""]
+    game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
     (up (back @ 1)) not, "lost"
     done and home, "won"
     any, ""
@@ -11009,10 +11019,10 @@ play : [game |
 -- two phones turn a game for one into a duel; once it's over, fire (or a tap) starts again after a moment
 update : [game |
   two : game has-field "input2"
-  g : (two and (game versus not)) [game with duel] else [game]
+  g : (two and (game versus not)) [game with duel with [match-start : game clock]] else [game]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
   g over = "" [play g] else [
-    (again and (g clock - (g over-at) > 1.5)) [two [g with duel] else [start]] else [g]
+    (again and (g clock - (g over-at) > 1.5)) [two [g with duel with [match-start : g clock]] else [start]] else [g]
   ]
 ]
 
@@ -11126,6 +11136,7 @@ draw : [game |
     best : rivals fold [0, [m r | m max (r kills)]]
     rest : cond [rivals length = 1, "RIVAL", any, "TOP"]
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
+    text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
@@ -11155,10 +11166,11 @@ draw : [game |
     text [again, W / 2, H / 2 + 36, 11, cream]
   ]
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
+  game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
   verdict : [w | (w <= 2) ["YOU LOSE"] else ["SIM [w] WINS"]]
-  champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "p[you-id]")
+  champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")
   winners : game agents keep [a | game over = "p[a id]"]
   (game versus) and champion [ending [verdict (winners @ 1 id), red]]
 ]
