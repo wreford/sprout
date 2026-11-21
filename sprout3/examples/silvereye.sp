@@ -240,7 +240,7 @@ scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, 
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0, streak : 0, streak-at : -10]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -531,13 +531,19 @@ play : [game |
   ]
   (hurt-agents any [a | a hurt = 0.25]) [sound "hurt"]
   went-down : hurt-agents keep [a | a down-at = now]
-  scored : hurt-agents collect [a | a with [kills : a kills + (went-down count [d | (d last-by = (a id)) and (d id != (a id))])]]
+  -- takedowns in quick succession make a streak: two within three seconds is a double, and so on
+  scored : hurt-agents collect [a |
+    got : went-down count [d | (d last-by = (a id)) and (d id != (a id))]
+    streak : cond [got = 0, a streak, now - (a streak-at) < 3, a streak + got, any, got]
+    a with [kills : a kills + got, streak : streak, streak-at : cond [got > 0, now, any, a streak-at]]
+  ]
+  (scored any [a | (a streak-at = now) and (a streak >= 2)]) [beep [880, 0.06], beep [1175, 0.06], beep [1568, 0.12]]
   -- in a duel you come back after a moment, at the corner farthest from the other player
   back : scored collect [a |
     due : (game versus) and ((up a) not) and (now - (a down-at else now) >= respawn-after)
     others : scored keep [o | o id != (a id)]
     spot : spawns smallest-by [s | 0 - (others collect [o | distance [s @ 1, s @ 2, o x, o y]] sum)]
-    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov, shots-fired : a shots-fired, shots-hit : a shots-hit, safe-until : now + 2]] else [a]
+    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [streak : a streak, streak-at : a streak-at, kills : a kills, look : a look, bot : a bot, fov : a fov, shots-fired : a shots-fired, shots-hit : a shots-hit, safe-until : now + 2]] else [a]
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
@@ -758,6 +764,8 @@ draw : [game |
   -- who took down whom, lately
   call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, sim-name n, any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
+  -- your streak, for a moment
+  (you streak >= 2) and (now - (you streak-at) < 1.6) [text [cond [you streak = 2, "DOUBLE TAKEDOWN", you streak = 3, "TRIPLE TAKEDOWN", any, "RAMPAGE"], W / 2, H / 2 - 82, 14, gold]]
   (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
   -- the Warden's health, across the top, once he's on alert
   game guards keep [g | (g boss else false) and (g alert) and (g health > 0)] each [g |

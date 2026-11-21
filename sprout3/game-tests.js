@@ -608,6 +608,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const shut = door()[1][1]; put(dr, 0, { x: 6.2, y: 4.5, angle: 0 }); dr.tick(1 / 60, pad({})); const opened = door()[1][1];
     for (let t = 0; t < 60; t++) dr.tick(1 / 60, pad({ walk: 1 }));
     ok("silvereye: a door slides up as you come near, and you walk through", shut === 1.25 && opened > 2.5 && agent(dr, 1).field("x") > 8.5, [shut, opened, agent(dr, 1).field("x")]); }
+  { const sk = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 3/m, "simulants : 2"), {}); sk.tick(1 / 60, pad({}));
+    const pm = (i, o) => put(sk, i, o);
+    pm(0, { x: 4.5, y: 7.5, angle: 0 }); pm(1, { x: 6.0, y: 7.3, health: 10 }); pm(2, { x: 6.0, y: 7.7, health: 10 });
+    for (let t = 0; t < 40; t++) sk.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: two takedowns in quick succession are a double", agent(sk, 1).field("streak") >= 2 && agent(sk, 1).field("kills") >= 2, [agent(sk, 1).field("streak"), agent(sk, 1).field("kills")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
