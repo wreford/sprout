@@ -1,4 +1,4 @@
--- Bunker: sneak through an underground lab, take down the guards, and use proximity mines.
+-- SilverEye 2D: sneak through an underground lab, take down the guards, and use proximity mines.
 -- A mine arms after a moment and goes off when anyone comes near it, you included.
 -- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine. Keys: arrows or WASD, space to fire, M for a mine.
 -- The view is a raycaster: one ray per column finds the nearest wall, and nearer walls are drawn taller.

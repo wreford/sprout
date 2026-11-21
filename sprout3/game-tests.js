@@ -324,43 +324,43 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("volley alone: no input2, and the top paddle plays itself", alone.state.field("input2") === S.UNSET && f(alone, "far") !== 180);
 }
 
-// ---------------- Bunker: a raycaster with guards and proximity mines
+// ---------------- SilverEye 2D: a raycaster with guards and proximity mines
 {
-  const src = fs.readFileSync(__dirname + "/examples/bunker.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye-2d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const fresh = () => L.makeGame(src, {});
   const place = (g, hero) => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   const g = fresh(); g.tick(1 / 60);
   const walls = g.draw().filter(d => d[0] === "rect").slice(1, 73);
-  ok("bunker: a wall strip for every ray, nearer walls taller", walls.length === 72 && new Set(walls.map(d => Math.round(d[1][3]))).size > 5);
+  ok("silvereye 2d: a wall strip for every ray, nearer walls taller", walls.length === 72 && new Set(walls.map(d => Math.round(d[1][3]))).size > 5);
   for (let t = 0; t < 30; t++) g.tick(1 / 60, held(["up"]));
-  ok("bunker: walking moves you", f(g, "hero").field("x") > 2.6);
+  ok("silvereye 2d: walking moves you", f(g, "hero").field("x") > 2.6);
   const a = fresh(); place(a, { x: 9.5, y: 7.5, angle: 0, health: 100 });
   for (let t = 0; t < 240; t++) a.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
-  ok("bunker: two hits take down a guard", f(a, "guards").part(3).field("health") <= 0);
+  ok("silvereye 2d: two hits take down a guard", f(a, "guards").part(3).field("health") <= 0);
   const b = fresh(); place(b, { x: 12.5, y: 3.6, angle: Math.PI / 2, health: 100 });
   for (let t = 0; t < 3; t++) b.tick(1 / 60, held(["m"]));
-  ok("bunker: a mine is dropped and one fewer is carried", f(b, "mines").count() === 1 && f(b, "carried") === 5);
+  ok("silvereye 2d: a mine is dropped and one fewer is carried", f(b, "mines").count() === 1 && f(b, "carried") === 5);
   for (let t = 0; t < 400; t++) b.tick(1 / 60);
-  ok("bunker: a guard who walks onto an armed mine is blown up", f(b, "guards").part(1).field("health") <= 0 && f(b, "mines").count() === 0);
+  ok("silvereye 2d: a guard who walks onto an armed mine is blown up", f(b, "guards").part(1).field("health") <= 0 && f(b, "mines").count() === 0);
   const c = fresh(); place(c, { x: 2.5, y: 2.5, angle: 0, health: 100 });
   c.tick(1 / 60, held(["m"])); for (let t = 0; t < 120; t++) c.tick(1 / 60);
-  ok("bunker: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
+  ok("silvereye 2d: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
 }
 
-// ---------------- Bunker 3D: the same game, drawn with 3D words (decision 108)
+// ---------------- SilverEye: the same game, drawn with 3D words (decision 108)
 {
-  const src = fs.readFileSync(__dirname + "/examples/bunker3d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
   const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
-  ok("bunker 3d: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
-  ok("bunker 3d: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
+  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
+  ok("silvereye: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
   place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
-  ok("bunker 3d: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
-  ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
+  ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
+  ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   // turrets: set one down and its program takes the guards on
   const sentry = (code) => {
     const t = L.makeGame(code, {}), m = new Map(S.fieldsOf(t.state));
@@ -370,11 +370,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     return t;
   };
   const s1 = sentry(src);
-  ok("bunker 3d: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
-  ok("bunker 3d: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
-  ok("bunker 3d: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
+  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
+  ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
+  ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
-  ok("bunker 3d: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program

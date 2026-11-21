@@ -1,9 +1,10 @@
--- Bunker 3D: the same lab, guards and proximity mines as Bunker, drawn in 3D with three.js and real models:
+-- SilverEye: an underground lab, its guards, proximity mines and turrets, drawn in 3D with three.js and real models:
 -- soldiers by Quaternius, a blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (all CC0).
 -- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine, SENTRY to set down a turret.
 -- Keys: arrows or WASD, space to fire, M for a mine, T for a turret.
 -- The turrets run turret-program, written in Sprout: change it while you play and every turret thinks the new way.
--- The game is the same Sprout code as Bunker, plus the turrets; draw is new. Change the props, the fog or the colours too.
+-- The game is the same Sprout code as SilverEye 2D, plus the turrets; draw is new. Change the props, the fog or the colours too.
+-- Play it on its own page: silvereye.html
 
 level : [
   "################"
