@@ -393,7 +393,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: three shots take the other player down, and that scores", agent(v, 2).field("down-at") !== false && agent(v, 1).field("kills") === 1);
   for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: the one taken down comes back in a far corner", agent(v, 2).field("health") === 100 && agent(v, 2).field("down-at") === false && agent(v, 2).field("x") !== 12.5);
-  for (let r = 0; r < 4; r++) { face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
+  { const back = agent(v, 2).field("safe-until"); ok("silvereye: coming back, you're protected for two seconds", back > f(v, "clock") - 1 && back <= f(v, "clock") + 2, back); }
+  for (let r = 0; r < 4; r++) { for (let t = 0; t < 140; t++) v.tick(1 / 60, pad({}), pad({})); face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
   const sees = n => { const o = L.makeGame(duelSrc, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));

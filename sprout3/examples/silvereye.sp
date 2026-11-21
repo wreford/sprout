@@ -142,7 +142,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -348,7 +348,8 @@ play : [game |
     by-turret : thought keep [t | t victim = k]
     by-mine : caught-by [a x, a y]
     shot-pain : by-shot collect [h | cond [h heavy, heavy-damage, h steady, steady-damage, any, duel-damage]] sum
-    total : cond [up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
+    -- just back in a match: nothing hurts for a moment
+    total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
     by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
     got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
@@ -387,7 +388,7 @@ play : [game |
     due : (game versus) and ((up a) not) and (now - (a down-at else now) >= respawn-after)
     others : scored keep [o | o id != (a id)]
     spot : spawns smallest-by [s | 0 - (others collect [o | distance [s @ 1, s @ 2, o x, o y]] sum)]
-    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov, shots-fired : a shots-fired, shots-hit : a shots-hit]] else [a]
+    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov, shots-fired : a shots-fired, shots-hit : a shots-hit, safe-until : now + 2]] else [a]
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
@@ -537,6 +538,7 @@ draw : [game |
     text ["SENTRY [you sentries-left]", W - 48, H - 124, 11, cyan]
   ]
   (you hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
+  (game clock < (you safe-until)) [text ["PROTECTED", W / 2, H / 2 + 52, 9, cyan]]
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
   (now < 5) and (game over = "") [text [hint, W / 2, H - 40, 10, "#f4f1eacc"]]
   again : cond [game shell, "press A to go again", any, "tap to go again"]
