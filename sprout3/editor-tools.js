@@ -119,7 +119,9 @@ let current = [];
 function keysUI() {
   const k = $("keys"); if (!k) return;
   current = suggestions();
-  const sug = current.map((s, i) => `<button class="sug${i ? " dim" : ""}" data-s="${i}">${esc(s.w)}</button>`).join("");
+  const lit = typeof caretLiteral === "function" ? caretLiteral() : null;
+  const chip = lit ? `<button class="ctlchip" data-lit="1">${{ number: "Slide", colour: "Colour", pair: "Pad", bool: "Flip" }[lit.kind]} ${esc(lit.text.length > 9 ? lit.text.slice(0, 9) + "…" : lit.text)}</button>` : "";
+  const sug = chip + current.map((s, i) => `<button class="sug${i ? " dim" : ""}" data-s="${i}">${esc(s.w)}</button>`).join("");
   k.innerHTML = (sug ? `<div class="grp">${sug}</div><span class="sep"></span>` : "") +
     `<div class="grp"><button class="ic" data-a="left" aria-label="left">◀</button><button class="ic" data-a="right" aria-label="right">▶</button>` +
     `<button class="ic" data-a="up" aria-label="line up">▲</button><button class="ic" data-a="down" aria-label="line down">▼</button>` +
@@ -145,6 +147,7 @@ $("keys").addEventListener("pointerdown", e => {
   const b = e.target.closest("button"); if (!b) return;
   e.preventDefault();   // the textarea keeps its focus, so the keyboard stays up
   if (b.dataset.s) { accept(current[+b.dataset.s]); return; }
+  if (b.dataset.lit) { const tok = caretLiteral(); if (tok) { const r = b.getBoundingClientRect(); openCtl(tok, r.left + r.width / 2, r.top - 260); } return; }
   if (b.dataset.k) { const k = b.dataset.k; insertText(k === ":" ? " : " : k === "|" ? " | " : k); return; }
   if (b.dataset.n) { const [, a, z] = SNIPPETS[+b.dataset.n]; const p = ta.selectionStart; insertText(a + z); ta.setSelectionRange(p + a.length, p + a.length); return; }
   if (b.dataset.a) {
@@ -297,7 +300,134 @@ menu.addEventListener("pointerdown", e => {
 });
 document.addEventListener("pointerdown", e => { if (menu.classList.contains("on") && !menu.contains(e.target) && e.target !== gut) closeMenu(); }, true);
 
-window.EditorTools = { showValues, valueLines, openMenu, LINE_ACTIONS, set values(on) { valsOn = on; LS.set("sprout3.values", on); showValues(); }, undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
+// ===================================================================== touch controls for literals
+// In Tweak mode a tap on a number gives a slider, on a colour a picker, on a pair a pad, and true/false flips.
+// While typing, the key bar offers the same control for the literal at the caret.
+css.textContent += `
+#ctl{position:fixed;z-index:46;display:none;width:min(340px,calc(100vw - 20px));padding:12px 14px 14px;border-radius:14px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 14px 36px rgba(0,0,0,.25);font:500 13px var(--sans);color:var(--fg)}
+#ctl.on{display:block}
+#ctl .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+#ctl .hd b{font:600 15px var(--mono)}#ctl .hd button{font:600 13px var(--sans);color:var(--fg3);padding:4px 6px}
+#ctl input[type=range]{width:100%;height:34px;accent-color:var(--acc);margin:2px 0}
+#ctl .row{display:flex;gap:8px;align-items:center}#ctl .row button{flex:1;height:38px;border-radius:9px;background:var(--card2);box-shadow:0 0 0 1px var(--line);font:600 15px var(--mono)}
+#ctl label{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--fg3);margin-top:6px}
+#ctl .sw{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}#ctl .sw button{width:30px;height:30px;border-radius:8px;box-shadow:0 0 0 1px var(--line)}
+#ctl .pad{position:relative;height:200px;border-radius:10px;background:var(--card2);box-shadow:inset 0 0 0 1px var(--line);touch-action:none;overflow:hidden}
+#ctl .pad i{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:var(--acc);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+#ctl .pad::before,#ctl .pad::after{content:"";position:absolute;background:var(--line)}#ctl .pad::before{left:50%;top:0;bottom:0;width:1px}#ctl .pad::after{top:50%;left:0;right:0;height:1px}
+#keys button.ctlchip{background:var(--card2);box-shadow:0 0 0 1.5px var(--acc);font:600 13px var(--sans);padding:0 12px}
+`;
+const ctl = document.createElement("div"); ctl.id = "ctl"; document.body.appendChild(ctl);
+const STOP = ' \t\n[](),|:"';
+// the literal at an offset in the code: { start, len, text, kind }
+function literalAt(pos) {
+  const v = code; if (pos < 0 || pos > v.length) return null;
+  let a = pos, b = pos;
+  while (a > 0 && !STOP.includes(v[a - 1])) a--;
+  while (b < v.length && !STOP.includes(v[b])) b++;
+  if (a === b) return null;
+  const text = v.slice(a, b), lineStart = v.lastIndexOf("\n", a - 1) + 1, before = v.slice(lineStart, a);
+  const inString = (before.replace(/\\./g, "").match(/"/g) || []).length % 2 === 1;
+  if (/--/.test(before.replace(/"[^"]*"/g, ""))) return null;
+  let kind = null;
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(text)) kind = "colour";
+  else if (inString) return null;
+  else if (/^-?\d+(\.\d+)?$/.test(text)) kind = "number";
+  else if (/^-?\d+(\.\d+)?x-?\d+(\.\d+)?$/.test(text)) kind = "pair";
+  else if (text === "true" || text === "false") kind = "bool";
+  return kind ? { start: a, len: b - a, text, kind } : null;
+}
+function replaceLiteral(tok, text) {
+  if (text === code.substr(tok.start, tok.len)) return;
+  const st = ta.scrollTop, sl = ta.scrollLeft;
+  code = code.slice(0, tok.start) + text + code.slice(tok.start + tok.len); tok.len = text.length; tok.text = text;
+  ta.value = code; ta.scrollTop = st; ta.scrollLeft = sl;
+  if (!dirty) { dirty = true; headUI(); }
+  render(); queueSave(); if (tryBuild(code)) renderState();
+}
+// colours: hex to hue, saturation, lightness and back
+function hexToHsl(hex) {
+  let h = hex.slice(1); if (h.length === 3) h = h.replace(/./g, c => c + c);
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255), max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min, s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const hue = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [hue * 60, s, l];
+}
+function hslToHex(h, s, l) {
+  const f = n => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l), c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(c * 255).toString(16).padStart(2, "0"); };
+  return "#" + f(0) + f(8) + f(4);
+}
+const SWATCHES = ["#e8a33d", "#d9531e", "#c4453b", "#f4b6c2", "#d4c1ec", "#8a7bd8", "#5fa8d3", "#1f6f8b", "#4fb0c6", "#3f8f5a", "#c9e4c5", "#f6d5a6", "#ffffff", "#9a978d", "#3d3c38", "#14161a"];
+let ctlTok = null;
+function placeCtl(x, y) {
+  ctl.classList.add("on");
+  const w = ctl.offsetWidth, h = ctl.offsetHeight, vh = window.visualViewport ? visualViewport.height : innerHeight;
+  ctl.style.left = Math.max(10, Math.min(innerWidth - w - 10, x - w / 2)) + "px";
+  ctl.style.top = (y + 18 + h < vh ? y + 18 : Math.max(10, y - h - 18)) + "px";
+}
+function closeCtl() { ctl.classList.remove("on"); ctlTok = null; }
+function openCtl(tok, x, y) {
+  if (tok.kind === "bool") { replaceLiteral(tok, tok.text === "true" ? "false" : "true"); flashLive(code); toast(tok.text + " now"); return; }
+  ctlTok = tok;
+  const head = `<div class="hd"><b id="ctlV">${esc(tok.text)}</b><button id="ctlX">Done</button></div>`;
+  if (tok.kind === "number") {
+    const v0 = parseFloat(tok.text), dec = (tok.text.split(".")[1] || "").length, step = Math.pow(10, -dec), span = Math.max(dec ? 1 : 10, Math.abs(v0)) * 2;
+    ctl.innerHTML = head + `<input type="range" id="ctlR" min="${v0 - span}" max="${v0 + span}" step="${step}" value="${v0}">` +
+      `<div class="row"><button data-d="-10">−${10 * step >= 1 ? 10 * step : (10 * step).toFixed(dec)}</button><button data-d="-1">−</button><button data-d="1">+</button><button data-d="10">+${10 * step >= 1 ? 10 * step : (10 * step).toFixed(dec)}</button></div>`;
+    const set = v => { const t = dec ? v.toFixed(dec) : String(Math.round(v)); replaceLiteral(tok, t); $("ctlV").textContent = t; };
+    $("ctlR").oninput = e => set(parseFloat(e.target.value));
+    $("ctlR").onchange = () => { flashLive(code); };
+    ctl.querySelectorAll("[data-d]").forEach(b => b.onpointerdown = e => { e.preventDefault(); const v = parseFloat(tok.text) + parseFloat(b.dataset.d) * step; set(v); $("ctlR").value = v; });
+  } else if (tok.kind === "colour") {
+    let [h, s, l] = hexToHsl(tok.text);
+    const grad = (k) => k === "h" ? "linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)" : "";
+    ctl.innerHTML = head + `<label>Hue</label><input type="range" id="cH" min="0" max="360" value="${h}" style="accent-color:${tok.text}">` +
+      `<label>Saturation</label><input type="range" id="cS" min="0" max="100" value="${s * 100}"><label>Lightness</label><input type="range" id="cL" min="0" max="100" value="${l * 100}">` +
+      `<div class="sw">${SWATCHES.map(c => `<button data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}</div>`;
+    const keepCase = tok.text === tok.text.toUpperCase() && /[A-F]/.test(tok.text);
+    const set = hex => { hex = keepCase ? hex.toUpperCase() : hex; replaceLiteral(tok, hex); $("ctlV").textContent = hex; $("cH").style.accentColor = hex; };
+    const fromSliders = () => set(hslToHex(+$("cH").value, $("cS").value / 100, $("cL").value / 100));
+    ["cH", "cS", "cL"].forEach(id => { $(id).oninput = fromSliders; $(id).onchange = () => flashLive(code); });
+    ctl.querySelectorAll("[data-c]").forEach(b => b.onpointerdown = e => { e.preventDefault(); set(b.dataset.c); [h, s, l] = hexToHsl(b.dataset.c); $("cH").value = h; $("cS").value = s * 100; $("cL").value = l * 100; flashLive(code); });
+  } else if (tok.kind === "pair") {
+    const [x0, y0] = tok.text.split("x").map(Number), dec = Math.max(...tok.text.split("x").map(p => (p.split(".")[1] || "").length));
+    const sx = Math.max(10, Math.abs(x0)), sy = Math.max(10, Math.abs(y0));
+    ctl.innerHTML = head + `<div class="pad" id="cP"><i id="cDot"></i></div>`;
+    const pad = $("cP"), dot = $("cDot");
+    const show = (x, y) => { dot.style.left = (50 + (x - x0) / sx * 50) + "%"; dot.style.top = (50 + (y - y0) / sy * 50) + "%"; };
+    show(x0, y0);
+    let dragging = false;
+    const at = e => { const r = pad.getBoundingClientRect(); const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), fy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+      const x = x0 + (fx - .5) * 2 * sx, y = y0 + (fy - .5) * 2 * sy, f = n => dec ? n.toFixed(dec) : String(Math.round(n)), t = f(x) + "x" + f(y);
+      replaceLiteral(tok, t); $("ctlV").textContent = t; show(+f(x), +f(y)); };
+    pad.onpointerdown = e => { e.preventDefault(); dragging = true; pad.setPointerCapture(e.pointerId); at(e); };
+    pad.onpointermove = e => { if (dragging) at(e); };
+    pad.onpointerup = () => { dragging = false; flashLive(code); };
+  }
+  $("ctlX").onpointerdown = e => { e.preventDefault(); closeCtl(); };
+  placeCtl(x, y);
+}
+document.addEventListener("pointerdown", e => { if (ctl.classList.contains("on") && !ctl.contains(e.target) && !e.target.closest("#keys")) closeCtl(); }, true);
+// in Tweak mode, a tap (not a drag) on a literal opens its control
+function offsetAt(e) {
+  const r = ta.getBoundingClientRect(), cs = getComputedStyle(ta);
+  const col = Math.floor((e.clientX - r.left - parseFloat(cs.paddingLeft) + ta.scrollLeft) / charW()), line = Math.floor((e.clientY - r.top - parseFloat(cs.paddingTop) + ta.scrollTop) / LH());
+  const lines = code.split("\n"); if (line < 0 || line >= lines.length || col < 0 || col > lines[line].length) return -1;
+  let off = 0; for (let k = 0; k < line; k++) off += lines[k].length + 1; return off + Math.min(col, lines[line].length - 1);
+}
+let tapStart = null;
+ta.addEventListener("pointerdown", e => { tapStart = TWEAK ? { x: e.clientX, y: e.clientY, t: performance.now() } : null; }, true);
+ta.addEventListener("pointerup", e => {
+  if (!tapStart || !TWEAK) return;
+  const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y), quick = performance.now() - tapStart.t < 500; tapStart = null;
+  if (moved > 6 || !quick) return;
+  const tok = literalAt(offsetAt(e)); if (tok) openCtl(tok, e.clientX, e.clientY);
+});
+// while typing, the literal at the caret can be opened from the key bar
+function caretLiteral() { if (ta.selectionStart !== ta.selectionEnd) return null; return literalAt(ta.selectionStart) || literalAt(ta.selectionStart - 1); }
+
+window.EditorTools = { literalAt, openCtl, closeCtl, showValues, valueLines, openMenu, LINE_ACTIONS, set values(on) { valsOn = on; LS.set("sprout3.values", on); showValues(); }, undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
 UNDO.push({ code, sel: [0, 0] });
 keysUI();
 })();
