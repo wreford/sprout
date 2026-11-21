@@ -450,7 +450,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: an ace mission has tougher guards, a rookie one no generators", f(ace, "guards").part(1).field("health") === 140 && f(rookie, "guards").part(1).field("health") === 70 && f(rookie, "machines").count() === 0 && f(ace, "machines").count() === 2);
   // the end screen: time, accuracy and takedowns
   { const e = L.makeGame(src, {}); e.tick(1 / 60, pad({})); const m3 = new Map(S.fieldsOf(e.state)); m3.set("over", "won"); m3.set("over-at", 75.4); e.setState(S.valueCellOf([], m3));
-    ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0")); }
+    ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0"));
+    ok("silvereye: a finished mission shows its medals", e.draw().some(x => x[0] === "text" && x[1][0] === "★ TIME   ☆ AIM   ★ UNHURT"), e.draw().filter(x => x[0] === "text").map(x => x[1][0])); }
   // the alarm: one guard who sees you brings the others close by
   { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({}));
     const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));

@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 465 pass, 303 for the language and 162 for the games.
+- **Tests:** 466 pass, 303 for the language and 163 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (162)
+node game-tests.js    # game tests (163)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 465 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 466 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4556,7 +4556,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: an ace mission has tougher guards, a rookie one no generators", f(ace, "guards").part(1).field("health") === 140 && f(rookie, "guards").part(1).field("health") === 70 && f(rookie, "machines").count() === 0 && f(ace, "machines").count() === 2);
   // the end screen: time, accuracy and takedowns
   { const e = L.makeGame(src, {}); e.tick(1 / 60, pad({})); const m3 = new Map(S.fieldsOf(e.state)); m3.set("over", "won"); m3.set("over-at", 75.4); e.setState(S.valueCellOf([], m3));
-    ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0")); }
+    ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0"));
+    ok("silvereye: a finished mission shows its medals", e.draw().some(x => x[0] === "text" && x[1][0] === "★ TIME   ☆ AIM   ★ UNHURT"), e.draw().filter(x => x[0] === "text").map(x => x[1][0])); }
   // the alarm: one guard who sees you brings the others close by
   { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({}));
     const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));
@@ -10731,6 +10732,7 @@ pickup-back : 20           -- seconds before a pickup is back, in a match
 pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
 respawn-after : 2.5        -- seconds before you're back in a duel
+par-time : 180             -- finish a mission inside this for the time medal
 time-limit : 300           -- a match ends after this many seconds; the most takedowns wins
 
 -- ---------------------------------------------------------------- the map
@@ -10820,7 +10822,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -11050,6 +11052,7 @@ play : [game |
     life : a health - (total - soak)
     a with [
       health : life max 0
+      damage-taken : a damage-taken + total
       armour : a armour - soak + (got "armour" * 50) min 100
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
@@ -11271,11 +11274,18 @@ draw : [game |
   taken : game over-at
   accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
   downs : cond [game versus, you kills, any, game guards count [g | g health <= 0]]
+  -- medals for a mission: inside par time, at least 60% of shots on target, and coming through unhurt
+  medal : [earned name | cond [earned, "★ [name]", any, "☆ [name]"]]
+  m-time : medal [taken < par-time, "TIME"]
+  m-aim : medal [accuracy >= 60, "AIM"]
+  m-unhurt : medal [you damage-taken = 0, "UNHURT"]
+  medals : "[m-time]   [m-aim]   [m-unhurt]"
   ending : [title colour |
     rect [0, H / 2 - 54, W, 116, "#000000bb"]
     text [title, W / 2, H / 2 - 22, 22, colour]
     text ["TIME [taken clock]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
     text [again, W / 2, H / 2 + 36, 11, cream]
+    (game over = "won") [text [medals, W / 2, H / 2 + 22, 9, gold]]
   ]
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
   game over = "draw" [ending ["DRAW", gold]]
