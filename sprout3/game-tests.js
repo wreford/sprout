@@ -363,5 +363,21 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
 }
 
+// ---------------- Swarm: thousands of drones in columns, turrets with a program
+{
+  const src = fs.readFileSync(__dirname + "/examples/swarm.sp", "utf8"), g = L.makeGame(src, {});
+  const notes = g.speedNotes, line = (re) => { const n = src.split("\n").findIndex(l => re.test(l)) + 1; return notes.filter(x => x.line === n); };
+  ok("swarm: the wave is a spork kernel", line(/spork spawn/).some(n => n.word === "spork" && n.fast));
+  ok("swarm: moving every drone is one fused loop", line(/flown : game drones/).some(n => n.fast));
+  ok("swarm: drawing every drone is fused", line(/game drones each/).some(n => n.fast));
+  for (let t = 0; t < 60 * 8; t++) g.tick(1 / 60);
+  ok("swarm: the drones are kept in columns", f(g, "drones") instanceof S.ColumnCell, f(g, "drones").constructor.name);
+  ok("swarm: turrets fire and drones go down", f(g, "kills") > 50 && f(g, "turrets").part(1).field("shots") > 5, f(g, "kills"));
+  // the program is the turrets' brain: a program that never fires shoots nothing
+  const idle = L.makeGame(src.replace("fire : (t far < reach) and (t cool <= 0) and (off abs < 0.06)", "fire : false"), {});
+  for (let t = 0; t < 60 * 8; t++) idle.tick(1 / 60);
+  ok("swarm: change turret-program and the turrets change", f(idle, "kills") === 0);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
