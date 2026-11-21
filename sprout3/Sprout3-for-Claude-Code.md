@@ -9964,11 +9964,26 @@ const NET = window.NET = {
   inputs: { 1: new Map(), 2: new Map() }, past: new Map(), queue: [], codeAt: new Map(), hashes: new Map(), theirs: new Map(), applying: false,
   gameOptions() { return this.active ? { players: 2, me: this.me, random: this.random } : {}; },
 };
-function send(msg) { if (NET.dc && NET.dc.readyState === "open") NET.dc.send(JSON.stringify(msg)); }
+// the page can set its own wording (window.NET_TEXT): SilverEye's invite says SilverEye, not Sprout
+const T = Object.assign({ invite: "Play my Sprout game with me:", reply: "Here's my reply, tap it to start:", game: "this game" }, window.NET_TEXT || {});
+// a big message (a game's whole code) goes in pieces: Safari won't send one over about 64 KB
+const PIECE = 12000;
+function send(msg) {
+  if (!NET.dc || NET.dc.readyState !== "open") return;
+  const text = JSON.stringify(msg);
+  if (text.length <= PIECE) { NET.dc.send(text); return; }
+  const id = Math.random().toString(36).slice(2, 8), n = Math.ceil(text.length / PIECE);
+  for (let i = 0; i < n; i++) NET.dc.send(JSON.stringify({ t: "piece", id, i, n, d: text.slice(i * PIECE, (i + 1) * PIECE) }));
+}
+const pieces = new Map();
+function gotPiece(m) {
+  const p = pieces.get(m.id) || { n: m.n, parts: [] }; pieces.set(m.id, p); p.parts[m.i] = m.d;
+  if (p.parts.filter(x => x !== undefined).length === p.n) { pieces.delete(m.id); receive(JSON.parse(p.parts.join(""))); }
+}
 function wire(dc) {
   NET.dc = dc;
   dc.onopen = () => { if (NET.me === 1) { const seed = (Math.random() * 2 ** 31) | 0; send({ t: "start", seed, src: code }); begin(seed, code); } };
-  dc.onmessage = e => receive(JSON.parse(e.data));
+  dc.onmessage = e => { const m = JSON.parse(e.data); if (m.t === "piece") gotPiece(m); else receive(m); };
   dc.onclose = () => { if (NET.active) { NET.active = false; toast("Your friend left. You're playing alone now."); netUI(); restartAlone(); } };
 }
 function newPeer() {
@@ -9979,14 +9994,19 @@ function newPeer() {
 // the inviter: an offer, waiting for a reply
 async function invite() {
   if (NET.pc) NET.pc.close();
-  NET.me = 1; NET.id = Math.random().toString(36).slice(2, 10);
+  NET.me = 1; NET.id = Math.random().toString(36).slice(2, 10); NET.replied = false;
   const pc = NET.pc = newPeer(); wire(pc.createDataChannel("sprout", { ordered: true }));
   await pc.setLocalDescription(await pc.createOffer()); await iceDone(pc);
-  return pageUrl() + "#join=" + await pack({ v: 1, id: NET.id, sdp: pc.localDescription.sdp, src: code, ex: curEx });
+  // a short link: the game's code goes over the connection once it opens (a long link breaks in some messaging apps)
+  return pageUrl() + "#join=" + await pack({ v: 1, id: NET.id, sdp: pc.localDescription.sdp, src: code.length < 3000 ? code : undefined, ex: curEx });
 }
 async function acceptReply(text) {
   const m = /#?answer=([\w-]+)/.exec(text || ""); if (!m || !NET.pc) return false;
-  const a = await unpack(m[1]); if (a.id !== NET.id) { boxStatus("That reply is for a different invite."); return false; }
+  // a reply can reach this tab more than once (a message from another tab, and storage): take it only once
+  if (NET.replied || NET.pc.signalingState !== "have-local-offer") return true;
+  NET.replied = true;   // set at once: two copies can arrive together, before the first has finished
+  try { localStorage.removeItem("sprout-net-answer"); } catch (e) {}
+  const a = await unpack(m[1]).catch(() => null); if (!a || a.id !== NET.id) { NET.replied = false; boxStatus("That reply is for a different invite."); return false; }
   await NET.pc.setRemoteDescription({ type: "answer", sdp: a.sdp }); boxStatus("Connecting…"); return true;
 }
 // the friend: a reply to an invite
@@ -10115,20 +10135,39 @@ function netUI() {
 
 // the inviter's box
 async function openInvite() {
-  openBox(`<h3>Play with a friend</h3><p>Send an invite by text. Your friend opens it and sends you a reply; tap the reply, and you're both in the same game. No server: the two phones talk straight to each other.</p>
+  openBox(`<h3>Play ${T.game} with a friend</h3><p>1. Send your friend the invite. 2. They tap Join and send you a reply. 3. Tap their reply (or Paste reply here) and you're in. No server: the two phones talk straight to each other.</p>
     <div class="st">Making your invite…</div><div class="row"><button class="pri" id="nSend" disabled>Send invite</button><button id="nCopy" disabled>Copy</button></div>
-    <p style="margin-top:14px">Got the reply? Tap its link, or paste it here:</p><textarea id="nPaste" placeholder="Paste the reply here"></textarea>
-    <div class="row"><button id="nUse">Use reply</button><button id="nClose">Close</button></div>`);
+    <p style="margin-top:14px">Got their reply? Tap its link, or copy it and:</p>
+    <div class="row"><button class="pri" id="nPasteBtn">Paste reply</button><button id="nClose">Close</button></div>
+    <textarea id="nPaste" placeholder="…or paste the reply here"></textarea><div class="row"><button id="nUse">Use reply</button></div>`);
   $("nClose").onclick = closeBox;
   let link;
   try { link = await invite(); } catch (e) { boxStatus("This browser can't make a direct connection (" + (e.message || e) + ")."); return; }
-  boxStatus("Your invite is ready. It holds this game's code.");
+  boxStatus("Your invite is ready. Keep this open (or come back to it) for their reply.");
   $("nSend").disabled = $("nCopy").disabled = false;
-  $("nSend").onclick = () => shareLink(link, "Play Sprout with me:");
+  $("nSend").onclick = async () => { const how = await shareLink(link, T.invite); if (how !== "cancelled") boxStatus("Invite sent. When their reply comes, tap it, or copy it and tap Paste reply."); };
   $("nCopy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("Invite copied"); } catch (e) { prompt("Copy this:", link); } };
+  $("nPasteBtn").onclick = async () => {
+    let text = ""; try { text = await navigator.clipboard.readText(); } catch (e) { boxStatus("Couldn't read the clipboard here: paste the reply into the box below."); $("nPaste").focus(); return; }
+    if (!await acceptReply(text)) boxStatus("That isn't a reply link: copy the whole message your friend sent, then tap Paste reply.");
+  };
   $("nUse").onclick = async () => { if (!await acceptReply($("nPaste").value)) boxStatus("That doesn't look like a reply link."); };
   $("nPaste").oninput = async () => { if (/answer=/.test($("nPaste").value)) await acceptReply($("nPaste").value); };
 }
+// a reply opened in another tab is left in this browser's storage; the tab that made the invite takes it as soon as it
+// runs again (a tab in the background is often asleep, so a message to it can be missed)
+const ANSWER_KEY = "sprout-net-answer";
+async function takeStoredAnswer() {
+  if (!NET.pc || NET.me !== 1 || NET.active) return;
+  let a = null; try { a = JSON.parse(localStorage.getItem(ANSWER_KEY) || "null"); } catch (e) {}
+  if (!a || a.id !== NET.id) return;
+  try { localStorage.removeItem(ANSWER_KEY); } catch (e) {}
+  await acceptReply("#answer=" + a.blob);
+}
+addEventListener("storage", e => { if (e.key === ANSWER_KEY) takeStoredAnswer(); });
+addEventListener("focus", takeStoredAnswer);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) takeStoredAnswer(); });
+setInterval(takeStoredAnswer, 1500);
 // a reply opened in another tab is handed to the tab that made the invite
 const channel = window.BroadcastChannel ? new BroadcastChannel("sprout-net") : null;
 if (channel) channel.onmessage = async e => {
@@ -10143,27 +10182,31 @@ async function handleHash() {
     // this tab made the invite itself: take it here
     if (NET.pc && NET.me === 1) { await acceptReply("#answer=" + answer[1]); return; }
     const a = await unpack(answer[1]).catch(() => null);
-    openBox(`<h3>Reply received</h3><p>Sending it to your game in the other tab…</p><div class="st"></div><div class="row"><button id="nClose">Close</button></div>`);
+    if (a) try { localStorage.setItem(ANSWER_KEY, JSON.stringify({ id: a.id, blob: answer[1], at: Date.now() })); } catch (e) {}
+    openBox(`<h3>Reply received</h3><p>Now switch back to the tab where you sent the invite: it connects by itself as soon as it's open.</p>
+      <p>Playing from your home screen? Tap Copy, open the game and tap Paste reply.</p><div class="st"></div>
+      <div class="row"><button class="pri" id="nCopyReply">Copy</button><button id="nClose">Close</button></div>`);
     $("nClose").onclick = closeBox;
-    if (!channel || !a) { boxStatus("Open the game tab and paste this reply there."); return; }
-    let taken = false;
-    channel.onmessage = e => { if (e.data && e.data.t === "taken" && e.data.id === a.id) { taken = true; boxStatus("Done. Go back to the other tab: the game starts there."); } };
-    channel.postMessage({ t: "answer", id: a.id, blob: answer[1] });
-    setTimeout(() => { if (!taken) boxStatus("The game tab didn't answer. Go back to it and paste the reply into Play with a friend."); }, 2500);
+    $("nCopyReply").onclick = async () => { try { await navigator.clipboard.writeText(location.origin + location.pathname + "#answer=" + answer[1]); toast("Reply copied"); } catch (e) { prompt("Copy this:", location.origin + location.pathname + "#answer=" + answer[1]); } };
+    if (!a) { boxStatus("That reply link is broken."); return; }
+    if (channel) {
+      channel.onmessage = e => { if (e.data && e.data.t === "taken" && e.data.id === a.id) boxStatus("Done: your game took it. Go back to that tab."); };
+      channel.postMessage({ t: "answer", id: a.id, blob: answer[1] });
+    }
     return;
   }
   const offer = await unpack(join[1]).catch(() => null);
   if (!offer) { toast("That invite link is broken"); return; }
-  curEx = offer.ex || ""; dirty = true; setCode(offer.src); build(offer.src, true);
-  openBox(`<h3>You're invited</h3><p>A friend wants to play this game with you. Join, then send them the reply. The game starts when they tap it.</p>
+  if (offer.src) { curEx = offer.ex || ""; dirty = true; setCode(offer.src); build(offer.src, true); }
+  openBox(`<h3>You're invited</h3><p>A friend wants to play ${T.game} with you. Tap Join, send them the reply, then come back here: the game starts when they tap it.</p>
     <div class="st"></div><div class="row"><button class="pri" id="nJoin">Join</button><button id="nClose">Not now</button></div>`);
   $("nClose").onclick = closeBox;
   $("nJoin").onclick = async () => {
     boxStatus("Making your reply…"); $("nJoin").disabled = true;
     let link; try { link = await reply(offer); } catch (e) { boxStatus("This browser can't make a direct connection (" + (e.message || e) + ")."); return; }
     inner().querySelector(".row").innerHTML = '<button class="pri" id="nSend">Send reply</button><button id="nCopy">Copy</button><button id="nClose2">Close</button>';
-    boxStatus("Send this back to your friend. When they tap it, you're connected.");
-    $("nSend").onclick = () => shareLink(link, "Here's my reply, tap it to start:");
+    boxStatus("Send this back to your friend, then come back here: the game starts by itself when they tap it.");
+    $("nSend").onclick = () => shareLink(link, T.reply);
     $("nCopy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("Reply copied"); } catch (e) { prompt("Copy this:", link); } };
     $("nClose2").onclick = closeBox;
   };

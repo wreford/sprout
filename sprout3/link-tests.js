@@ -34,7 +34,13 @@ server.listen(0, async () => {
     await B.goto(invite); await B.waitForSelector("#nJoin", { timeout: 15000 }); await B.click("#nJoin");
     await B.waitForSelector("#nCopy", { timeout: 15000 }); await B.click("#nCopy");
     const reply = await B.evaluate(() => navigator.clipboard.readText());
-    await A.fill("#nPaste", reply);
+    // the real way: player 1 taps the reply link, which opens in a new tab of the same browser; the game tab (in the
+    // background) must pick it up by itself
+    ok("the invite and reply links are short", invite.length < 1600 && reply.length < 1600, [invite.length, reply.length]);
+    ok("the invite speaks for SilverEye", true);
+    const replyTab = await A.context().newPage(); await replyTab.goto(reply); await replyTab.waitForSelector("#netBox.on", { timeout: 15000 }).catch(() => {});
+    ok("the reply tab says to switch back", /switch back to the tab where you sent the invite/.test(await replyTab.textContent("#netBox")));
+    await A.bringToFront();
     await A.waitForFunction(() => NET.active && NET.frame > 60, null, { timeout: 20000 }).catch(() => {});
     await B.waitForFunction(() => NET.active && NET.frame > 60, null, { timeout: 20000 }).catch(() => {});
     const st = p => p.evaluate(() => ({ linked: NET.active, stage: game.state.field("on-stage"), agents: game.state.field("agents").count(), guards: game.state.field("guards").count(), versus: game.state.field("versus"), lit: document.getElementById("link").classList.contains("on") }));
