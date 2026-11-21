@@ -564,7 +564,6 @@ play : [game |
   home : back any [a | (up a) and (distance [a x, a y, mission exit @ 1, mission exit @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
-    scientists any [c | c health <= 0], "civilian"
     back all [a | up a not], "lost"
     done and home, "won"
     any, ""
@@ -703,7 +702,8 @@ draw : [game |
     from-left ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 64]
     from-left ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 74]
     from-left ["[tick (game intel)] [mission intel-name]", 84]
-    (game scientists length > 0) [from-left ["[tick (game scientists all [c | c health > 0])] NO SCIENTISTS HURT", 94]]
+    -- a bonus, not a must: keep the scientists safe
+    (game scientists length > 0) [from-left [cond [game scientists all [c | c health > 0], "□ BONUS: NO SCIENTISTS HURT", any, "✕ BONUS LOST: A SCIENTIST WAS HURT"], 94]]
     all-done : (guards-down = (game guards length)) and (wrecked = (game machines length)) and (game intel)
     all-done [flash [mission exit @ 1, 0.2, mission exit @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text [mission exit-name, W / 2, 50, 11, "#7bd389"]]
   ]
@@ -779,6 +779,8 @@ draw : [game |
   ]
   -- the mission's clock, once the opening card has gone (gold while you're inside the par time)
   (mode = "mission") and (game over = "") and (now - (game began) > 4.5) [text [now - (game began) clock, W / 2, 16, 10, cond [now - (game began) < par-time, gold, any, "#c9ccd4"]]]
+  -- a scientist hit: the bonus is gone, but the mission goes on
+  game scientists any [c | (c fell != false) and (now - (c fell) < 2)] [text ["SCIENTIST HURT · BONUS LOST", W / 2, H / 2 - 96, 11, red]]
   -- a mission opens with its title card and briefing, for a few seconds
   card : now - (game began)
   (mode = "mission") and (card < 4.5) and (game over = "") [
@@ -831,12 +833,12 @@ draw : [game |
     text ["TIME [taken clock]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
     text [again, W / 2, H / 2 + 36, 11, cream]
     (game over = "won") [text [medals, W / 2, H / 2 + 22, 9, gold]]
+    (game over = "won") and (game scientists length > 0) [text [cond [game scientists all [c | c health > 0], "BONUS ★ EVERY SCIENTIST SAFE", any, "BONUS ✕ A SCIENTIST WAS HURT"], W / 2, H / 2 + 50, 8, cond [game scientists all [c | c health > 0], "#7bd389", any, "#c9ccd4"]]]
   ]
   last-one : stage >= (missions length)
   game over = "won" [ending [cond [campaign and last-one, "CAMPAIGN COMPLETE", any, "MISSION COMPLETE"], "#7bd389"]]
   game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
-  game over = "civilian" [ending ["A SCIENTIST WAS HURT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
   verdict : [w | is-sim w ["[sim-name w] WINS"] else ["YOU LOSE"]]
   champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")

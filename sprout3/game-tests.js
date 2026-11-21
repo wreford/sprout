@@ -581,12 +581,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
   // scientists: they walk their rounds, freeze when the alarm is up, and hurting one fails the mission
   { const sc = L.makeGame(src, {}); sc.tick(1 / 60, pad({}));
-    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "worker") && sc.draw().some(x => x[0] === "text" && /NO SCIENTISTS HURT/.test(x[1][0])));
+    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "worker") && sc.draw().some(x => x[0] === "text" && /BONUS: NO SCIENTISTS HURT/.test(x[1][0])));
     const x0 = f(sc, "scientists").part(1).field("x"); for (let t = 0; t < 60; t++) sc.tick(1 / 60, pad({}));
     ok("silvereye: a scientist walks their rounds", f(sc, "scientists").part(1).field("x") > x0 + 0.3);
     put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
-    for (let t = 0; t < 30 && f(sc, "over") === ""; t++) sc.tick(1 / 60, pad({ fire: true }));
-    ok("silvereye: shooting a scientist fails the mission", f(sc, "over") === "civilian" && sc.draw().some(x => x[0] === "text" && x[1][0] === "A SCIENTIST WAS HURT"), [f(sc, "over"), before]); }
+    for (let t = 0; t < 30 && f(sc, "scientists").part(1).field("health") > 0; t++) sc.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: hurting a scientist loses the bonus, but the mission goes on", f(sc, "over") === "" && f(sc, "scientists").part(1).field("health") <= 0 && sc.draw().some(x => x[0] === "text" && x[1][0] === "SCIENTIST HURT · BONUS LOST"), [f(sc, "over"), before]); }
   { const ex = L.makeGame(src, {}); ex.tick(1 / 60, pad({})); put(ex, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 90 && !f(ex, "guards").part(3).field("alert"); t++) ex.tick(1 / 60, pad({}));
     const mark = ex.draw().find(x => x[0] === "text" && x[1][0] === "!");
