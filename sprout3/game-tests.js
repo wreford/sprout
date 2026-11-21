@@ -515,6 +515,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     tb.tick(1 / 60, pad({})); nt.tick(1 / 60, pad({}));
     for (let t = 0; t < 20; t++) { tb.tick(1 / 60, pad({ walk: 1 })); nt.tick(1 / 60, pad({ walk: 1 })); }
     ok("silvereye: turbo moves you half as fast again", Math.abs((agent(tb, 1).field("x") - 2.5) / (agent(nt, 1).field("x") - 2.5) - 1.5) < 0.05); }
+  { const sa = L.makeGame(src.replace(/^sight-always : true/m, "sight-always : false"), {}); sa.tick(1 / 60, pad({}));
+    const sightLines = () => sa.draw().filter(x => x[0] === "line" && Math.abs(x[1][1] - x[1][3]) < 1e-9 && x[1][1] === 240 && Math.abs(x[1][0] - 180) < 8).length;
+    const before = sightLines(); sa.tick(1 / 60, pad({ zoom: true }));
+    ok("silvereye: with the sight set to aiming, it shows only while you aim", before === 0 && sightLines() === 2, [before, sightLines()]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

@@ -54,6 +54,7 @@ simulants : 2              -- simulants in a combat sim, and joining a duel
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
+sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
 walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
@@ -571,10 +572,12 @@ draw : [game |
   miss [flash [you angle cos * wall-at + (you x), 1.4, you angle sin * wall-at + (you y), 0.05, "#fff2b3"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
-  line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
-  line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
-  line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
-  line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+  sight-always or (you zoomed) [
+    line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
+    line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
+    line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
+    line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+  ]
   (now - (you hit-at) < 0.15) [
     line [W / 2 - 10, H / 2 - 10, W / 2 - 5, H / 2 - 5, cream], line [W / 2 + 10, H / 2 - 10, W / 2 + 5, H / 2 - 5, cream]
     line [W / 2 - 10, H / 2 + 10, W / 2 - 5, H / 2 + 5, cream], line [W / 2 + 10, H / 2 + 10, W / 2 + 5, H / 2 + 5, cream]

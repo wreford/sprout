@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 467 pass, 303 for the language and 164 for the games.
+- **Tests:** 468 pass, 303 for the language and 165 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (164)
+node game-tests.js    # game tests (165)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 467 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 468 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4621,6 +4621,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     tb.tick(1 / 60, pad({})); nt.tick(1 / 60, pad({}));
     for (let t = 0; t < 20; t++) { tb.tick(1 / 60, pad({ walk: 1 })); nt.tick(1 / 60, pad({ walk: 1 })); }
     ok("silvereye: turbo moves you half as fast again", Math.abs((agent(tb, 1).field("x") - 2.5) / (agent(nt, 1).field("x") - 2.5) - 1.5) < 0.05); }
+  { const sa = L.makeGame(src.replace(/^sight-always : true/m, "sight-always : false"), {}); sa.tick(1 / 60, pad({}));
+    const sightLines = () => sa.draw().filter(x => x[0] === "line" && Math.abs(x[1][1] - x[1][3]) < 1e-9 && x[1][1] === 240 && Math.abs(x[1][0] - 180) < 8).length;
+    const before = sightLines(); sa.tick(1 / 60, pad({ zoom: true }));
+    ok("silvereye: with the sight set to aiming, it shows only while you aim", before === 0 && sightLines() === 2, [before, sightLines()]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10706,6 +10710,7 @@ simulants : 2              -- simulants in a combat sim, and joining a duel
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
+sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
 walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
@@ -11223,10 +11228,12 @@ draw : [game |
   miss [flash [you angle cos * wall-at + (you x), 1.4, you angle sin * wall-at + (you y), 0.05, "#fff2b3"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
-  line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
-  line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
-  line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
-  line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+  sight-always or (you zoomed) [
+    line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
+    line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
+    line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
+    line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+  ]
   (now - (you hit-at) < 0.15) [
     line [W / 2 - 10, H / 2 - 10, W / 2 - 5, H / 2 - 5, cream], line [W / 2 + 10, H / 2 - 10, W / 2 + 5, H / 2 - 5, cream]
     line [W / 2 - 10, H / 2 + 10, W / 2 - 5, H / 2 + 5, cream], line [W / 2 + 10, H / 2 + 10, W / 2 + 5, H / 2 + 5, cream]
