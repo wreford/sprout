@@ -139,7 +139,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -356,6 +356,8 @@ play : [game |
       turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
       hit-at : cond [(can-shoot a) and (a aimed != false), now, any, a hit-at]
+      shots-fired : a shots-fired + (cond [can-shoot a, 1, any, 0])
+      shots-hit : a shots-hit + (cond [(can-shoot a) and (a aimed != false), 1, any, 0])
       carried : cond [can-drop a, a carried - 1, any, a carried]
       -- a clip runs out, or you ask: a reload takes a moment, then fills the clip from your spare shots (simulants never run dry)
       clip : cond [can-shoot a, a clip - 1, (a reloading > 0) and (a reloading <= dt), a clip + (clip-size - (a clip) min (a ammo)), any, a clip]
@@ -372,7 +374,7 @@ play : [game |
     due : (game versus) and ((up a) not) and (now - (a down-at else now) >= respawn-after)
     others : scored keep [o | o id != (a id)]
     spot : spawns smallest-by [s | 0 - (others collect [o | distance [s @ 1, s @ 2, o x, o y]] sum)]
-    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov]] else [a]
+    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look, bot : a bot, fov : a fov, shots-fired : a shots-fired, shots-hit : a shots-hit]] else [a]
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
@@ -522,7 +524,19 @@ draw : [game |
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
   (now < 5) and (game over = "") [text [hint, W / 2, H - 40, 10, "#f4f1eacc"]]
   again : cond [game shell, "press A to go again", any, "tap to go again"]
-  ending : [title colour | rect [0, H / 2 - 44, W, 88, "#000000aa"], text [title, W / 2, H / 2 - 8, 22, colour], text [again, W / 2, H / 2 + 22, 11, cream]]
+  -- the end: what happened, and how you did (time, accuracy, takedowns)
+  taken : game over-at
+  mins : taken / 60 floor
+  secs : taken % 60 floor
+  two-digits : cond [secs < 10, "0[secs]", any, "[secs]"]
+  accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
+  downs : cond [game versus, you kills, any, game guards count [g | g health <= 0]]
+  ending : [title colour |
+    rect [0, H / 2 - 54, W, 116, "#000000bb"]
+    text [title, W / 2, H / 2 - 22, 22, colour]
+    text ["TIME [mins]:[two-digits]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
+    text [again, W / 2, H / 2 + 36, 11, cream]
+  ]
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]

@@ -432,6 +432,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const ace = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 3"), {}), rookie = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 1"), {});
   ace.tick(1 / 60); rookie.tick(1 / 60);
   ok("silvereye: an ace mission has tougher guards, a rookie one no generators", f(ace, "guards").part(1).field("health") === 140 && f(rookie, "guards").part(1).field("health") === 70 && f(rookie, "machines").count() === 0 && f(ace, "machines").count() === 2);
+  // the end screen: time, accuracy and takedowns
+  { const e = L.makeGame(src, {}); e.tick(1 / 60, pad({})); const m3 = new Map(S.fieldsOf(e.state)); m3.set("over", "won"); m3.set("over-at", 75.4); e.setState(S.valueCellOf([], m3));
+    ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
