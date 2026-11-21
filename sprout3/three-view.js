@@ -75,9 +75,9 @@ export function makeView(canvas, base) {
     if (!pool) { pool = []; pools.set(name + (parent === holdGroup ? "@hold" : ""), pool); }
     while (pool.length <= k) {
       const root = new THREE.Group(), body = SkeletonUtils.clone(a.scene);
-      // a model in the world stands on the floor at its height; one held is centred and measured by its longest side
+      // a model in the world stands on the floor at its height, centred over where it is put (some files sit off their origin); one held is centred and measured by its longest side
       if (parent === holdGroup) { body.scale.setScalar(1 / a.longest); body.position.copy(a.centre).multiplyScalar(-1 / a.longest); }
-      else { body.scale.setScalar(1 / a.height); body.position.y = -a.floor / a.height; }
+      else { body.scale.setScalar(1 / a.height); body.position.set(-a.centre.x / a.height, -a.floor / a.height, -a.centre.z / a.height); }
       root.add(body); parent.add(root);
       const mixer = a.clips.length ? new THREE.AnimationMixer(body) : null;
       pool.push({ root, mixer, actions: new Map(), current: null });

@@ -361,6 +361,20 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("bunker 3d: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
+  // turrets: set one down and its program takes the guards on
+  const sentry = (code) => {
+    const t = L.makeGame(code, {}), m = new Map(S.fieldsOf(t.state));
+    m.set("hero", S.valueCellOf([], new Map(Object.entries({ x: 9.5, y: 7.5, angle: 0, health: 100 })))); t.setState(S.valueCellOf([], m));
+    for (let k = 0; k < 2; k++) t.tick(1 / 60, held(["t"]));
+    for (let k = 0; k < 300; k++) t.tick(1 / 60);
+    return t;
+  };
+  const s1 = sentry(src);
+  ok("bunker 3d: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
+  ok("bunker 3d: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
+  ok("bunker 3d: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
+  const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
+  ok("bunker 3d: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program
