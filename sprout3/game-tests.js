@@ -618,6 +618,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: two takedowns in quick succession are a double", agent(sk, 1).field("streak") >= 2 && agent(sk, 1).field("kills") >= 2, [agent(sk, 1).field("streak"), agent(sk, 1).field("kills")]); }
   { const mt = L.makeGame(src, {}); for (let t = 0; t < 60 * 6; t++) mt.tick(1 / 60, pad({}));
     ok("silvereye: a mission shows its clock once the card has gone", mt.draw().some(x => x[0] === "text" && x[1][0] === "0:05")); }
+  // an alert guard faces you, not away from you
+  { const fc = L.makeGame(src, {}); fc.tick(1 / 60, pad({})); put(fc, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 120 && !f(fc, "guards").part(3).field("alert"); t++) fc.tick(1 / 60, pad({}));
+    fc.tick(1 / 60, pad({})); const g3 = f(fc, "guards").part(3), toYou = Math.atan2(7.5 - g3.field("y"), 9.5 - g3.field("x"));
+    const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+    ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

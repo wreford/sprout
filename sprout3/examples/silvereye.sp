@@ -399,6 +399,7 @@ play : [game |
       -- each guard goes for the nearest player still standing
       hero : ready keep up smallest-by [a | distance [a x, a y, g x, g y]] else [ready @ 1]
       gd : distance [g x, g y, hero x, hero y]
+      -- the way from this guard to you (an alert guard turns to face it)
       facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
       sees : (up hero) and (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, hero x, hero y])
@@ -418,7 +419,7 @@ play : [game |
       back-x : cond [arrived, g to-x, any, g home-x]
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
-        x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
         alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt

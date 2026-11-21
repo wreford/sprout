@@ -155,7 +155,7 @@ play : [game |
       back-x : cond [arrived, g to-x, any, g home-x]
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
-        x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
         wait : cond [fires, 0.9, any, g wait - dt]
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
         fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035)))

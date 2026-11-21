@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (190)
+node game-tests.js    # game tests (191)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 493 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 494 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4653,6 +4653,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: two takedowns in quick succession are a double", agent(sk, 1).field("streak") >= 2 && agent(sk, 1).field("kills") >= 2, [agent(sk, 1).field("streak"), agent(sk, 1).field("kills")]); }
   { const mt = L.makeGame(src, {}); for (let t = 0; t < 60 * 6; t++) mt.tick(1 / 60, pad({}));
     ok("silvereye: a mission shows its clock once the card has gone", mt.draw().some(x => x[0] === "text" && x[1][0] === "0:05")); }
+  // an alert guard faces you, not away from you
+  { const fc = L.makeGame(src, {}); fc.tick(1 / 60, pad({})); put(fc, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 120 && !f(fc, "guards").part(3).field("alert"); t++) fc.tick(1 / 60, pad({}));
+    fc.tick(1 / 60, pad({})); const g3 = f(fc, "guards").part(3), toYou = Math.atan2(7.5 - g3.field("y"), 9.5 - g3.field("x"));
+    const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+    ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10397,7 +10403,7 @@ play : [game |
       back-x : cond [arrived, g to-x, any, g home-x]
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
-        x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
         wait : cond [fires, 0.9, any, g wait - dt]
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
         fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035)))
@@ -11100,6 +11106,7 @@ play : [game |
       -- each guard goes for the nearest player still standing
       hero : ready keep up smallest-by [a | distance [a x, a y, g x, g y]] else [ready @ 1]
       gd : distance [g x, g y, hero x, hero y]
+      -- the way from this guard to you (an alert guard turns to face it)
       facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
       sees : (up hero) and (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, hero x, hero y])
@@ -11119,7 +11126,7 @@ play : [game |
       back-x : cond [arrived, g to-x, any, g home-x]
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
-        x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
         alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
