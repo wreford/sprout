@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (179)
+node game-tests.js    # game tests (182)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 482 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 485 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4611,6 +4611,14 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); const v0 = fl.draw().find(x => x[0] === "view")[1];
     for (let t = 0; t < 200; t++) fl.tick(1 / 60, pad({})); const v1 = fl.draw().find(x => x[0] === "view")[1];
     ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
+  // scientists: they walk their rounds, freeze when the alarm is up, and hurting one fails the mission
+  { const sc = L.makeGame(src, {}); sc.tick(1 / 60, pad({}));
+    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "worker") && sc.draw().some(x => x[0] === "text" && /NO SCIENTISTS HURT/.test(x[1][0])));
+    const x0 = f(sc, "scientists").part(1).field("x"); for (let t = 0; t < 60; t++) sc.tick(1 / 60, pad({}));
+    ok("silvereye: a scientist walks their rounds", f(sc, "scientists").part(1).field("x") > x0 + 0.3);
+    put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
+    for (let t = 0; t < 30 && f(sc, "over") === ""; t++) sc.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: shooting a scientist fails the mission", f(sc, "over") === "civilian" && sc.draw().some(x => x[0] === "text" && x[1][0] === "A SCIENTIST WAS HURT"), [f(sc, "over"), before]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10779,6 +10787,7 @@ missions : [
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
     intel : [14.5, 12.5], intel-name : "INTEL CASE"
+    scientists : [[1, 8.5, 1.5, 14.5, 1.5], [2, 1.5, 13.5, 10.5, 13.5]]
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
   [
@@ -10787,6 +10796,7 @@ missions : [
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
     intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
+    scientists : [[1, 2.5, 7.5, 13.5, 7.5]]
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
   ]
   [
@@ -10795,6 +10805,7 @@ missions : [
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
     intel : [8.0, 7.5], intel-name : "CODEBOOK"
+    scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     brief : ["A relay station: a ring round the transmitter hall.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
   ]
 ]
@@ -10884,6 +10895,8 @@ styles : ["hunter", "flanker", "camper"]
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
 -- where players and simulants start and come back: open floor in both maps, far corners first
+-- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
+scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -10898,6 +10911,7 @@ start :
   mines : []
   turrets : []
   pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : mission intel @ 1, y : mission intel @ 2, back-at : 0]]])
+  scientists : mode != "mission" [[]] else [mission scientists collect [[k, sx, sy, tx, ty] | scientist [k, sx, sy, tx, ty]]]
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
   match-start : 0
@@ -10982,7 +10996,7 @@ play : [game |
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]])
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]])
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
@@ -11093,6 +11107,22 @@ play : [game |
   standing : hit-turrets keep [t | t health > 0]
   gone-turrets : hit-turrets keep [t | t health <= 0]
   (gone-turrets length > 0) [sound "impact"]
+  -- scientists: they walk their rounds, freeze when the alarm is up, and a shot or a blast is the end of them
+  panic : game guards any [g | (g alert) and (g health > 0)]
+  scientists : game scientists collect [c |
+    hurt : power ["scientist [c id]", 100, 100] + (zapped "scientist [c id]" * 100) + (caught [c x, c y] length * 100)
+    gap : distance [c x, c y, c to-x, c to-y]
+    head : c to-y - (c y) atan2 (c to-x - (c x))
+    walking : (c health > 0) and (panic not) and (gap > 0.2)
+    went : cond [walking, slide [c x, c y, head cos * 0.5 * dt, head sin * 0.5 * dt], any, [x : c x, y : c y]]
+    turn-back : gap <= 0.2
+    c with [
+      x : went x, y : went y, angle : cond [walking, head, any, c angle], health : c health - hurt max 0
+      to-x : cond [turn-back, c home-x, any, c to-x], to-y : cond [turn-back, c home-y, any, c to-y]
+      home-x : cond [turn-back, c to-x, any, c home-x], home-y : cond [turn-back, c to-y, any, c home-y]
+      fell : cond [(c health - hurt <= 0) and (c fell = false), now, any, c fell]
+    ]
+  ]
   -- the generators: shots and blasts wreck them
   machines : game machines collect [m |
     n : power ["machine [m id]", 25, 50] + (caught [m x, m y] length * 100)
@@ -11171,12 +11201,13 @@ play : [game |
   home : back any [a | (up a) and (distance [a x, a y, mission exit @ 1, mission exit @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
+    scientists any [c | c health <= 0], "civilian"
     back all [a | up a not], "lost"
     done and home, "won"
     any, ""
   ]
   game with [
-    agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
+    scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
     over : over, over-at : now
@@ -11253,6 +11284,11 @@ draw : [game |
     time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
     model ["soldier", g x, 0, g y, g angle, 1.8, clip, time]
   ]
+  -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
+  game scientists each [c |
+    clip : cond [c health <= 0, "Man_Death", alarm, "Man_Idle", any, "Man_Walk"]
+    model ["worker", c x, 0, c y, c angle, 1.7, clip, cond [c health <= 0, now - (c fell else now), any, now]]
+  ]
   -- the other player
   rivals each [r |
     -- simulants are machines, so they look like one: Quaternius's gunner robot
@@ -11289,6 +11325,7 @@ draw : [game |
     from-left ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 64]
     from-left ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 74]
     from-left ["[tick (game intel)] [mission intel-name]", 84]
+    (game scientists length > 0) [from-left ["[tick (game scientists all [c | c health > 0])] NO SCIENTISTS HURT", 94]]
     all-done : (guards-down = (game guards length)) and (wrecked = (game machines length)) and (game intel)
     all-done [flash [mission exit @ 1, 0.2, mission exit @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text [mission exit-name, W / 2, 50, 11, "#7bd389"]]
   ]
@@ -11325,6 +11362,7 @@ draw : [game |
   game guards keep [g | g health > 0] each [g | circle [g x * 3 + 6, g y * 3 + 6, 1.4, red]]
   rivals keep up each [r | circle [r x * 3 + 6, r y * 3 + 6, 1.6, red]]
   game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
+  game scientists keep [c | c health > 0] each [c | circle [c x * 3 + 6, c y * 3 + 6, 1.2, "#bfe3ff"]]
   game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
   -- health and armour show when you're hurt (and stay while you're low), then get out of the way
@@ -11399,6 +11437,7 @@ draw : [game |
   game over = "won" [ending [cond [campaign and last-one, "CAMPAIGN COMPLETE", any, "MISSION COMPLETE"], "#7bd389"]]
   game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
+  game over = "civilian" [ending ["A SCIENTIST WAS HURT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
   verdict : [w | is-sim w ["SIM [w] WINS"] else ["YOU LOSE"]]
   champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")
