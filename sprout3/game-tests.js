@@ -682,6 +682,24 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 5 && agent(both, 3).field("bot") === true);
   ok("silvereye: simulants are drawn as robots, a player as their look (the operative by default)", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 3 && both.draw().filter(x => x[0] === "model" && x[1][0] === "hooded_adventurer").length === 1);
+  // the console starts a two-phone duel with mode "duel": the second player must get a body (they once didn't)
+  { const dd = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "duel"'), { players: 2, me: 1 }); dd.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a duel from the console has both players in it, and simulants", f(dd, "agents").count() === 5 && agent(dd, 2).field("bot") !== true && f(dd, "versus") === true && f(dd, "guards").count() === 0);
+    put(dd, 0, { x: 8.5, y: 7.5, angle: 0 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 30; t++) dd.tick(1 / 60, pad({}), pad({ fire: true }));
+    ok("silvereye: and the second player's shots land", agent(dd, 1).field("health") < 100); }
+  // the compound as an arena: out in the open, for a combat sim or a duel
+  { const yardSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^arena : "lab"/m, 'arena : "compound"').replace(/^simulants : 3/m, "simulants : 7");
+    const yd = L.makeGame(yardSrc, {}); yd.tick(1 / 60, pad({}));
+    const rows = (src.match(/^compound : \[\n([\s\S]*?)\n\]/m)[1]).split("\n").map(l => l.trim().replace(/"/g, ""));
+    const onOpen = (x, y) => ".,".includes(rows[Math.floor(y)][Math.floor(x)]);
+    ok("silvereye: a combat sim in the compound starts everyone on open ground, apart", S.partsOf(f(yd, "agents")).every(a => onOpen(a.field("x"), a.field("y"))) && new Set(S.partsOf(f(yd, "agents")).map(a => a.field("x") + "," + a.field("y"))).size === 8);
+    ok("silvereye: its pickups lie on open ground too", S.partsOf(f(yd, "pickups")).every(p => onOpen(p.field("x"), p.field("y"))) && f(yd, "pickups").count() === 7);
+    ok("silvereye: and it's drawn out under the sky", yd.draw().some(x => x[0] === "sky") && yd.draw().some(x => x[0] === "model" && x[1][0] === "tree_pine"));
+    for (let t = 0; t < 300; t++) yd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
+    ok("silvereye: and the simulants play there", S.partsOf(f(yd, "agents")).filter(a => a.field("bot")).every(a => onOpen(a.field("x"), a.field("y")))); }
+  { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 21.5 && agent(dy, 2).field("y") === 1.5); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));

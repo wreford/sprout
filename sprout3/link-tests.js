@@ -26,14 +26,18 @@ server.listen(0, async () => {
       await p.addInitScript(coop => { navigator.share = undefined; if (coop) localStorage.setItem("silvereye.settings", JSON.stringify({ two: "coop" })); }, coop);
       return p;
     };
+    // link two phones: A invites, B joins and replies; returns the two links
+    const link = async (A, B) => {
+      await A.goto(url); await A.waitForFunction(() => window.NET && typeof game === "object" && game, null, { timeout: 15000 });
+      await A.waitForTimeout(2700); await A.click("#title");
+      await A.click("#titleMenu button[data-do=duel]"); await A.waitForSelector("#nCopy:not([disabled])", { timeout: 15000 }); await A.click("#nCopy");
+      const invite = await A.evaluate(() => navigator.clipboard.readText());
+      await B.goto(invite); await B.waitForSelector("#nJoin", { timeout: 15000 }); await B.click("#nJoin");
+      await B.waitForSelector("#nCopy", { timeout: 15000 }); await B.click("#nCopy");
+      return [invite, await B.evaluate(() => navigator.clipboard.readText())];
+    };
     const A = await phone(true), B = await phone(false);
-    await A.goto(url); await A.waitForFunction(() => window.NET && typeof game === "object" && game, null, { timeout: 15000 });
-    await A.waitForTimeout(2700); await A.click("#title");
-    await A.click("#titleMenu button[data-do=duel]"); await A.waitForSelector("#nCopy:not([disabled])", { timeout: 15000 }); await A.click("#nCopy");
-    const invite = await A.evaluate(() => navigator.clipboard.readText());
-    await B.goto(invite); await B.waitForSelector("#nJoin", { timeout: 15000 }); await B.click("#nJoin");
-    await B.waitForSelector("#nCopy", { timeout: 15000 }); await B.click("#nCopy");
-    const reply = await B.evaluate(() => navigator.clipboard.readText());
+    const [invite, reply] = await link(A, B);
     // the real way: player 1 taps the reply link, which opens in a new tab of the same browser; the game tab (in the
     // background) must pick it up by itself
     ok("the invite and reply links are short", invite.length < 1600 && reply.length < 1600, [invite.length, reply.length]);
@@ -59,6 +63,18 @@ server.listen(0, async () => {
     const fa = await A.evaluate(() => NET.frame), fb = await B.evaluate(() => NET.frame); await A.waitForTimeout(1000);
     ok("still running in step afterwards", (await A.evaluate(() => NET.frame)) > fa && (await B.evaluate(() => NET.frame)) > fb);
     ok("no errors on either phone", A.errors.length === 0 && B.errors.length === 0, A.errors.concat(B.errors));
+    // and a duel: both players get a body (they once didn't), with the simulants, and the two phones agree
+    await A.context().close(); await B.context().close();   // software 3D is slow: two phones at a time
+    const C = await phone(false), D = await phone(false);
+    const [, reply2] = await link(C, D);
+    await C.bringToFront(); await C.evaluate(r => { const box = document.getElementById("nPaste"); box.value = r; document.getElementById("nUse").click(); }, reply2);
+    await C.waitForFunction(() => NET.active && NET.frame > 60, null, { timeout: 20000 }).catch(() => {});
+    await D.waitForFunction(() => NET.active && NET.frame > 60, null, { timeout: 20000 }).catch(() => {});
+    const dc = await st(C), dd = await st(D);
+    ok("two phones link up in a duel: both players there, and the simulants", dc.linked && dd.linked && dc.versus && dc.agents === 5 && dd.agents === 5 && dc.guards === 0, [dc, dd]);
+    const where = p => p.evaluate(() => { const a = game.state.field("agents"); return [1, 2].map(i => a.part(i).field("x").toFixed(3)).join(","); });
+    const fc = await C.evaluate(() => NET.frame); await D.waitForFunction(f => NET.frame >= f, fc, { timeout: 10000 }).catch(() => {});
+    ok("and both phones see the same duel", await C.evaluate(() => NET.active) && (await D.evaluate(() => NET.active)) && C.errors.length === 0 && D.errors.length === 0, C.errors.concat(D.errors));
   } catch (e) { fail++; console.log("FAIL the link tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");

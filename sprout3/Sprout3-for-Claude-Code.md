@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (206)
+node game-tests.js    # game tests (213)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 509 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 516 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4717,6 +4717,24 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 5 && agent(both, 3).field("bot") === true);
   ok("silvereye: simulants are drawn as robots, a player as their look (the operative by default)", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 3 && both.draw().filter(x => x[0] === "model" && x[1][0] === "hooded_adventurer").length === 1);
+  // the console starts a two-phone duel with mode "duel": the second player must get a body (they once didn't)
+  { const dd = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "duel"'), { players: 2, me: 1 }); dd.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a duel from the console has both players in it, and simulants", f(dd, "agents").count() === 5 && agent(dd, 2).field("bot") !== true && f(dd, "versus") === true && f(dd, "guards").count() === 0);
+    put(dd, 0, { x: 8.5, y: 7.5, angle: 0 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 30; t++) dd.tick(1 / 60, pad({}), pad({ fire: true }));
+    ok("silvereye: and the second player's shots land", agent(dd, 1).field("health") < 100); }
+  // the compound as an arena: out in the open, for a combat sim or a duel
+  { const yardSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^arena : "lab"/m, 'arena : "compound"').replace(/^simulants : 3/m, "simulants : 7");
+    const yd = L.makeGame(yardSrc, {}); yd.tick(1 / 60, pad({}));
+    const rows = (src.match(/^compound : \[\n([\s\S]*?)\n\]/m)[1]).split("\n").map(l => l.trim().replace(/"/g, ""));
+    const onOpen = (x, y) => ".,".includes(rows[Math.floor(y)][Math.floor(x)]);
+    ok("silvereye: a combat sim in the compound starts everyone on open ground, apart", S.partsOf(f(yd, "agents")).every(a => onOpen(a.field("x"), a.field("y"))) && new Set(S.partsOf(f(yd, "agents")).map(a => a.field("x") + "," + a.field("y"))).size === 8);
+    ok("silvereye: its pickups lie on open ground too", S.partsOf(f(yd, "pickups")).every(p => onOpen(p.field("x"), p.field("y"))) && f(yd, "pickups").count() === 7);
+    ok("silvereye: and it's drawn out under the sky", yd.draw().some(x => x[0] === "sky") && yd.draw().some(x => x[0] === "model" && x[1][0] === "tree_pine"));
+    for (let t = 0; t < 300; t++) yd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
+    ok("silvereye: and the simulants play there", S.partsOf(f(yd, "agents")).filter(a => a.field("bot")).every(a => onOpen(a.field("x"), a.field("y")))); }
+  { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 21.5 && agent(dy, 2).field("y") === 1.5); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));
@@ -10857,7 +10875,7 @@ Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (
 -- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
 
 -- two maps of our own: the lab (missions and matches) and the depot (matches): rows of shelving round a loading bay
-arena : "lab"              -- "lab" or "depot", for a combat sim or a duel; a mission is always in the lab
+arena : "lab"              -- "lab", "depot" or "compound" (out in the open), for a combat sim or a duel
 two-phones : "duel"        -- what two phones play: "duel" (against each other) or "coop" (the mission, together)
 depot : [
   "################"
@@ -10989,6 +11007,9 @@ lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["
 depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9], ["delivery_van", 12.4, 14.35, 0, 1.7]]
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
 compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5, 0.6, 4.2], ["tree_oak", 1.8, 10.5, 0.3, 3], ["tree_oak", 22.2, 21.4, 1.1, 3], ["tree_pine", 15.6, 22.2, 0.2, 3.2], ["tree_pine", 10.5, 1.6, 0.9, 3.1], ["tree_oak", 9.0, 13.2, 2.1, 2.8], ["bush", 13.6, 11.2, 0, 0.9], ["bush", 4.2, 16.4, 0.7, 1], ["bush", 21.4, 15.3, 1.3, 0.9], ["rock_large", 18.2, 9.4, 0.5, 1.1], ["rock_large", 3.2, 19.6, 2.2, 0.9], ["delivery_van", 9.6, 22.3, 0, 1.7], ["crate", 16.4, 3.6, 0.4, 0.8], ["barrels", 22.3, 1.7, 0.2, 0.9], ["crate", 14.2, 19.4, 1.1, 0.8], ["barrels", 1.7, 22.3, 0.8, 0.9], ["generator", 10.5, 4.6, 1.6, 1.0]]
+-- the compound's pickups (the heavy blaster waits in the HQ), for its mission and for matches out in the yard
+compound-spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]]
+compound-heavy : [5.5, 5.5]
 missions : [
   [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
@@ -11026,14 +11047,17 @@ missions : [
     targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS", target-one : "RADIO MAST"
     intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
     scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
-    spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]], heavy : [5.5, 5.5]
+    spots : compound-spots, heavy : compound-heavy
     brief : ["A walled compound in the open: ten guards in the yard.", "Wreck both radio masts, take the flight plans", "from the HQ, and get out through the gate."]
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
 in-depot : (arena = "depot") and (mode != "mission")
-level : cond [mode = "mission", mission map, in-depot, depot, any, lab]
-props : cond [mode = "mission", mission props, in-depot, depot-props, any, lab-props]
+in-yard : (arena = "compound") and (mode != "mission")
+level : cond [mode = "mission", mission map, in-depot, depot, in-yard, compound, any, lab]
+props : cond [mode = "mission", mission props, in-depot, depot-props, in-yard, compound-props, any, lab-props]
+-- how a place looks (walls, floor, light, air, sky): a match borrows the look of the mission played on the same map
+scene : cond [mode = "mission", mission, in-depot, missions @ 2, in-yard, missions @ 4, any, missions @ 1]
 solid : [cx cy |
   row : level @ (cy floor + 1)
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
@@ -11161,19 +11185,22 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 -- where players and simulants start and come back: open floor in both maps, far corners first
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
+-- where players start and come back in a match: indoors, and out in the yard
+yard-spawns : [[2.5, 21.5, -0.8], [21.5, 1.5, 2.4], [21.5, 21.5, -2.4], [1.5, 1.5, 0.8], [12.5, 12.5, 0], [17.5, 8.5, 3.1], [6.5, 9.5, 0], [10.5, 19.5, -1.6], [12.5, 1.5, 1.6], [1.5, 15.5, 0], [22.5, 12.5, 3.1], [6.5, 5.5, 0], [17.5, 16.5, 3.1], [11.5, 4.5, 1.6], [19.5, 3.5, 1.6]]
+room-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
+spawns : cond [in-yard, yard-spawns, any, room-spawns]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | (ch = ".") or (ch = ",")] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0, streak : 0, streak-at : -10]]
-here-spots : cond [mode = "mission", mission spots else pickup-spots, any, pickup-spots]
-here-heavy : cond [mode = "mission", mission heavy else heavy-spot, any, heavy-spot]
+here-spots : cond [mode = "mission", mission spots else pickup-spots, in-yard, compound-spots, any, pickup-spots]
+here-heavy : cond [mode = "mission", mission heavy else heavy-spot, in-yard, compound-heavy, any, heavy-spot]
 pickups-fresh : here-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : here-heavy @ 1, y : here-heavy @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 -- the Warden: a mech in the relay's hall, with four times the health of a guard, who hits twice as hard
 wardens : cond [(mode = "mission") and (mission has-field "warden"), [mission warden] collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty] with [boss : true, health : guard-health * 4]], any, []]
 start :
-  agents : cond [mode = "mission", [agent [1, mission spawn-at @ 1, mission spawn-at @ 2, mission spawn-at @ 3]], any, [agent [1, 2.5, 2.5, 0.6]]] .. (cond [mode = "sim", sims 2, any, []])
+  agents : cond [mode = "mission", [agent [1, mission spawn-at @ 1, mission spawn-at @ 2, mission spawn-at @ 3]], any, [agent [1, spawn-of 1 @ 1, spawn-of 1 @ 2, spawn-of 1 @ 3]]] .. (cond [mode = "sim", sims 2, any, []])
   -- anything but a mission is a match: no guards, no objectives (a duel waits here for the second phone)
   guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]] .. wardens]
   mines : []
@@ -11193,8 +11220,8 @@ start :
   shell : false
   clock : 0
   dt : 0
--- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], feed : [], blasts : [], over : "", versus : true]
+-- two players: the arena with no guards, one player in each far corner, and the simulants if there are any
+duel : [agents : [1, 2] collect [k | at : spawn-of k, agent [k, at @ 1, at @ 2, at @ 3]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], feed : [], blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -11533,7 +11560,8 @@ update : [game |
   coop : two-phones = "coop"
   g : cond [
     two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, mission spawn-at @ 1, mission spawn-at @ 2 + 1, mission spawn-at @ 3]]]
-    two and (coop not) and (game versus not), game with duel with [match-start : game clock]
+    -- a duel starts the moment the second phone's player is here and has no body yet (whatever the mode was)
+    two and (coop not) and (game agents all [a | (a id != 2) or (a bot)]), game with duel with [match-start : game clock]
     any, game
   ]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
@@ -11547,7 +11575,6 @@ update : [game |
 -- ---------------------------------------------------------------- drawing, in 3D
 eye : 1.55                -- how high your eyes are, in metres
 gun-turn : 0.1            -- which way the gun points, in radians
-fog-colour : #262c38
 red : "#ff5a4f"
 cream : "#f4f1ea"
 cyan : "#9be7ff"
@@ -11564,7 +11591,7 @@ draw : [game |
   -- the camera: your eyes, or the floor once you're down
   -- the air turns red while the alarm is up
   alarm : game guards any [g | (g alert) and (g health > 0)]
-  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, cond [mode = "mission", mission air, any, fog-colour]], 3, cond [mode = "mission", mission haze, any, 15]]
+  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, scene air], 3, scene haze]
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
@@ -11575,21 +11602,20 @@ draw : [game |
   back-x : you angle cos * (0 - room) * ease + (you x)
   back-y : you angle sin * (0 - room) * ease + (you y)
   -- the mission's light: sky, floor bounce and key light, and how strong
-  light-now : cond [mode = "mission", mission light, any, [#eef4ff, #4a4038, #fff0d8, 1.2]]
+  light-now : scene light
   light [light-now @ 1, light-now @ 2, light-now @ 3, light-now @ 4]
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
-  in-mission : mode = "mission"
-  block [map-w / 2, -0.05, map-h / 2, map-w, 0.1, map-h, cond [in-mission, mission floor, any, "plate"]]
+  block [map-w / 2, -0.05, map-h / 2, map-w, 0.1, map-h, scene floor]
   -- indoors, a ceiling; outdoors, the ground's own surface and the sky
-  ceiling-tex : cond [in-mission, mission ceiling, any, "metal"]
+  ceiling-tex : scene ceiling
   has-sky not [block [map-w / 2, 2.55, map-h / 2, map-w, 0.1, map-h, ceiling-tex]]
   has-sky [
     ceiling-runs each [u | block [u x, 2.55, u z, u w, 0.1, 1, ceiling-tex]]
-    ground-runs each [u | block [u x, -0.035, u z, u w, 0.1, 1, cond [in-mission, mission ground else "grass", any, "grass"]]]
-    sky [cond [in-mission, mission sky-top else #6fa8e8, any, #6fa8e8], cond [in-mission, mission air, any, fog-colour]]
+    ground-runs each [u | block [u x, -0.035, u z, u w, 0.1, 1, scene ground else "grass"]]
+    sky [scene sky-top else #6fa8e8, scene air]
   ]
-  wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
+  wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, scene walls]]
   -- lamps in the ceiling: lit panels over the floor (drawn glowing, so they're bright whatever the light)
   ceiling-lamps each [[lx, lz] | block [lx, 2.485, lz, 0.62, 0.03, 0.62, "glow:#fff4d8"]]
   -- skirting at the foot of every wall
