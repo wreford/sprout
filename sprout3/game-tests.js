@@ -415,7 +415,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   m.tick(1 / 60, pad({ mine: true }), pad({}));
   put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
   for (let t = 0; t < 90; t++) m.tick(1 / 60, pad({}), pad({}));
-  put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
+  put(m, 1, { x: 6.3, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
   // ammo: a clip of eight, a reload by itself when it runs out, or when you ask, from your spare shots
@@ -458,11 +458,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a heavy shot hits harder", agent(hv, 2).field("health") === 30, agent(hv, 2).field("health"));
     for (let t = 0; t < 2; t++) hv.tick(1 / 60, pad({ swap: true }), pad({}));
     ok("silvereye: swap goes back to the blaster", agent(hv, 1).field("weapon") === "blaster"); }
+  { const th = L.makeGame(duelSrc, { players: 2, me: 1 }); th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 4.5, y: 7.5, angle: 0 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
+    const mx = f(th, "mines").part(1).field("x");
+    for (let t = 0; t < 40; t++) th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 5.5, y: 7.5, angle: -Math.PI / 2 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
+    ok("silvereye: a mine is thrown ahead, and lands short of a wall", Math.abs(mx - 6.3) < 1e-9 && f(th, "mines").part(2).field("y") > 7.0, [mx, f(th, "mines").part(2).field("y")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
   sm.tick(1 / 60, pad({ mine: true }), pad({}));
-  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 6.2, y: 7.5 });
+  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 7.6, y: 7.5 });
   for (let t = 0; t < 3; t++) sm.tick(1 / 60, pad({ fire: true }), pad({}));
   ok("silvereye: a shot sets off a mine, and the blast reaches whoever is near", f(sm, "mines").count() === 0 && agent(sm, 2).field("health") < 100, agent(sm, 2).field("health"));
   // pickups: ammo adds spare shots, armour takes hits before your health; in a match they come back later

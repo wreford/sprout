@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 446 pass, 298 for the language and 148 for the games.
+- **Tests:** 447 pass, 298 for the language and 149 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (148)
+node game-tests.js    # game tests (149)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 446 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 447 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4518,7 +4518,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   m.tick(1 / 60, pad({ mine: true }), pad({}));
   put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
   for (let t = 0; t < 90; t++) m.tick(1 / 60, pad({}), pad({}));
-  put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
+  put(m, 1, { x: 6.3, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
   // ammo: a clip of eight, a reload by itself when it runs out, or when you ask, from your spare shots
@@ -4561,11 +4561,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a heavy shot hits harder", agent(hv, 2).field("health") === 30, agent(hv, 2).field("health"));
     for (let t = 0; t < 2; t++) hv.tick(1 / 60, pad({ swap: true }), pad({}));
     ok("silvereye: swap goes back to the blaster", agent(hv, 1).field("weapon") === "blaster"); }
+  { const th = L.makeGame(duelSrc, { players: 2, me: 1 }); th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 4.5, y: 7.5, angle: 0 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
+    const mx = f(th, "mines").part(1).field("x");
+    for (let t = 0; t < 40; t++) th.tick(1 / 60, pad({}), pad({})); put(th, 0, { x: 5.5, y: 7.5, angle: -Math.PI / 2 }); th.tick(1 / 60, pad({ mine: true }), pad({}));
+    ok("silvereye: a mine is thrown ahead, and lands short of a wall", Math.abs(mx - 6.3) < 1e-9 && f(th, "mines").part(2).field("y") > 7.0, [mx, f(th, "mines").part(2).field("y")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
   sm.tick(1 / 60, pad({ mine: true }), pad({}));
-  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 6.2, y: 7.5 });
+  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 7.6, y: 7.5 });
   for (let t = 0; t < 3; t++) sm.tick(1 / 60, pad({ fire: true }), pad({}));
   ok("silvereye: a shot sets off a mine, and the blast reaches whoever is near", f(sm, "mines").count() === 0 && agent(sm, 2).field("health") < 100, agent(sm, 2).field("health"));
   // pickups: ammo adds spare shots, armour takes hits before your health; in a match they come back later
@@ -10836,7 +10840,9 @@ play : [game |
   setters : ready keep can-set
   (droppers length > 0) [beep [440, 0.05]]
   (setters length > 0) [beep [660, 0.06]]
-  all-mines : game mines .. (droppers collect [a | [x : a angle cos * 0.4 + (a x), y : a angle sin * 0.4 + (a y), armed : now + mine-arm, owner : a id]])
+  -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
+  throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
+  all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
   placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |

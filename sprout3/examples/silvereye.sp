@@ -253,7 +253,9 @@ play : [game |
   setters : ready keep can-set
   (droppers length > 0) [beep [440, 0.05]]
   (setters length > 0) [beep [660, 0.06]]
-  all-mines : game mines .. (droppers collect [a | [x : a angle cos * 0.4 + (a x), y : a angle sin * 0.4 + (a y), armed : now + mine-arm, owner : a id]])
+  -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
+  throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
+  all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
   placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
