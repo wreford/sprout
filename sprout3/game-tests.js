@@ -407,6 +407,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
+  // ammo: a clip of eight, a reload by itself when it runs out, or when you ask, from your spare shots
+  const r = L.makeGame(src, {}); r.tick(1 / 60, pad({}));
+  for (let t = 0; t < 125; t++) r.tick(1 / 60, pad({ fire: true }));
+  ok("silvereye: a clip runs out after eight shots and reloads by itself", agent(r, 1).field("clip") === 0 && agent(r, 1).field("reloading") > 0);
+  for (let t = 0; t < 75; t++) r.tick(1 / 60, pad({}));
+  ok("silvereye: a reload fills the clip from your spare shots", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") === 40, [agent(r, 1).field("clip"), agent(r, 1).field("ammo")]);
+  for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
+  for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
+  ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
   // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
   const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
   const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (127)
+node game-tests.js    # game tests (130)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 425 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 428 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4437,6 +4437,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
   for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
+  // ammo: a clip of eight, a reload by itself when it runs out, or when you ask, from your spare shots
+  const r = L.makeGame(src, {}); r.tick(1 / 60, pad({}));
+  for (let t = 0; t < 125; t++) r.tick(1 / 60, pad({ fire: true }));
+  ok("silvereye: a clip runs out after eight shots and reloads by itself", agent(r, 1).field("clip") === 0 && agent(r, 1).field("reloading") > 0);
+  for (let t = 0; t < 75; t++) r.tick(1 / 60, pad({}));
+  ok("silvereye: a reload fills the clip from your spare shots", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") === 40, [agent(r, 1).field("clip"), agent(r, 1).field("ammo")]);
+  for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
+  for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
+  ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
   // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
   const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
   const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));
@@ -10492,6 +10501,9 @@ shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
 fire-every : 0.25          -- hold fire and it fires this often
+clip-size : 8              -- shots before you reload
+ammo-each : 48             -- spare shots you start with
+reload-time : 1.1          -- seconds to reload
 frag-limit : 5             -- takedowns to win a duel
 respawn-after : 2.5        -- seconds before you're back in a duel
 
@@ -10572,7 +10584,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wai
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
@@ -10609,13 +10621,14 @@ wants : [inp |
     walk : clamp [walk, -1, run-boost], strafe : clamp [strafe, -1, 1], turn : turn, look : inp held "look" else false
     fire : (inp held "fire" else false) or (key "space") or (tap and (in-middle [inp touch-x, inp touch-y]))
     mine : (inp held "mine" else false) or (key "m") or (tap and (near-mine-button [inp touch-x, inp touch-y]))
+    reload : (inp held "reload" else false) or (key "r")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
     zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false
   ]
 ]
 up : [a | a down-at = false]
-can-shoot : [a | (up a) and (a asks fire) and (a fire-wait <= 0)]
+can-shoot : [a | (up a) and (a asks fire) and (a fire-wait <= 0) and (a clip > 0) and (a reloading <= 0)]
 can-drop : [a | (up a) and (a asks mine) and (a mine-wait <= 0) and (a carried > 0)]
 can-set : [a | (up a) and (a asks sentry) and (a turret-wait <= 0) and (a sentries-left > 0)]
 
@@ -10634,7 +10647,7 @@ play : [game |
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
-      fire : said fire else false, mine : false, sentry : false, restart : false, zoom : false, fov : fov-across
+      fire : said fire else false, mine : false, sentry : false, reload : false, restart : false, zoom : false, fov : fov-across
       hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
     ]
   ]
@@ -10670,6 +10683,7 @@ play : [game |
   shooters : ready keep can-shoot
   shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed]]
   (shooters length > 0) [sound "shoot"]
+  (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
   -- mines and turrets, each with its owner
   droppers : ready keep can-drop
   setters : ready keep can-set
@@ -10761,6 +10775,10 @@ play : [game |
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
       hit-at : cond [(can-shoot a) and (a aimed != false), now, any, a hit-at]
       carried : cond [can-drop a, a carried - 1, any, a carried]
+      -- a clip runs out, or you ask: a reload takes a moment, then fills the clip from your spare shots (simulants never run dry)
+      clip : cond [can-shoot a, a clip - 1, (a reloading > 0) and (a reloading <= dt), a clip + (clip-size - (a clip) min (a ammo)), any, a clip]
+      ammo : cond [(a reloading > 0) and (a reloading <= dt) and (a bot not), a ammo - (clip-size - (a clip) min (a ammo)), any, a ammo]
+      reloading : cond [a reloading > 0, a reloading - dt, (up a) and ((a clip = 0) or (a asks reload)) and (a clip < clip-size) and (a ammo > 0), reload-time, any, 0]
       sentries-left : cond [can-set a, a sentries-left - 1, any, a sentries-left]
     ]
   ]
@@ -10876,6 +10894,9 @@ draw : [game |
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
+  -- shots: what's in the clip, and spare; a bar while you reload
+  text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]
+  (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours
   game versus [
