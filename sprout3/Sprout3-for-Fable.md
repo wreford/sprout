@@ -9674,7 +9674,12 @@ body.prog #noGame{display:flex}
 .seg button{padding:5px 14px;border-radius:7px;font-size:13px;font-weight:500;color:var(--fg2)}
 .seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .seg i{font-style:normal;font-size:11px;background:var(--acc);color:#fff;border-radius:999px;padding:0 6px;margin-left:5px}
-#segrow{display:flex;align-items:center;gap:10px;margin-bottom:10px}#kbMsg{display:none}#segrow .seg{margin-bottom:0}
+#segrow{display:flex;align-items:center;gap:10px;margin-bottom:10px}#kbMsg{display:none}
+#grip{display:none;height:20px;align-items:center;justify-content:center;touch-action:none;cursor:ns-resize;-webkit-user-select:none;user-select:none}
+#grip i{width:44px;height:5px;border-radius:3px;background:var(--line2)}#grip:active i{background:var(--acc)}
+#bMore{display:none}
+#moreMenu{position:fixed;z-index:46;display:none;flex-direction:column;min-width:180px;padding:6px;border-radius:12px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 12px 32px rgba(0,0,0,.22)}
+#moreMenu.on{display:flex}#moreMenu button,#moreMenu a{text-align:left;font:500 15px var(--sans);padding:11px 12px;border-radius:8px;color:var(--fg);text-decoration:none}#moreMenu button:active{background:var(--card2)}#segrow .seg{margin-bottom:0}
 .twk{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;font-size:13px;font-weight:500;color:var(--fg2);background:rgba(127,120,100,.12)}
 .twk svg{width:14px;height:14px;fill:currentColor}.twk.on{background:var(--acc);color:#fff}
 body.t-st .twk,body.t-out .twk{visibility:hidden}
@@ -9767,17 +9772,28 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 #libBtn{display:none}
 
 /* medium screens: no sidebar; the library opens as a sheet */
-@media (max-width:1080px){#app{grid-template-columns:1fr}#side{display:none}#main{grid-column:1}#libBtn{display:inline-flex}#bSpec{display:none}}
+@media (max-width:1080px){#app{grid-template-columns:1fr}#side{display:none}#main{grid-column:1;gap:20px;padding:20px 20px 14px;padding-top:calc(20px + env(safe-area-inset-top))}#libBtn{display:inline-flex}#bSpec{display:none}
+ #desc{display:none}#title{font-size:28px;margin:0}.acts{margin-top:10px}}
+#segrow{flex-wrap:wrap}
 .mh .pill{margin-right:10px;height:30px;padding:0 12px}
 /* phones: everything stacks, and the bar becomes a mini player */
 @media (max-width:720px){
  :root{--bar:64px}
- #main{grid-template-columns:1fr;grid-template-rows:auto auto auto minmax(0,1fr);gap:10px;padding:12px 12px 10px;padding-top:calc(12px + env(safe-area-inset-top))}
+ /* the game sits beside the tabs and the code has the whole width below; the handle under them sizes the game,
+    and a game too big to sit beside the tabs goes above them (body.big) */
+ #main{grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:10px;row-gap:0;padding:10px 10px 8px;padding-top:calc(10px + env(safe-area-inset-top))}
  #detail{display:contents}
- #head{grid-row:1;display:flex;flex-direction:column}
- #artcol{grid-row:2}
- #segrow{grid-row:3;margin:0}
- #card{grid-row:4}
+ #head{display:none}
+ #artcol{grid-row:1;grid-column:1}
+ #segrow{grid-row:1;grid-column:2;align-self:end;margin:0;flex-wrap:wrap;gap:6px}
+ #grip{display:flex;grid-row:2;grid-column:1/-1}
+ #card{grid-row:3;grid-column:1/-1}
+ body.big #main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr)}
+ body.big #artcol{grid-row:1;grid-column:1}body.big #grip{grid-row:2;grid-column:1}body.big #segrow{grid-row:3;grid-column:1;margin-bottom:8px}body.big #card{grid-row:4;grid-column:1}
+ body.kb #kbMsg{display:block;flex:1 0 100%;font-size:12.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #bTweak,#bLive,#bMore{font-size:0;gap:0;padding:0 11px}.seg button{padding-left:10px;padding-right:10px}
+ #bMore{display:inline-flex}
+ #stage{cursor:pointer}
  #title{font-size:24px;margin:0}#desc{display:none}#meta{margin-top:0}
  .acts{margin:8px 0 0;gap:8px}.pill{height:30px;padding:0 12px;font-size:13px}
  #player{grid-template-columns:minmax(0,1fr) auto auto;gap:6px;padding:0 10px 0 12px;padding-bottom:env(safe-area-inset-bottom)}
@@ -9786,16 +9802,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
  #pArt{width:40px;height:40px}
  .ptl{display:block;position:absolute;left:0;right:0;top:0;height:2px;background:var(--line)}.ptl i{display:block;height:100%;background:var(--acc);width:var(--p,100%)}
  /* the keyboard is up: the game keeps running, small, beside the tabs, and the code gets the rest */
- body.kb #head{display:none}
- body.kb #main{grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);column-gap:10px}
+ body.kb #main{grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);column-gap:10px;row-gap:8px}
  body.kb #artcol{grid-row:1;grid-column:1}
- body.kb #segrow{grid-row:1;grid-column:2;align-self:end;flex-wrap:wrap}
+ body.kb #segrow{grid-row:1;grid-column:2;align-self:end}
+ body.kb #grip{display:none}
  body.kb #card{grid-row:2;grid-column:1/-1}
- body.kb #stage{border-radius:10px;cursor:pointer}
+ body.kb #stage{border-radius:10px}
  body.kb #err{display:none!important}
  body.kb #player{display:none}body.kb #app{grid-template-rows:1fr 0}
- body.kb #kbMsg{display:block;flex:1 0 100%;font-size:12.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- body.kb #segrow{flex-wrap:wrap;gap:6px}body.kb #bTweak,body.kb #bLive{font-size:0;gap:0;padding:0 11px}body.kb .seg button{padding-left:10px;padding-right:10px}
+
  #modal{align-items:flex-end;padding:0}#mBox{max-height:92%;border-radius:18px 18px 0 0;animation:up .28s cubic-bezier(.2,.8,.2,1)}
  #mBox::before{content:"";display:block;width:38px;height:5px;border-radius:3px;background:var(--line2);margin:8px auto 0}
  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -9811,6 +9826,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
  <div id="artcol"><div id="stage"><canvas id="gv" width="360" height="480"></canvas><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
+ <div id="grip" title="Drag to size the game; tap to make it small or big again"><i></i></div>
  <section id="detail">
   <div id="head">
    <div class="kicker" id="kicker">Atomic Constraint Engine</div>
@@ -9826,7 +9842,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
    </div>
   </div>
   <div id="segrow"><div class="seg" id="tabs"><button class="on" data-t="code">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
-   <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button><button class="twk" id="bLive" title="Live coding: history, speed, run as you type"><svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.6A4.9 4.9 0 1 1 8 3.1V1.5zM8 4v4.3l3 1.8.8-1.3-2.3-1.4V4z"/></svg>Live</button><div id="kbMsg"></div></div>
+   <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button><button class="twk" id="bLive" title="Live coding: history, speed, run as you type"><svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.6A4.9 4.9 0 1 1 8 3.1V1.5zM8 4v4.3l3 1.8.8-1.3-2.3-1.4V4z"/></svg>Live</button><button class="twk" id="bMore" title="More" aria-label="More"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/></svg>More</button><div id="kbMsg"></div></div>
   <div id="card">
    <div id="err"><span></span><u>Go to line</u></div>
    <div id="ed"><div id="smarks"></div><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
@@ -9851,18 +9867,18 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
-<div id="toast"></div><div id="scrubTip"></div>
+<div id="moreMenu"><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121i"></script>
-<script src="words.js?v=20261121i"></script>
-<script src="parse.js?v=20261121i"></script>
-<script src="stdlib.js?v=20261121i"></script>
-<script src="libs.js?v=20261121i"></script>
-<script src="kernels.js?v=20261121i"></script>
-<script src="live3.js?v=20261121i"></script>
-<script src="sqlite-web.js?v=20261121i"></script>
-<script src="gpu-paint.js?v=20261121i"></script>
-<script src="gpu-spork.js?v=20261121i"></script>
+<script src="sprout3.js?v=20261121k"></script>
+<script src="words.js?v=20261121k"></script>
+<script src="parse.js?v=20261121k"></script>
+<script src="stdlib.js?v=20261121k"></script>
+<script src="libs.js?v=20261121k"></script>
+<script src="kernels.js?v=20261121k"></script>
+<script src="live3.js?v=20261121k"></script>
+<script src="sqlite-web.js?v=20261121k"></script>
+<script src="gpu-paint.js?v=20261121k"></script>
+<script src="gpu-spork.js?v=20261121k"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -10089,14 +10105,31 @@ $("bPlay").onclick=togglePause;$("bPlayBig").onclick=togglePause;$("bRestart").o
 $("bBack").onclick=()=>{if(!game||game.history.length<2)return;if(!paused)setPaused(true);hpos=0;game.rewind(0);statUI();renderState()};
 
 // ---------- sizes: the artwork keeps 3:4 and fits beside (or above) the editor
+let GAMEFRAC=LS.get("sprout3.gameFrac",.3);
 function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
  let h,w;
  if(phone&&document.body.classList.contains("kb")){h=Math.round(Math.max(96,Math.min(140,m.height*.3)));w=Math.round(h*.75)}
- else if(phone){const head=$("head").getBoundingClientRect().height;h=Math.round(Math.max(150,Math.min((m.height-head-24)*.5,(m.width-24)/.75)));w=Math.round(h*.75)}
- else{h=Math.round(Math.max(200,Math.min(m.height-48,(m.width-56)*.5/.75)));w=Math.round(h*.75)}
+ else if(phone){h=Math.round(Math.max(84,Math.min(m.height*.78,m.height*GAMEFRAC)));w=Math.round(h*.75);
+  // too wide to sit beside the tabs: above them, at most the full width
+  const big=w>m.width-200;document.body.classList.toggle("big",big);if(big&&w>m.width-20){w=Math.round(m.width-20);h=Math.round(w/.75)}}
+ else{const share=innerWidth<1100?.36:.42;h=Math.round(Math.max(200,Math.min(m.height-48,(m.width-56)*share/.75)));w=Math.round(h*.75)}
  const st=$("stage");st.style.width=w+"px";st.style.height=h+"px";const dpr=Math.min(2,devicePixelRatio||1);
  cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
  const gv=$("gv");gv.style.width=w+"px";gv.style.height=h+"px";if(gv.width!==cv.width)gv.width=cv.width;if(gv.height!==cv.height)gv.height=cv.height}
+// the handle under the game: drag to size it; a tap makes it small, or brings it back to the size it was
+{let drag=null;const grip=$("grip");
+ grip.addEventListener("pointerdown",e=>{e.preventDefault();grip.setPointerCapture(e.pointerId);drag={y:e.clientY,f:GAMEFRAC,h:$("main").getBoundingClientRect().height,moved:false}});
+ grip.addEventListener("pointermove",e=>{if(!drag)return;const dy=e.clientY-drag.y;if(Math.abs(dy)>4)drag.moved=true;if(!drag.moved)return;
+  GAMEFRAC=Math.max(.12,Math.min(.78,drag.f+dy/drag.h));fit()});
+ const end=()=>{if(!drag)return;if(!drag.moved){const small=GAMEFRAC<=.16;if(!small)LS.set("sprout3.gameFracBig",GAMEFRAC);GAMEFRAC=small?LS.get("sprout3.gameFracBig",.3):.14;fit()}
+  LS.set("sprout3.gameFrac",GAMEFRAC);drag=null};
+ grip.addEventListener("pointerup",end);grip.addEventListener("pointercancel",end)}
+// the more menu (phones): what the header holds on a bigger screen
+{const mm=$("moreMenu");
+ $("bMore").addEventListener("click",e=>{e.stopPropagation();if(mm.classList.toggle("on")){const r=$("bMore").getBoundingClientRect();mm.style.top=(r.bottom+6)+"px";mm.style.left=Math.max(8,Math.min(innerWidth-mm.offsetWidth-8,r.right-mm.offsetWidth))+"px"}});
+ mm.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;mm.classList.remove("on");
+  ({lib:()=>$("libBtn").click(),restart:()=>$("bRestart").click(),share:()=>$("bShare").click(),spec:()=>$("bSpec").click()})[b.dataset.m]()});
+ document.addEventListener("pointerdown",e=>{if(mm.classList.contains("on")&&!mm.contains(e.target)&&!e.target.closest("#bMore"))mm.classList.remove("on")},true)}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";const kb=h<innerHeight*.75&&document.activeElement===ta;if(kb!==document.body.classList.contains("kb")){document.body.classList.toggle("kb",kb);requestAnimationFrame(fit)}}
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
@@ -10324,7 +10357,7 @@ $("bShare").onclick=share;
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121i"></script>
+<script src="editor-tools.js?v=20261121k"></script>
 </body></html>
 ````
 
