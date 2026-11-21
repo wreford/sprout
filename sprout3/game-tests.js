@@ -519,6 +519,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const sightLines = () => sa.draw().filter(x => x[0] === "line" && Math.abs(x[1][1] - x[1][3]) < 1e-9 && x[1][1] === 240 && Math.abs(x[1][0] - 180) < 8).length;
     const before = sightLines(); sa.tick(1 / 60, pad({ zoom: true }));
     ok("silvereye: with the sight set to aiming, it shows only while you aim", before === 0 && sightLines() === 2, [before, sightLines()]); }
+  { const dd = L.makeGame(duelSrc, { players: 2, me: 1 }); dd.tick(1 / 60, pad({}), pad({}));
+    put(dd, 0, { x: 8.5, y: 7.5, angle: -Math.PI / 2 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI }); dd.tick(1 / 60, pad({}), pad({ fire: true }));
+    const mark = dd.draw().find(x => x[0] === "circle" && x[1][3] === "#ff3b30cc");
+    ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (165)
+node game-tests.js    # game tests (166)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 468 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 469 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4552,6 +4552,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const sightLines = () => sa.draw().filter(x => x[0] === "line" && Math.abs(x[1][1] - x[1][3]) < 1e-9 && x[1][1] === 240 && Math.abs(x[1][0] - 180) < 8).length;
     const before = sightLines(); sa.tick(1 / 60, pad({ zoom: true }));
     ok("silvereye: with the sight set to aiming, it shows only while you aim", before === 0 && sightLines() === 2, [before, sightLines()]); }
+  { const dd = L.makeGame(duelSrc, { players: 2, me: 1 }); dd.tick(1 / 60, pad({}), pad({}));
+    put(dd, 0, { x: 8.5, y: 7.5, angle: -Math.PI / 2 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI }); dd.tick(1 / 60, pad({}), pad({ fire: true }));
+    const mark = dd.draw().find(x => x[0] === "circle" && x[1][3] === "#ff3b30cc");
+    ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10759,7 +10763,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -10985,11 +10989,17 @@ play : [game |
     -- who did it, for the score: the last to hurt you
     by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
     got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
+    -- where the hurt came from, for the marker at the edge of your screen
+    shooter : by-shot length > 0 [ready keep [o | o id = (by-shot @ 1 from)] @ 1] else [false]
+    guard-at : thinking keep [g | (g hits else false) and (g target = (a id))] @ 1 else false
+    source : cond [shooter != false, shooter, by-turret length > 0, by-turret @ 1, by-mine length > 0, by-mine @ 1, any, guard-at]
     soak : total min (a armour)
     life : a health - (total - soak)
     a with [
       health : life max 0
       damage-taken : a damage-taken + total
+      hurt-x : cond [(total > 0) and (source != false), source x, any, a hurt-x]
+      hurt-y : cond [(total > 0) and (source != false), source y, any, a hurt-y]
       armour : a armour - soak + (got "armour" * 50) min 100
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
@@ -11205,6 +11215,11 @@ draw : [game |
     text ["SENTRY [you sentries-left]", W - 48, H - 124, 11, cyan]
   ]
   (you hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
+  -- a red mark at the edge, pointing to where the hurt came from
+  (you hurt > -0.6) [
+    toward-hurt : wrap (you hurt-y - (you y) atan2 (you hurt-x - (you x)) - (you angle))
+    circle [toward-hurt sin * (W * 0.42) + (W / 2), H / 2 - (toward-hurt cos * (H * 0.42)), 6, "#ff3b30cc"]
+  ]
   (game clock < (you safe-until)) [text ["PROTECTED", W / 2, H / 2 + 52, 9, cyan]]
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
   (now < 5) and (game over = "") [text [hint, W / 2, H - 70, 10, "#f4f1eacc"]]
