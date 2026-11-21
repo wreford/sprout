@@ -74,6 +74,9 @@ export function makeView(canvas, base, opts) {
   const pools = new Map();   // model name -> [{ root, mixer, actions }]
   const holds = new Map();
   const flashes = [], glow = new THREE.SphereGeometry(1, 16, 12);
+  // blob shadows, as the old consoles did: a soft dark disc on the floor under everything that stands in the world
+  const blobTexture = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.62)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const blobGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false });
   function instance(name, k, parent) {
     const a = asset(name); if (!a.ready) return null;
     let pool = pools.get(name + (parent === holdGroup ? "@hold" : ""));
@@ -84,6 +87,7 @@ export function makeView(canvas, base, opts) {
       if (parent === holdGroup) { body.scale.setScalar(1 / a.longest); body.position.copy(a.centre).multiplyScalar(-1 / a.longest); }
       else { body.scale.setScalar(1 / a.height); body.position.set(-a.centre.x / a.height, -a.floor / a.height, -a.centre.z / a.height); }
       root.add(body); parent.add(root);
+      if (parent !== holdGroup) { const blob = new THREE.Mesh(blobGeometry, blobMaterial); blob.scale.setScalar(0.62); blob.position.y = 0.012; blob.renderOrder = 1; root.add(blob); root.userData.blob = blob; }
       const mixer = a.clips.length ? new THREE.AnimationMixer(body) : null;
       pool.push({ root, mixer, actions: new Map(), current: null });
     }
@@ -130,6 +134,8 @@ export function makeView(canvas, base, opts) {
         const name = fmt(a[0]), k = counts.get(name) || 0; counts.set(name, k + 1);
         const inst = instance(name, k, scene); if (!inst) continue;
         inst.root.visible = true; inst.root.position.set(num(a[1], 0), num(a[2], 0), num(a[3], 0));
+        // the shadow stays on the floor when a model floats (pickups bob)
+        if (inst.root.userData.blob) inst.root.userData.blob.position.y = (0.012 - num(a[2], 0)) / Math.max(0.01, num(a[5], 1));
         inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
         pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
       } else if (word === "hold") {
