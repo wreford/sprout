@@ -27,10 +27,18 @@ server.listen(0, async () => {
     await page.waitForTimeout(2600);
     ok("the title waits on PRESS START", await page.isVisible("#pressStart") && !(await page.isVisible("#titleMenu")));
     await page.click("#title"); await page.waitForTimeout(150);
-    ok("then the title, with the modes", (await page.$$eval("#titleMenu button", bs => bs.map(b => b.dataset.do))).join() === "campaign,sim,duel,settings,program,help,about");
-    await page.click("#titleMenu button[data-do=about]");
-    ok("About credits the games that inspired it", /GoldenEye 007/.test(await page.textContent("#about")) && /Perfect Dark/.test(await page.textContent("#about")) && /none of their work/.test(await page.textContent("#about")));
-    await page.click("#about button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
+    ok("then the title, with the modes", (await page.$$eval("#titleMenu button", bs => bs.map(b => b.dataset.do))).join() === "campaign,sim,duel,agent,settings,program,help");
+    await page.click("#titleMenu button[data-do=help]"); await page.click("#help button[data-do=about]");
+    ok("About (under How to play) credits the games that inspired it", /GoldenEye 007/.test(await page.textContent("#about")) && /Perfect Dark/.test(await page.textContent("#about")) && /none of their work/.test(await page.textContent("#about")));
+    await page.click("#about button[data-do=back]"); await page.click("#help button[data-do=back]");
+    // the character creator: step to the next look, spell a codename on the letter grid, and both go with your controls
+    await page.click("#titleMenu button[data-do=agent]"); await page.click("#agentMenu button[data-do=look-next]");
+    await page.click("#agentMenu button[data-do=codename]");
+    for (const ch of "ACE") await page.click("#letterGrid button:text-is('" + ch + "')");
+    await page.click("#letterGrid button:text-is('OK')");
+    ok("the creator picks a look and a codename", (await page.textContent("#lookName")) === "FIELD AGENT" && (await page.textContent("#codeName")) === "ACE");
+    ok("your look and codename are kept for next time", await page.evaluate(() => JSON.parse(localStorage.getItem("silvereye.agent")).look === 2 && JSON.parse(localStorage.getItem("silvereye.agent")).name === "ACE"));
+    await page.click("#agentMenu button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
     const fov = await page.textContent("#vFov"); await page.click("#settingsMenu button[data-do=fov]");
     ok("Settings change the view", (await page.textContent("#vFov")) !== fov);
     await page.click("#settingsMenu button[data-do=back]");
@@ -41,6 +49,7 @@ server.listen(0, async () => {
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2); await page.mouse.down();
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2 - 40, { steps: 3 }); await page.waitForTimeout(600); await page.mouse.up();
     ok("the stick walks you", (await at()).x > before.x + 0.3, await at());
+    ok("you play as the agent you made", await page.evaluate(() => { const a = game.state.field("agents").part(1); return a.field("skin") === 2 && a.field("tag") === "ACE"; }));
     const a = await (await page.$("#bA")).boundingBox();
     // software 3D draws few frames a second here, and each frame is at most 0.05 s of game time, so hold A a while
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down(); await page.waitForFunction(() => game.state.field("agents").part(1).field("shots-fired") >= 2, null, { timeout: 8000 }).catch(() => {}); await page.mouse.up();
