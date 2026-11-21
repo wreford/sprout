@@ -324,5 +324,28 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("volley alone: no input2, and the top paddle plays itself", alone.state.field("input2") === S.UNSET && f(alone, "far") !== 180);
 }
 
+// ---------------- Bunker: a raycaster with guards and proximity mines
+{
+  const src = fs.readFileSync(__dirname + "/examples/bunker.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const fresh = () => L.makeGame(src, {});
+  const place = (g, hero) => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
+  const g = fresh(); g.tick(1 / 60);
+  const walls = g.draw().filter(d => d[0] === "rect").slice(1, 73);
+  ok("bunker: a wall strip for every ray, nearer walls taller", walls.length === 72 && new Set(walls.map(d => Math.round(d[1][3]))).size > 5);
+  for (let t = 0; t < 30; t++) g.tick(1 / 60, held(["up"]));
+  ok("bunker: walking moves you", f(g, "hero").field("x") > 2.6);
+  const a = fresh(); place(a, { x: 9.5, y: 7.5, angle: 0, health: 100 });
+  for (let t = 0; t < 240; t++) a.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
+  ok("bunker: two hits take down a guard", f(a, "guards").part(3).field("health") <= 0);
+  const b = fresh(); place(b, { x: 12.5, y: 3.6, angle: Math.PI / 2, health: 100 });
+  for (let t = 0; t < 3; t++) b.tick(1 / 60, held(["m"]));
+  ok("bunker: a mine is dropped and one fewer is carried", f(b, "mines").count() === 1 && f(b, "carried") === 5);
+  for (let t = 0; t < 400; t++) b.tick(1 / 60);
+  ok("bunker: a guard who walks onto an armed mine is blown up", f(b, "guards").part(1).field("health") <= 0 && f(b, "mines").count() === 0);
+  const c = fresh(); place(c, { x: 2.5, y: 2.5, angle: 0, health: 100 });
+  c.tick(1 / 60, held(["m"])); for (let t = 0; t < 120; t++) c.tick(1 / 60);
+  ok("bunker: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
