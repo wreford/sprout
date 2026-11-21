@@ -10990,6 +10990,25 @@ solid : [cx cy |
   row : level @ (cy floor + 1)
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
 ]
+-- how big the map is (maps can be any size), and whether any of it is out under the sky (a , in the map)
+map-w : level @ 1 length
+map-h : level length
+has-sky : level any [row | row has ","]
+-- a row's runs of cells that are (or aren't) out under the sky, as [from, to] columns: one block each, not one a cell
+runs-of : [row outdoor |
+  marks : row chars collect [ch | (ch = ",") = outdoor]
+  done : marks numbered fold [[list : [], from : 0], [acc [c, on] |
+    cond [
+      on and (acc from = 0), acc with [from : c]
+      (on not) and (acc from > 0), [list : acc list .. [[acc from, c - 1]], from : 0]
+      any, acc
+    ]
+  ]]
+  done list .. (cond [done from > 0, [[done from, marks length]], any, []])
+]
+spans : [outdoor | level numbered collect-flat [[r, row] | runs-of [row, outdoor] collect [[a, b] | [x : a - 1 + b / 2, z : r - 0.5, w : b - a + 1]]]]
+ceiling-runs : spans false
+ground-runs : spans true
 wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
 -- lamps in the ceiling, over every third open cell each way
 ceiling-lamps : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | (ch = ".") and (c % 3 = 2) and (r % 3 = 2)] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -11080,9 +11099,11 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
-open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
+open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | (ch = ".") or (ch = ",")] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0, streak : 0, streak-at : -10]]
-pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
+here-spots : cond [mode = "mission", mission spots else pickup-spots, any, pickup-spots]
+here-heavy : cond [mode = "mission", mission heavy else heavy-spot, any, heavy-spot]
+pickups-fresh : here-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : here-heavy @ 1, y : here-heavy @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 -- the Warden: a mech in the relay's hall, with four times the health of a guard, who hits twice as hard
@@ -11476,8 +11497,15 @@ draw : [game |
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   in-mission : mode = "mission"
-  block [8, -0.05, 8, 16, 0.1, 16, cond [in-mission, mission floor, any, "plate"]]
-  block [8, 2.55, 8, 16, 0.1, 16, cond [in-mission, mission ceiling, any, "metal"]]
+  block [map-w / 2, -0.05, map-h / 2, map-w, 0.1, map-h, cond [in-mission, mission floor, any, "plate"]]
+  -- indoors, a ceiling; outdoors, the ground's own surface and the sky
+  ceiling-tex : cond [in-mission, mission ceiling, any, "metal"]
+  has-sky not [block [map-w / 2, 2.55, map-h / 2, map-w, 0.1, map-h, ceiling-tex]]
+  has-sky [
+    ceiling-runs each [u | block [u x, 2.55, u z, u w, 0.1, 1, ceiling-tex]]
+    ground-runs each [u | block [u x, -0.035, u z, u w, 0.1, 1, cond [in-mission, mission ground else "grass", any, "grass"]]]
+    sky [cond [in-mission, mission sky-top else #6fa8e8, any, #6fa8e8], cond [in-mission, mission air, any, fog-colour]]
+  ]
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- lamps in the ceiling: lit panels over the floor (drawn glowing, so they're bright whatever the light)
   ceiling-lamps each [[lx, lz] | block [lx, 2.485, lz, 0.62, 0.03, 0.62, "glow:#fff4d8"]]
@@ -11580,14 +11608,16 @@ draw : [game |
     line [W / 2 - 10, H / 2 - 10, W / 2 - 5, H / 2 - 5, cream], line [W / 2 + 10, H / 2 - 10, W / 2 + 5, H / 2 - 5, cream]
     line [W / 2 - 10, H / 2 + 10, W / 2 - 5, H / 2 + 5, cream], line [W / 2 + 10, H / 2 + 10, W / 2 + 5, H / 2 + 5, cream]
   ]
+  -- the mini-map: 48 pixels across whatever the map's size
+  mm : 48 / (map-w max map-h)
   rect [5, 5, 50, 50, "#000000a0"]
-  wall-cells each [[c, r] | rect [c * 3 + 3, r * 3 + 3, 3, 3, "#6a6e6488"]]
-  game guards keep [g | g health > 0] each [g | circle [g x * 3 + 6, g y * 3 + 6, 1.4, red]]
-  rivals keep up each [r | circle [r x * 3 + 6, r y * 3 + 6, 1.6, red]]
-  game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
-  game scientists keep [c | c health > 0] each [c | circle [c x * 3 + 6, c y * 3 + 6, 1.2, "#bfe3ff"]]
-  game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
-  circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
+  wall-cells each [[c, r] | rect [c * mm + 3, r * mm + 3, mm, mm, "#6a6e6488"]]
+  game guards keep [g | g health > 0] each [g | circle [g x * mm + 3 + mm, g y * mm + 3 + mm, 1.4, red]]
+  rivals keep up each [r | circle [r x * mm + 3 + mm, r y * mm + 3 + mm, 1.6, red]]
+  game mines each [m | circle [m x * mm + 3 + mm, m y * mm + 3 + mm, 1.1, gold]]
+  game scientists keep [c | c health > 0] each [c | circle [c x * mm + 3 + mm, c y * mm + 3 + mm, 1.2, "#bfe3ff"]]
+  game turrets each [t | rect [t x * mm + 3 + (mm / 2), t y * mm + 3 + (mm / 2), mm, mm, cyan]]
+  circle [you x * mm + 3 + mm, you y * mm + 3 + mm, 1.7, "#ffffff"]
   -- health and armour show when you're hurt (and stay while you're low), then get out of the way
   (you hurt > -3) or (you health <= 35) or (game clock < 4) [
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
