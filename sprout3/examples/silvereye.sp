@@ -521,6 +521,10 @@ draw : [game |
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
+  -- a miss sparks where it hits the wall
+  miss : (you flash > 0.03) and (you aimed = false)
+  wall-at : miss [cast [you x, you y, you angle] far - 0.05] else [0]
+  miss [flash [you angle cos * wall-at + (you x), 1.4, you angle sin * wall-at + (you y), 0.05, "#fff2b3"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
   line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]

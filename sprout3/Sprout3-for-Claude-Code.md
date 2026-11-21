@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (155)
+node game-tests.js    # game tests (156)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 457 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 458 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4405,6 +4405,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
+  { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
@@ -11073,6 +11075,10 @@ draw : [game |
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
+  -- a miss sparks where it hits the wall
+  miss : (you flash > 0.03) and (you aimed = false)
+  wall-at : miss [cast [you x, you y, you angle] far - 0.05] else [0]
+  miss [flash [you angle cos * wall-at + (you x), 1.4, you angle sin * wall-at + (you y), 0.05, "#fff2b3"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
   line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
