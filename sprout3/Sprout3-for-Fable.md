@@ -10894,7 +10894,7 @@ mode : "mission"           -- "mission": the lab and its guards · "sim": you ag
 simulants : 3              -- simulants in a combat sim, and joining a duel (up to 7)
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
-fov-across : 100           -- how wide you see, side to side, in degrees: far wider than the old consoles
+fov-across : 110           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
