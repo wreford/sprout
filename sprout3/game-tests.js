@@ -482,6 +482,19 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const sg = L.makeGame(src, {}); sg.tick(1 / 60, pad({})); put(sg, 0, { x: 9.5, y: 7.5, angle: 0 });
     sg.tick(1 / 60, pad({ fire: true })); const g3 = f(sg, "guards").part(3);
     ok("silvereye: a guard who is hit staggers and can't fire back at once", g3.field("stagger") > 0.3 && g3.field("fired") === false); }
+  // every mode played for a while, with every control used, must not make Sprout warn about anything
+  { const said = []; S.setLog(m => said.push(m));
+    const runs = [[src, {}, 1], [src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}, 1], [src, { players: 2, me: 1 }, 2]];
+    for (const [code, opts, n] of runs) {
+      const w = L.makeGame(code, opts);
+      for (let t = 0; t < 600; t++) {
+        const a = pad({ walk: Math.sin(t / 30), strafe: Math.cos(t / 47), look: t * 0.01, fire: t % 40 < 20, zoom: t % 200 > 150, mine: t % 150 === 0, sentry: t % 290 === 0, reload: t % 333 === 0, swap: t % 250 === 0 });
+        if (n === 2) w.tick(1 / 60, a, pad({ walk: 1, look: -t * 0.01, fire: t % 30 < 10 })); else w.tick(1 / 60, a);
+        if (t % 50 === 0) w.draw();
+      }
+    }
+    S.setLog(m => logs.push(m));
+    ok("silvereye: every mode plays with every control and Sprout warns about nothing", said.length === 0, said.slice(0, 3)); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

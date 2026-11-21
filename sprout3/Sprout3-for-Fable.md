@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 456 pass, 302 for the language and 154 for the games.
+- **Tests:** 457 pass, 302 for the language and 155 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (154)
+node game-tests.js    # game tests (155)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 456 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 457 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4585,6 +4585,19 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const sg = L.makeGame(src, {}); sg.tick(1 / 60, pad({})); put(sg, 0, { x: 9.5, y: 7.5, angle: 0 });
     sg.tick(1 / 60, pad({ fire: true })); const g3 = f(sg, "guards").part(3);
     ok("silvereye: a guard who is hit staggers and can't fire back at once", g3.field("stagger") > 0.3 && g3.field("fired") === false); }
+  // every mode played for a while, with every control used, must not make Sprout warn about anything
+  { const said = []; S.setLog(m => said.push(m));
+    const runs = [[src, {}, 1], [src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}, 1], [src, { players: 2, me: 1 }, 2]];
+    for (const [code, opts, n] of runs) {
+      const w = L.makeGame(code, opts);
+      for (let t = 0; t < 600; t++) {
+        const a = pad({ walk: Math.sin(t / 30), strafe: Math.cos(t / 47), look: t * 0.01, fire: t % 40 < 20, zoom: t % 200 > 150, mine: t % 150 === 0, sentry: t % 290 === 0, reload: t % 333 === 0, swap: t % 250 === 0 });
+        if (n === 2) w.tick(1 / 60, a, pad({ walk: 1, look: -t * 0.01, fire: t % 30 < 10 })); else w.tick(1 / 60, a);
+        if (t % 50 === 0) w.draw();
+      }
+    }
+    S.setLog(m => logs.push(m));
+    ok("silvereye: every mode plays with every control and Sprout warns about nothing", said.length === 0, said.slice(0, 3)); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
