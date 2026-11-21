@@ -525,6 +525,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(dd, 0, { x: 8.5, y: 7.5, angle: -Math.PI / 2 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI }); dd.tick(1 / 60, pad({}), pad({ fire: true }));
     const mark = dd.draw().find(x => x[0] === "circle" && x[1][3] === "#ff3b30cc");
     ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
+  { const ah = h => { const t = L.makeGame(src, {}); t.tick(1 / 60, pad({})); put(t, 0, { x: 9.5, y: 7.5, angle: 0.14 }); t.tick(1 / 60, pad({ assist: h })); return agent(t, 1).field("aimed") !== false; };
+    ok("silvereye: aim help is set by each player: more help locks on from further off the middle", ah(1.6) === true && ah(1) === false && ah(0) === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

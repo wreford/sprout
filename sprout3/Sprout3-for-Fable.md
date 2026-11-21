@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 470 pass, 303 for the language and 167 for the games.
+- **Tests:** 471 pass, 303 for the language and 168 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (167)
+node game-tests.js    # game tests (168)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 470 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 471 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4633,6 +4633,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(dd, 0, { x: 8.5, y: 7.5, angle: -Math.PI / 2 }); put(dd, 1, { x: 12.5, y: 7.5, angle: Math.PI }); dd.tick(1 / 60, pad({}), pad({ fire: true }));
     const mark = dd.draw().find(x => x[0] === "circle" && x[1][3] === "#ff3b30cc");
     ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
+  { const ah = h => { const t = L.makeGame(src, {}); t.tick(1 / 60, pad({})); put(t, 0, { x: 9.5, y: 7.5, angle: 0.14 }); t.tick(1 / 60, pad({ assist: h })); return agent(t, 1).field("aimed") !== false; };
+    ok("silvereye: aim help is set by each player: more help locks on from further off the middle", ah(1.6) === true && ah(1) === false && ah(0) === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10888,7 +10890,7 @@ wants : [inp |
     swap : (inp held "swap" else false) or (key "q")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
-    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false
+    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1
   ]
 ]
 up : [a | a down-at = false]
@@ -10912,7 +10914,7 @@ play : [game |
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
-      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, restart : false, zoom : false, fov : fov-across
+      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, restart : false, zoom : false, fov : fov-across
       hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
     ]
   ]
@@ -10941,7 +10943,8 @@ play : [game |
     marks keep [m | m owner != (a id)] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
-      (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
+      -- aim help: how near the middle of your view counts, scaled by the help this player asked for (none at 0)
+      (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)] * (a asks assist else 1) max 0.012)) and (gd < wall)
     ] smallest-by [m | distance [a x, a y, m x, m y]]
   ]
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]

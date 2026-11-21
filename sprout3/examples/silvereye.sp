@@ -224,7 +224,7 @@ wants : [inp |
     swap : (inp held "swap" else false) or (key "q")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
-    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false
+    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1
   ]
 ]
 up : [a | a down-at = false]
@@ -248,7 +248,7 @@ play : [game |
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
-      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, restart : false, zoom : false, fov : fov-across
+      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, restart : false, zoom : false, fov : fov-across
       hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
     ]
   ]
@@ -277,7 +277,8 @@ play : [game |
     marks keep [m | m owner != (a id)] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
-      (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
+      -- aim help: how near the middle of your view counts, scaled by the help this player asked for (none at 0)
+      (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)] * (a asks assist else 1) max 0.012)) and (gd < wall)
     ] smallest-by [m | distance [a x, a y, m x, m y]]
   ]
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
