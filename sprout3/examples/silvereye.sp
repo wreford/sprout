@@ -74,6 +74,7 @@ difficulty : 2             -- a mission's guards: 1 rookie (no generators to wre
 fov-across : 100           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
+tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
 walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
@@ -658,7 +659,7 @@ draw : [game |
     big : g boss else false
     clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
     time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
-    model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8], clip, time]
+    model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |
