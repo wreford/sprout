@@ -52,6 +52,9 @@ fire-every : 0.25          -- hold fire and it fires this often
 clip-size : 8              -- shots before you reload
 ammo-each : 48             -- spare shots you start with
 reload-time : 1.1          -- seconds to reload
+machine-spots : [[9.0, 10.7], [5.8, 7.7]]   -- the generators to wreck, on a mission
+intel-spot : [14.5, 12.5]  -- where the intel case is
+lift : [2.5, 2.5]          -- where you leave from, once it's all done
 pickup-back : 20           -- seconds before a pickup is back, in a match
 pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
@@ -143,7 +146,9 @@ start :
   guards : mode = "sim" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
   mines : []
   turrets : []
-  pickups : pickups-fresh
+  pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
+  machines : mode = "sim" [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
+  intel : false
   blasts : []
   over : ""
   over-at : 0
@@ -152,7 +157,7 @@ start :
   clock : 0
   dt : 0
 -- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, blasts : [], over : "", versus : true]
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -221,11 +226,11 @@ play : [game |
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]])
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, x : m x, y : m y]])
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
-    marks keep [m | (m who = "guard") or (m id != (a id))] keep [m |
+    marks keep [m | (m who != "agent") or (m id != (a id))] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
       (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
@@ -245,7 +250,7 @@ play : [game |
   placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
-    in-sight : marks keep [m | ((m who = "guard") or (m id != (t owner))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
+    in-sight : marks keep [m | ((m who = "guard") or ((m who = "agent") and (m id != (t owner)))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
     mark : in-sight smallest-by [m | distance [t x, t y, m x, m y]]
     sees : mark != false
     dx : sees [mark x - (t x)] else [t aim cos]
@@ -315,6 +320,11 @@ play : [game |
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
+  -- the generators: shots and blasts wreck them
+  machines : game machines collect [m |
+    n : struck "machine [m id]" * 25 + (caught [m x, m y] length * 100)
+    m with [health : m health - n max 0]
+  ]
   -- a guard who goes down drops what they carried
   drops : fallen keep [g | g fell = now] collect [g | [kind : "ammo", x : g x, y : g y, back-at : now + 0.5]]
   pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]] .. drops
@@ -364,14 +374,18 @@ play : [game |
   ]
   champions : back keep [a | a kills >= frag-limit]
   winner : champions length > 0 [champions @ 1 id] else [0]
+  -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
+  intel : (game intel) or (takes any [t | t kind = "intel"])
+  done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
+  home : distance [(back @ 1) x, (back @ 1) y, lift @ 1, lift @ 2] < 1
   over : cond [
     game versus, winner > 0 ["p[winner]"] else [""]
     (up (back @ 1)) not, "lost"
-    fallen all [g | g health <= 0], "won"
+    done and home, "won"
     any, ""
   ]
   game with [
-    agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups
+    agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups, machines : machines, intel : intel
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
@@ -434,16 +448,29 @@ draw : [game |
     model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
     (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
   ]
+  -- a wrecked generator sparks
+  game machines keep [m | (m health <= 0) and (now * 5 + (m id) % 1 < 0.35)] each [m | flash [m x, 1.0, m y, 0.12, "#ffb347"]]
   -- pickups, turning slowly and glowing
   game pickups keep [p | now >= (p back-at)] each [p |
-    model [cond [p kind = "armour", "chest", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, any, 0.3], false, 0]
-    flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, any, gold]]
+    model [cond [p kind = "armour", "chest", p kind = "intel", "chest", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, any, 0.3], false, 0]
+    flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", any, gold]]
   ]
   game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
     model ["turret", t x, 0, t y, t aim + pi, 0.6, false, 0]   -- the model's barrels point back, so it is turned round
     t fired [flash [t aim cos * 0.45 + (t x), 0.55, t aim sin * 0.45 + (t y), 0.07, cyan]]
+  ]
+  -- the mission's checklist, and the lift once it's all done
+  game versus not [
+    guards-down : game guards count [g | g health <= 0]
+    wrecked : game machines count [m | m health <= 0]
+    tick : [ok | cond [ok, "■", any, "□"]]
+    text ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 34, 64, 7, cream]
+    text ["[tick (wrecked = (game machines length))] GENERATORS [wrecked]/[game machines length]", 38, 74, 7, cream]
+    text ["[tick (game intel)] INTEL CASE", 31, 84, 7, cream]
+    all-done : (guards-down = (game guards length)) and (wrecked = (game machines length)) and (game intel)
+    all-done [flash [lift @ 1, 0.2, lift @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text ["BACK TO THE LIFT", W / 2, 50, 11, "#7bd389"]]
   ]
   -- your gun, kicking back when it fires
   kick : cond [you flash > 0, 0.05, any, 0]

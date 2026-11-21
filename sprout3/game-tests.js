@@ -369,7 +369,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
-  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 7 && f(g, "pickups").part(7).field("kind") === "ammo");
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 8 && f(g, "pickups").part(8).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
@@ -417,6 +417,17 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
   for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
   ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
+  // the mission: guards, generators, the intel case, then the lift
+  const ms = L.makeGame(src, {}); ms.tick(1 / 60, pad({}));
+  ok("silvereye: a mission has two generators and an intel case to find", f(ms, "machines").count() === 2 && S.partsOf(f(ms, "pickups")).some(p => p.field("kind") === "intel"));
+  put(ms, 0, { x: 7.5, y: 10.7, angle: 0 });
+  for (let t = 0; t < 120; t++) ms.tick(1 / 60, pad({ fire: true }));
+  ok("silvereye: shots wreck a generator", f(ms, "machines").part(1).field("health") === 0, f(ms, "machines").part(1).field("health"));
+  { const m2 = new Map(S.fieldsOf(ms.state)); m2.set("guards", S.valueCellOf([], new Map())); m2.set("machines", S.valueCellOf([S.valueCellOf([], new Map([["id", 1], ["x", 9], ["y", 10.7], ["health", 0]]))], new Map())); ms.setState(S.valueCellOf([], m2)); }
+  put(ms, 0, { x: 14.5, y: 12.5, health: 100 }); ms.tick(1 / 60, pad({}));
+  ok("silvereye: picking up the case takes the intel, but the mission isn't over yet", f(ms, "intel") === true && f(ms, "over") === "");
+  put(ms, 0, { x: 2.5, y: 2.6 }); ms.tick(1 / 60, pad({}));
+  ok("silvereye: with everything done, the lift ends the mission", f(ms, "over") === "won", f(ms, "over"));
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
