@@ -41,7 +41,11 @@ server.listen(0, async () => {
     await page.click("#agentMenu button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
     const fov = await page.textContent("#vFov"); await page.click("#settingsMenu button[data-do=fov]");
     ok("Settings change the view", (await page.textContent("#vFov")) !== fov);
-    await page.click("#settingsMenu button[data-do=back]");
+    // gyro aim: on, turning the phone right (clockwise from above) turns you right
+    await page.click("#settingsMenu button[data-do=gyro]"); await page.click("#settingsMenu button[data-do=gyro]");
+    ok("Gyro aim can be turned on", (await page.textContent("#vGyro")) === "always");
+    await page.click("#settingsMenu button[data-do=gyro]");
+        await page.click("#settingsMenu button[data-do=back]");
     await page.click("#titleMenu button[data-do=campaign]"); await page.click("#missionMenu button[data-do=stage1]"); await page.waitForTimeout(300);
     const at = () => page.evaluate(() => { const a = game.state.field("agents").part(1); return { x: a.field("x"), shots: a.field("shots-fired") }; });
     const before = await at();
@@ -49,6 +53,11 @@ server.listen(0, async () => {
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2); await page.mouse.down();
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2 - 40, { steps: 3 }); await page.waitForTimeout(600); await page.mouse.up();
     ok("the stick walks you", (await at()).x > before.x + 0.3, await at());
+    // (the phone's motion goes straight to the handler here: whether a browser lets a page have it is up to the browser)
+    const turned = await page.evaluate(() => { settings.gyro = "always"; const before = pad.look;
+      onMotion(new DeviceMotionEvent("devicemotion", { rotationRate: { alpha: 0, beta: 0, gamma: -90 }, accelerationIncludingGravity: { x: 0, y: -9.8, z: 0 }, interval: 16 }));
+      const after = pad.look; settings.gyro = "off"; return after - before; });
+    ok("with gyro aim on, turning the phone right turns you right", turned > 0.01 && turned < 0.2, turned);
     ok("you play as the agent you made", await page.evaluate(() => { const a = game.state.field("agents").part(1); return a.field("skin") === 2 && a.field("tag") === "ACE"; }));
     const a = await (await page.$("#bA")).boundingBox();
     // software 3D draws few frames a second here, and each frame is at most 0.05 s of game time, so hold A a while
