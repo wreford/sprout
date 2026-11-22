@@ -401,6 +401,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const low = am.draw().some(x => x[0] === "text" && x[1][0] === "LOW AMMO");
     put(am, 0, { clip: 0, ammo: 0 }); am.tick(1 / 60, pad({}));
     ok("silvereye: low on shots it says LOW AMMO, and out it says where to find more", low && am.draw().some(x => x[0] === "text" && x[1][0] === "OUT OF AMMO · FIND A CRATE")); }
+  { const wk = L.makeGame(src, {}); wk.tick(1 / 60, pad({}));
+    const st = new Map(S.fieldsOf(wk.state)), ms = S.partsOf(st.get("machines")).map((m, i) => i ? m : S.valueCellOf([], new Map([...S.fieldsOf(m), ["health", 0]])));
+    st.set("machines", S.valueCellOf(ms, new Map())); st.set("blasts", S.valueCellOf([S.valueCellOf([], new Map([["x", 5], ["y", 5], ["at", wk.clock - 1]]))], new Map())); wk.setState(S.valueCellOf([], st), wk.clock);
+    const d = wk.draw();
+    ok("silvereye: a wrecked target sinks and smokes", d.some(x => x[0] === "model" && x[1][2] === -0.1) && d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#3f3f44").length === 3);
+    ok("silvereye: a blast's fireball gives way to smoke", d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#4d4d52").length === 3 && !d.some(x => x[0] === "flash" && x[1][4] === "#ffb347" && x[1][3] >= 0.5)); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }

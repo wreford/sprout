@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (228)
+node game-tests.js    # game tests (230)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 531 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 533 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4438,6 +4438,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const low = am.draw().some(x => x[0] === "text" && x[1][0] === "LOW AMMO");
     put(am, 0, { clip: 0, ammo: 0 }); am.tick(1 / 60, pad({}));
     ok("silvereye: low on shots it says LOW AMMO, and out it says where to find more", low && am.draw().some(x => x[0] === "text" && x[1][0] === "OUT OF AMMO · FIND A CRATE")); }
+  { const wk = L.makeGame(src, {}); wk.tick(1 / 60, pad({}));
+    const st = new Map(S.fieldsOf(wk.state)), ms = S.partsOf(st.get("machines")).map((m, i) => i ? m : S.valueCellOf([], new Map([...S.fieldsOf(m), ["health", 0]])));
+    st.set("machines", S.valueCellOf(ms, new Map())); st.set("blasts", S.valueCellOf([S.valueCellOf([], new Map([["x", 5], ["y", 5], ["at", wk.clock - 1]]))], new Map())); wk.setState(S.valueCellOf([], st), wk.clock);
+    const d = wk.draw();
+    ok("silvereye: a wrecked target sinks and smokes", d.some(x => x[0] === "model" && x[1][2] === -0.1) && d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#3f3f44").length === 3);
+    ok("silvereye: a blast's fireball gives way to smoke", d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#4d4d52").length === 3 && !d.some(x => x[0] === "flash" && x[1][4] === "#ffb347" && x[1][3] >= 0.5)); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -10883,10 +10889,12 @@ export function makeView(canvas, base, opts) {
       } else if (word === "flash") {
         let f = flashes[flashCount];
         if (!f) { f = { light: new THREE.PointLight(0xffaa55, 0, 0, 2), ball: new THREE.Mesh(glow, new THREE.MeshBasicMaterial({ color: 0xffaa55, transparent: true, opacity: 0.85 })) }; scene.add(f.light); scene.add(f.ball); flashes.push(f); }
-        const c = new THREE.Color(fmt(a[4]).slice(0, 7)), r = num(a[3], 0.3);
+        // a colour written smoke:#rrggbb is a puff of smoke: see-through, and it gives off no light
+        const spec = fmt(a[4]), smoke = spec.startsWith("smoke:"), c = new THREE.Color((smoke ? spec.slice(6) : spec).slice(0, 7)), r = num(a[3], 0.3);
         f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
-        f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
-        if (f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
+        f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.ball.visible = true; f.light.visible = !smoke;
+        f.ball.material.opacity = smoke ? 0.3 : 0.85; f.ball.material.depthWrite = !smoke;
+        if (!smoke && f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
       } else if (word === "sky") {
         // sky [top colour, horizon colour]: a dome round the camera, the gradient painted on it with soft clouds above
@@ -11690,7 +11698,7 @@ play : [game |
   game with [
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
-    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
+    blasts : game blasts keep [b | now - (b at) < 2.5] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
     holes : cond [holes length > 24, holes drop (holes length - 24), any, holes]
     over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
@@ -11785,7 +11793,12 @@ draw : [game |
   -- bullet holes where shots struck the walls
   (game holes else []) each [h | block [h x, h rise, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
-  game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
+  -- a wrecked one sinks a little, turned and smaller, and smoke rises from it
+  game machines each [m |
+    wrecked : m health <= 0
+    model [m model, m x, cond [wrecked, -0.1, any, 0], m y, cond [wrecked, 0.4, any, 0], m size * (cond [wrecked, 0.9, any, 1]), false, 0]
+    wrecked [range 3 each [k | rise : now * 0.5 + (k / 3) % 1, flash [rise * 0.25 + (m x), rise * 1.8 + (m size * 0.8), m y, rise * 0.26 + 0.14, "smoke:#3f3f44"]]]
+  ]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   -- the fallen blink and then are gone, after five seconds, as on the old consoles
@@ -11828,7 +11841,12 @@ draw : [game |
     model [cond [p kind = "armour", "chest", p kind = "intel", "chest", p kind = "heavy", "blaster_e", p kind = "quiet", "blaster_g", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, p kind = "quiet", 0.22, any, 0.3], false, 0]
     flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", p kind = "quiet", "#b18cff", any, gold]]
   ]
-  game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
+  -- a blast: a fireball for a moment, then smoke that rises and spreads as it thins
+  game blasts each [b |
+    age : now - (b at)
+    (age < 0.6) [flash [b x, 0.9, b y, age / 0.6 * 1.4 + 0.5, "#ffb347"]]
+    (age > 0.2) [range 3 each [k | flash [k - 2 * 0.3 + (b x), age * 0.7 + 0.6 + (k * 0.15), k - 2 * 0.2 + (b y), age * 0.18 + 0.25, "smoke:#4d4d52"]]]
+  ]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
     model ["turret", t x, 0, t y, t aim + pi, 0.6, false, 0]   -- the model's barrels point back, so it is turned round

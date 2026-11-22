@@ -203,10 +203,12 @@ export function makeView(canvas, base, opts) {
       } else if (word === "flash") {
         let f = flashes[flashCount];
         if (!f) { f = { light: new THREE.PointLight(0xffaa55, 0, 0, 2), ball: new THREE.Mesh(glow, new THREE.MeshBasicMaterial({ color: 0xffaa55, transparent: true, opacity: 0.85 })) }; scene.add(f.light); scene.add(f.ball); flashes.push(f); }
-        const c = new THREE.Color(fmt(a[4]).slice(0, 7)), r = num(a[3], 0.3);
+        // a colour written smoke:#rrggbb is a puff of smoke: see-through, and it gives off no light
+        const spec = fmt(a[4]), smoke = spec.startsWith("smoke:"), c = new THREE.Color((smoke ? spec.slice(6) : spec).slice(0, 7)), r = num(a[3], 0.3);
         f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
-        f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
-        if (f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
+        f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.ball.visible = true; f.light.visible = !smoke;
+        f.ball.material.opacity = smoke ? 0.3 : 0.85; f.ball.material.depthWrite = !smoke;
+        if (!smoke && f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
       } else if (word === "sky") {
         // sky [top colour, horizon colour]: a dome round the camera, the gradient painted on it with soft clouds above

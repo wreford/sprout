@@ -754,7 +754,7 @@ play : [game |
   game with [
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
-    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
+    blasts : game blasts keep [b | now - (b at) < 2.5] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
     holes : cond [holes length > 24, holes drop (holes length - 24), any, holes]
     over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
@@ -849,7 +849,12 @@ draw : [game |
   -- bullet holes where shots struck the walls
   (game holes else []) each [h | block [h x, h rise, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
-  game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
+  -- a wrecked one sinks a little, turned and smaller, and smoke rises from it
+  game machines each [m |
+    wrecked : m health <= 0
+    model [m model, m x, cond [wrecked, -0.1, any, 0], m y, cond [wrecked, 0.4, any, 0], m size * (cond [wrecked, 0.9, any, 1]), false, 0]
+    wrecked [range 3 each [k | rise : now * 0.5 + (k / 3) % 1, flash [rise * 0.25 + (m x), rise * 1.8 + (m size * 0.8), m y, rise * 0.26 + 0.14, "smoke:#3f3f44"]]]
+  ]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   -- the fallen blink and then are gone, after five seconds, as on the old consoles
@@ -892,7 +897,12 @@ draw : [game |
     model [cond [p kind = "armour", "chest", p kind = "intel", "chest", p kind = "heavy", "blaster_e", p kind = "quiet", "blaster_g", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, p kind = "quiet", 0.22, any, 0.3], false, 0]
     flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", p kind = "quiet", "#b18cff", any, gold]]
   ]
-  game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
+  -- a blast: a fireball for a moment, then smoke that rises and spreads as it thins
+  game blasts each [b |
+    age : now - (b at)
+    (age < 0.6) [flash [b x, 0.9, b y, age / 0.6 * 1.4 + 0.5, "#ffb347"]]
+    (age > 0.2) [range 3 each [k | flash [k - 2 * 0.3 + (b x), age * 0.7 + 0.6 + (k * 0.15), k - 2 * 0.2 + (b y), age * 0.18 + 0.25, "smoke:#4d4d52"]]]
+  ]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
     model ["turret", t x, 0, t y, t aim + pi, 0.6, false, 0]   -- the model's barrels point back, so it is turned round
