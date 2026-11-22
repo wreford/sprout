@@ -397,6 +397,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a green light glows over every door", dr.draw().filter(x => x[0] === "block" && x[1][6] === "glow:#3ddc84").length === dr.draw().filter(x => x[0] === "block" && x[1][6] === "#d6a531").length); }
   { const mp = L.makeGame(src, {}); mp.tick(1 / 60, pad({})); const d = mp.draw();
     ok("silvereye: the mini-map shows the targets and the intel, and which way you face", d.filter(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ffd166").length === 2 && d.some(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ff7ab2") && d.some(x => x[0] === "line" && x[1][4] === "#ffffff")); }
+  { const am = L.makeGame(src, {}); am.tick(1 / 60, pad({})); put(am, 0, { clip: 3, ammo: 2 }); am.tick(1 / 60, pad({}));
+    const low = am.draw().some(x => x[0] === "text" && x[1][0] === "LOW AMMO");
+    put(am, 0, { clip: 0, ammo: 0 }); am.tick(1 / 60, pad({}));
+    ok("silvereye: low on shots it says LOW AMMO, and out it says where to find more", low && am.draw().some(x => x[0] === "text" && x[1][0] === "OUT OF AMMO · FIND A CRATE")); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }

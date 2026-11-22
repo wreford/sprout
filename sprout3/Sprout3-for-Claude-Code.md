@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (224)
+node game-tests.js    # game tests (225)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 527 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 528 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4434,6 +4434,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a green light glows over every door", dr.draw().filter(x => x[0] === "block" && x[1][6] === "glow:#3ddc84").length === dr.draw().filter(x => x[0] === "block" && x[1][6] === "#d6a531").length); }
   { const mp = L.makeGame(src, {}); mp.tick(1 / 60, pad({})); const d = mp.draw();
     ok("silvereye: the mini-map shows the targets and the intel, and which way you face", d.filter(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ffd166").length === 2 && d.some(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ff7ab2") && d.some(x => x[0] === "line" && x[1][4] === "#ffffff")); }
+  { const am = L.makeGame(src, {}); am.tick(1 / 60, pad({})); put(am, 0, { clip: 3, ammo: 2 }); am.tick(1 / 60, pad({}));
+    const low = am.draw().some(x => x[0] === "text" && x[1][0] === "LOW AMMO");
+    put(am, 0, { clip: 0, ammo: 0 }); am.tick(1 / 60, pad({}));
+    ok("silvereye: low on shots it says LOW AMMO, and out it says where to find more", low && am.draw().some(x => x[0] === "text" && x[1][0] === "OUT OF AMMO · FIND A CRATE")); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -11818,6 +11822,12 @@ draw : [game |
   text ["[you clip] | [you ammo]", 32, H - 40, 13, cond [you clip = 0, red, any, cream]]
   text [cond [you weapon = "heavy", "HEAVY", you quiet else false, "BLASTER · SILENCED", any, "BLASTER"], cond [(you weapon != "heavy") and (you quiet else false), 52, any, 32], H - 26, 8, cond [(you weapon != "heavy") and (you quiet else false), "#b18cff", any, "#9aa3b5"]]
   (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
+  -- running low, or out: say so under the sight (a clip that runs dry reloads by itself while there are spare shots)
+  shots-left : you clip + (you ammo)
+  (up you) and (you reloading <= 0) and (game over = "") and (you bot not) [
+    (shots-left = 0) [text ["OUT OF AMMO · FIND A CRATE", W / 2, H / 2 + 34, 9, red]]
+    (shots-left > 0) and (shots-left <= 8) [text ["LOW AMMO", W / 2, H / 2 + 34, 8, "#ffb38a"]]
+  ]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours
   game versus [

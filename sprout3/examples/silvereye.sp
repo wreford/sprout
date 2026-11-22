@@ -918,6 +918,12 @@ draw : [game |
   text ["[you clip] | [you ammo]", 32, H - 40, 13, cond [you clip = 0, red, any, cream]]
   text [cond [you weapon = "heavy", "HEAVY", you quiet else false, "BLASTER · SILENCED", any, "BLASTER"], cond [(you weapon != "heavy") and (you quiet else false), 52, any, 32], H - 26, 8, cond [(you weapon != "heavy") and (you quiet else false), "#b18cff", any, "#9aa3b5"]]
   (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
+  -- running low, or out: say so under the sight (a clip that runs dry reloads by itself while there are spare shots)
+  shots-left : you clip + (you ammo)
+  (up you) and (you reloading <= 0) and (game over = "") and (you bot not) [
+    (shots-left = 0) [text ["OUT OF AMMO · FIND A CRATE", W / 2, H / 2 + 34, 9, red]]
+    (shots-left > 0) and (shots-left <= 8) [text ["LOW AMMO", W / 2, H / 2 + 34, 8, "#ffb38a"]]
+  ]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours
   game versus [
