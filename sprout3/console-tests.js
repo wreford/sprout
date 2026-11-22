@@ -72,6 +72,7 @@ server.listen(0, async () => {
     await page.click("#pReset");
     // TUNE: every number the game is built on, on a slider, taken at once
     await page.click("#tabs button[data-p=tune]");
+    ok("TUNE groups them under the game's own headings", (await page.$$eval(".kgroup", hs => hs.map(h => h.textContent))).join() === "seeing,moving,mines,turrets,guards,shots,matches and missions");
     ok("TUNE lists the game's numbers with what each does", await page.evaluate(() => [...document.querySelectorAll(".knob b")].map(b => b.textContent).includes("walk-pace") && document.querySelectorAll(".knob").length > 20));
     await page.evaluate(() => { const k = [...document.querySelectorAll(".knob")].find(k => k.querySelector("b").textContent === "walk-pace"), i = k.querySelector("input"); i.value = 4; i.dispatchEvent(new Event("input")); });
     await page.waitForFunction(() => /^walk-pace : 4\b/m.test(code), null, { timeout: 4000 }).catch(() => {});

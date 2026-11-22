@@ -98,25 +98,31 @@ mode : "mission"           -- "mission": the lab and its guards · "sim": you ag
 simulants : 3              -- simulants in a combat sim, and joining a duel (up to 7)
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
+-- seeing
 fov-across : 110           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
+-- moving
 walk-pace : 2.6             -- metres a second at a walk
 walk-speed : walk-pace * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
 turn-speed : 2.4            -- how fast the keys and simulants turn, in radians a second
+-- mines
 mine-arm : 1.2             -- seconds before a dropped mine is live
 mine-reach : 1.0           -- how close someone must come to set it off
 blast : 2.1                -- how far the blast reaches
 mines-each : 4             -- mines you carry
+-- turrets
 sentries : 2               -- turrets you carry
 sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
 sentry-damage : 34         -- a turret's shot
+-- guards
 hearing : 7                -- how far off a guard hears your shot, through walls (the heavy blaster half as far again)
+-- shots
 shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
@@ -127,6 +133,7 @@ reload-time : 1.1          -- seconds to reload
 heavy-spot : [12.5, 9.5]   -- where the heavy blaster lies
 heavy-every : 0.6          -- the heavy blaster fires this often
 heavy-damage : 70          -- and hits this hard (110 on a guard)
+-- matches and missions
 pickup-back : 20           -- seconds before a pickup is back, in a match
 pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
