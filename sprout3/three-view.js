@@ -213,6 +213,19 @@ export function makeView(canvas, base, opts) {
       const k = Math.sin(Math.min(1, t / 0.35) * Math.PI);
       j.spine.rotation.x = -0.38 * k; j.neck.rotation.x = -0.32 * k; j.armL.rotation.set(-0.5 * k, 0, 0.7 * k); j.armR.rotation.set(-0.5 * k, 0, -0.7 * k); j.legL.rotation.x = 0.18 * k;
     }
+    if (c === "slump") {
+      // the knees go, then he folds forward onto the floor
+      const p = Math.min(1, t / 0.9), kneel = Math.min(1, p / 0.45), fold = Math.max(0, (p - 0.4) / 0.6), e = fold * fold * (3 - 2 * fold);
+      j.legL.rotation.x = j.legR.rotation.x = -1.3 * kneel; j.kneeL.rotation.x = j.kneeR.rotation.x = 2.2 * kneel;
+      j.hips.position.y = 0.52 - kneel * 0.27 - e * 0.17; j.spine.rotation.x = 0.35 * kneel + e * 1.0; j.neck.rotation.x = 0.4 * kneel;
+      j.armL.rotation.set(0.2, 0, 0.3 * kneel); j.armR.rotation.set(0.2, 0, -0.3 * kneel);
+    }
+    if (c === "fall-front") {
+      // pitched forward onto his face
+      const p = Math.min(1, t / 0.7), e = p * p * (3 - 2 * p);
+      j.hips.rotation.x = e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.45;
+      j.kneeL.rotation.x = Math.sin(e * Math.PI) * 0.9; j.armL.rotation.set(-2.2 * e, 0, 0.3); j.armR.rotation.set(-2.0 * e, 0, -0.3);
+    }
     if (c === "death") {
       const p = Math.min(1, t / 0.75), e = p * p * (3 - 2 * p);
       j.hips.rotation.x = -e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.46;

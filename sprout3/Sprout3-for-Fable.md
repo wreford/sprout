@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 545 pass, 303 for the language and 242 for the games.
+- **Tests:** 546 pass, 303 for the language and 243 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (242)
+node game-tests.js    # game tests (243)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 545 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 546 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4929,6 +4929,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const d = Math.hypot(13.5 - 9.5, 0) || 4, head = shot(Math.atan(0.2 / d), 0, 0), high = shot(Math.atan(0.6 / d), 0, 0), legs = shot(Math.atan(-0.9 / d), 0, 0), body = shot(0, 0, 0);
     ok("silvereye: in aim mode a shot a little high is a headshot, and drops a guard", head[0] <= 0 && head[1], head);
     ok("silvereye: too high misses, low hits the legs for less than the body", high[0] === 100 && legs[0] > body[0] && body[0] < 100, [high, legs, body]);
+    const fell = pitch => { const h = L.makeGame(src, {}); h.tick(1 / 60, pad({})); put(h, 0, { x: 9.5, y: 7.5, angle: 0 });
+      for (let k = 0; k < 90; k++) { h.tick(1 / 60, pad({ zoom: true, fire: true, "aim-pitch": pitch })); put(h, 0, { health: 100 }); }
+      const m = h.draw().find(x => x[0] === "model" && x[1][0] === "rig:guard" && Math.abs(x[1][1] - 13.5) < 3 && ["slump", "fall-front", "death"].includes(x[1][6])); return m ? m[1][6] : "none"; };
+    ok("silvereye: a headshot crumples a guard where he stands, shots in the legs pitch him forward", fell(Math.atan(0.2 / 4)) === "slump" && fell(Math.atan(-0.9 / 4)) === "fall-front", [fell(Math.atan(0.2 / 4)), fell(Math.atan(-0.9 / 4))]);
     const off = shot(0, 0.12, -0.12);
     ok("silvereye: the sight moved off the middle aims the shot there while the view stays", off[0] < 100, off); }
   ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);
@@ -11017,6 +11021,19 @@ export function makeView(canvas, base, opts) {
       const k = Math.sin(Math.min(1, t / 0.35) * Math.PI);
       j.spine.rotation.x = -0.38 * k; j.neck.rotation.x = -0.32 * k; j.armL.rotation.set(-0.5 * k, 0, 0.7 * k); j.armR.rotation.set(-0.5 * k, 0, -0.7 * k); j.legL.rotation.x = 0.18 * k;
     }
+    if (c === "slump") {
+      // the knees go, then he folds forward onto the floor
+      const p = Math.min(1, t / 0.9), kneel = Math.min(1, p / 0.45), fold = Math.max(0, (p - 0.4) / 0.6), e = fold * fold * (3 - 2 * fold);
+      j.legL.rotation.x = j.legR.rotation.x = -1.3 * kneel; j.kneeL.rotation.x = j.kneeR.rotation.x = 2.2 * kneel;
+      j.hips.position.y = 0.52 - kneel * 0.27 - e * 0.17; j.spine.rotation.x = 0.35 * kneel + e * 1.0; j.neck.rotation.x = 0.4 * kneel;
+      j.armL.rotation.set(0.2, 0, 0.3 * kneel); j.armR.rotation.set(0.2, 0, -0.3 * kneel);
+    }
+    if (c === "fall-front") {
+      // pitched forward onto his face
+      const p = Math.min(1, t / 0.7), e = p * p * (3 - 2 * p);
+      j.hips.rotation.x = e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.45;
+      j.kneeL.rotation.x = Math.sin(e * Math.PI) * 0.9; j.armL.rotation.set(-2.2 * e, 0, 0.3); j.armR.rotation.set(-2.0 * e, 0, -0.3);
+    }
     if (c === "death") {
       const p = Math.min(1, t / 0.75), e = p * p * (3 - 2 * p);
       j.hips.rotation.x = -e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.46;
@@ -11791,7 +11808,9 @@ play : [game |
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hit-guards : game guards collect [g |
     n : power ["guard [g id]", shot-damage, 110] + (zapped "guard [g id]" * sentry-damage)
-    n > 0 [g with [health : g health - n, alert : true, stagger : 0.35]] else [g]
+    -- where the last shot landed (head, body or legs): it decides how he falls
+    zone : shot-hits keep [h | h key = "guard [g id]"] collect [h | h zone] @ 1 else (g last-zone else "body")
+    n > 0 [g with [health : g health - n, alert : true, stagger : 0.35, last-zone : zone]] else [g]
   ]
   thinking : hit-guards collect [g |
     g health <= 0 [g] else [
@@ -12108,7 +12127,9 @@ draw : [game |
     kit : guard-looks @ (kinds @ (g id - 1 % (kinds length) + 1))
     -- a guard who has just been hit flinches: the hit plays from the moment the shot landed
     flinch : (g stagger else 0) > 0
-    clip : cond [g health <= 0, cond [big, "Death", any, kit death], flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
+    -- a headshot crumples him where he stands, a shot in the legs pitches him forward, anything else throws him back
+    falls : cond [big, "Death", (g last-zone else "body") = "head", "slump", (g last-zone else "body") = "legs", "fall-front", any, kit death]
+    clip : cond [g health <= 0, falls, flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
     time : cond [g health <= 0, now - (g fell else now), flinch, 0.35 - (g stagger else 0), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
     model [cond [big, "mech", any, kit body], g x, 0, g y, g angle, cond [big, 2.5, any, kit size] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, kit holds]]
   ]

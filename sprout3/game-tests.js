@@ -817,6 +817,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const d = Math.hypot(13.5 - 9.5, 0) || 4, head = shot(Math.atan(0.2 / d), 0, 0), high = shot(Math.atan(0.6 / d), 0, 0), legs = shot(Math.atan(-0.9 / d), 0, 0), body = shot(0, 0, 0);
     ok("silvereye: in aim mode a shot a little high is a headshot, and drops a guard", head[0] <= 0 && head[1], head);
     ok("silvereye: too high misses, low hits the legs for less than the body", high[0] === 100 && legs[0] > body[0] && body[0] < 100, [high, legs, body]);
+    const fell = pitch => { const h = L.makeGame(src, {}); h.tick(1 / 60, pad({})); put(h, 0, { x: 9.5, y: 7.5, angle: 0 });
+      for (let k = 0; k < 90; k++) { h.tick(1 / 60, pad({ zoom: true, fire: true, "aim-pitch": pitch })); put(h, 0, { health: 100 }); }
+      const m = h.draw().find(x => x[0] === "model" && x[1][0] === "rig:guard" && Math.abs(x[1][1] - 13.5) < 3 && ["slump", "fall-front", "death"].includes(x[1][6])); return m ? m[1][6] : "none"; };
+    ok("silvereye: a headshot crumples a guard where he stands, shots in the legs pitch him forward", fell(Math.atan(0.2 / 4)) === "slump" && fell(Math.atan(-0.9 / 4)) === "fall-front", [fell(Math.atan(0.2 / 4)), fell(Math.atan(-0.9 / 4))]);
     const off = shot(0, 0.12, -0.12);
     ok("silvereye: the sight moved off the middle aims the shot there while the view stays", off[0] < 100, off); }
   ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);

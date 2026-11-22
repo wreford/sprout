@@ -593,7 +593,9 @@ play : [game |
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hit-guards : game guards collect [g |
     n : power ["guard [g id]", shot-damage, 110] + (zapped "guard [g id]" * sentry-damage)
-    n > 0 [g with [health : g health - n, alert : true, stagger : 0.35]] else [g]
+    -- where the last shot landed (head, body or legs): it decides how he falls
+    zone : shot-hits keep [h | h key = "guard [g id]"] collect [h | h zone] @ 1 else (g last-zone else "body")
+    n > 0 [g with [health : g health - n, alert : true, stagger : 0.35, last-zone : zone]] else [g]
   ]
   thinking : hit-guards collect [g |
     g health <= 0 [g] else [
@@ -910,7 +912,9 @@ draw : [game |
     kit : guard-looks @ (kinds @ (g id - 1 % (kinds length) + 1))
     -- a guard who has just been hit flinches: the hit plays from the moment the shot landed
     flinch : (g stagger else 0) > 0
-    clip : cond [g health <= 0, cond [big, "Death", any, kit death], flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
+    -- a headshot crumples him where he stands, a shot in the legs pitches him forward, anything else throws him back
+    falls : cond [big, "Death", (g last-zone else "body") = "head", "slump", (g last-zone else "body") = "legs", "fall-front", any, kit death]
+    clip : cond [g health <= 0, falls, flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
     time : cond [g health <= 0, now - (g fell else now), flinch, 0.35 - (g stagger else 0), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
     model [cond [big, "mech", any, kit body], g x, 0, g y, g angle, cond [big, 2.5, any, kit size] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, kit holds]]
   ]
