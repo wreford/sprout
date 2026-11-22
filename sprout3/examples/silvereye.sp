@@ -154,7 +154,7 @@ missions : [
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS", target-one : "GENERATOR"
     guard-kinds : [1]
-    intel : [14.5, 12.5], intel-name : "INTEL CASE"
+    intel : [14.5, 12.5], intel-name : "INTEL CASE", silencer : [1.5, 10.5]
     scientists : [[1, 8.5, 1.5, 14.5, 1.5], [2, 1.5, 13.5, 10.5, 13.5]]
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
@@ -164,7 +164,7 @@ missions : [
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS", target-one : "FUEL STACK"
     guard-kinds : [2]
-    intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
+    intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST", silencer : [8.5, 1.5]
     scientists : [[1, 2.5, 7.5, 13.5, 7.5]]
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
   ]
@@ -174,7 +174,7 @@ missions : [
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
     guard-kinds : [3]
-    intel : [8.0, 7.5], intel-name : "CODEBOOK"
+    intel : [8.0, 7.5], intel-name : "CODEBOOK", silencer : [1.5, 14.5]
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
     brief : ["A relay station, held by the Warden himself.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
@@ -186,7 +186,7 @@ missions : [
     guards : [[1, 6.5, 9.5, 16.5, 9.5], [2, 12.5, 6.5, 12.5, 12.5], [3, 20.5, 8.5, 20.5, 13.5], [4, 9.5, 15.5, 9.5, 21.5], [5, 16.5, 20.5, 21.5, 20.5], [6, 3.5, 9.5, 3.5, 13.5], [7, 5.5, 4.5, 7.5, 5.5], [8, 18.5, 3.5, 18.5, 4.5], [9, 17.5, 16.5, 19.5, 16.5], [10, 15.5, 11.5, 10.5, 11.5]]
     targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS", target-one : "RADIO MAST"
     guard-kinds : [2, 1]
-    intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
+    intel : [4.5, 4.5], intel-name : "FLIGHT PLANS", silencer : [16.5, 16.5]
     scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
     spots : compound-spots, heavy : compound-heavy
     brief : ["A walled compound in the open: ten guards in the yard.", "Wreck both radio masts, take the flight plans", "from the HQ, and get out through the gate."]
@@ -353,7 +353,8 @@ start :
   guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]] .. wardens]
   mines : []
   turrets : []
-  pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : mission intel @ 1, y : mission intel @ 2, back-at : 0]]])
+  -- a mission also hides its intel, and a silencer: with it, guards don't hear your blaster
+  pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : mission intel @ 1, y : mission intel @ 2, back-at : 0], [kind : "quiet", x : mission silencer @ 1, y : mission silencer @ 2, back-at : 0]]])
   scientists : mode != "mission" [[]] else [mission scientists collect [[k, sx, sy, tx, ty] | scientist [k, sx, sy, tx, ty]]]
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
@@ -462,7 +463,10 @@ play : [game |
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
   shooters : ready keep can-shoot
   shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
-  (shooters any [a | a weapon != "heavy"]) [sound "shoot"]
+  -- a shot is loud unless it's from a silenced blaster (the heavy blaster is always loud)
+  loud : [a | (a weapon = "heavy") or ((a quiet else false) not)]
+  (shooters any [a | (a weapon != "heavy") and (loud a)]) [sound "shoot"]
+  (shooters any [a | loud a not]) [sound "quiet"]
   (shooters any [a | a weapon = "heavy"]) [sound "heavy"]
   -- a miss leaves a hole in the wall where it struck (the last 24 stay)
   misses : shooters keep [a | a aimed = false] collect [a |
@@ -545,7 +549,7 @@ play : [game |
   ]
   -- a guard who has seen you calls the others nearby, and a guard who hears a shot (through walls) comes to look
   callers : thinking keep [g | (g alert) and (g health > 0)]
-  heard : [g | shooters any [a | distance [a x, a y, g x, g y] < (cond [a weapon = "heavy", hearing * 1.5, any, hearing])]]
+  heard : [g | shooters any [a | (loud a) and (distance [a x, a y, g x, g y] < (cond [a weapon = "heavy", hearing * 1.5, any, hearing]))]]
   called : thinking collect [g | cond [(g alert not) and (g health > 0) and ((callers any [o | distance [o x, o y, g x, g y] < 6]) or (heard g)), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : [who | thinking keep [g | (g hits else false) and (g target = who)] collect [g | cond [g boss else false, 18, any, 9]] sum]
@@ -633,6 +637,7 @@ play : [game |
       fire-wait : cond [can-shoot a, cond [a weapon = "heavy", heavy-every, any, fire-every] * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
       -- the heavy blaster: picked up, it's in your hands; C-right (or Q) swaps between the two
       has-heavy : (a has-heavy) or (got "heavy" > 0)
+      quiet : (a quiet else false) or (got "quiet" > 0)
       weapon : cond [got "heavy" > 0, "heavy", (a asks swap) and (a has-heavy) and (a swap-wait <= 0), cond [a weapon = "heavy", "blaster", any, "heavy"], any, a weapon]
       swap-wait : cond [a asks swap, 0.3, any, a swap-wait - dt]
       mine-wait : cond [can-drop a, 0.5, any, a mine-wait - dt]
@@ -826,8 +831,8 @@ draw : [game |
   game machines keep [m | (m health <= 0) and (now * 5 + (m id) % 1 < 0.35)] each [m | flash [m x, 1.0, m y, 0.12, "#ffb347"]]
   -- pickups, turning slowly and glowing
   game pickups keep [p | now >= (p back-at)] each [p |
-    model [cond [p kind = "armour", "chest", p kind = "intel", "chest", p kind = "heavy", "blaster_e", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, any, 0.3], false, 0]
-    flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", any, gold]]
+    model [cond [p kind = "armour", "chest", p kind = "intel", "chest", p kind = "heavy", "blaster_e", p kind = "quiet", "blaster_g", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, p kind = "quiet", 0.22, any, 0.3], false, 0]
+    flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", p kind = "quiet", "#b18cff", any, gold]]
   ]
   game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
   -- the turrets, turned the way their program points them, with a spark when they fire
@@ -859,7 +864,7 @@ draw : [game |
   sway-y : cond [you moving, stride * 2 sin abs * 0.01, any, 0]
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
-  (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
+  (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), cond [(you weapon != "heavy") and (you quiet else false), 0.035, any, 0.08], "#ffd76a"]]
   -- a hit sparks on whatever it hit
   ((now - (you hit-at) < 0.08) and (you aimed != false)) [flash [you aimed x, 1.1, you aimed y, 0.09, "#ffe08a"]]
   -- a miss sparks where it hits the wall
@@ -904,7 +909,7 @@ draw : [game |
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
   -- shots: what's in the clip, and spare (down on the left, clear of the gun in your hand); a bar while you reload
   text ["[you clip] | [you ammo]", 32, H - 40, 13, cond [you clip = 0, red, any, cream]]
-  text [cond [you weapon = "heavy", "HEAVY", any, "BLASTER"], 32, H - 26, 8, "#9aa3b5"]
+  text [cond [you weapon = "heavy", "HEAVY", you quiet else false, "BLASTER · SILENCED", any, "BLASTER"], cond [(you weapon != "heavy") and (you quiet else false), 52, any, 32], H - 26, 8, cond [(you weapon != "heavy") and (you quiet else false), "#b18cff", any, "#9aa3b5"]]
   (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours
@@ -1007,7 +1012,7 @@ draw : [game |
   since-took : now - (you took-at else -10)
   (since-took < 1.5) [
     what : you took else ""
-    text [cond [what = "ammo", "+16 SHOTS", what = "armour", "+50 ARMOUR", what = "heavy", "HEAVY BLASTER", what = "intel", mission intel-name else "INTEL", any, ""], W / 2, H / 2 + 70 - (since-took * 12), 10, cond [what = "armour", cyan, what = "intel", "#ff7ab2", any, gold]]
+    text [cond [what = "ammo", "+16 SHOTS", what = "armour", "+50 ARMOUR", what = "heavy", "HEAVY BLASTER", what = "intel", mission intel-name else "INTEL", what = "quiet", "SILENCER · GUARDS WON'T HEAR YOUR BLASTER", any, ""], W / 2, H / 2 + 70 - (since-took * 12), 10, cond [what = "armour", cyan, what = "intel", "#ff7ab2", what = "quiet", "#b18cff", any, gold]]
   ]
   -- the touch buttons, when there's no console around the screen
   game shell not [

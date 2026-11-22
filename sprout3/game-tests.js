@@ -402,7 +402,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
     const g1 = gm => S.partsOf(f(gm, "guards")).find(g => g.field("id") === 1);
     ok("silvereye: a guard behind a wall doesn't notice a quiet player", g1(quiet).field("alert") === false);
-    ok("silvereye: but hears a shot fired there, and comes on alert", g1(loud).field("alert") === true); }
+    ok("silvereye: but hears a shot fired there, and comes on alert", g1(loud).field("alert") === true);
+    // the silencer: each mission hides one; with it the blaster isn't heard (the heavy blaster still is)
+    const sl = L.makeGame(src, {}); sl.tick(1 / 60, pad({}));
+    ok("silvereye: the lab hides a silencer", S.partsOf(f(sl, "pickups")).some(p => p.field("kind") === "quiet" && p.field("x") === 1.5 && p.field("y") === 10.5));
+    put(sl, 0, { x: 1.5, y: 10.5 }); sl.tick(1 / 60, pad({}));
+    ok("silvereye: walking over it fits it, and says so", agent(sl, 1).field("quiet") === true && sl.draw().some(x => x[0] === "text" && /^SILENCER/.test(x[1][0])) && sl.draw().some(x => x[0] === "text" && x[1][0] === "BLASTER · SILENCED"));
+    const fx2 = []; const sq = L.makeGame(src, { onEffect: e => fx2.push(e) }); sq.tick(1 / 60, pad({})); put(sq, 0, { x: 6.5, y: 1.5, angle: Math.PI, quiet: true });
+    for (let k = 0; k < 20; k++) sq.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: a silenced shot isn't heard through the wall", g1(sq).field("alert") === false && agent(sq, 1).field("shots-fired") > 0); }
   // objects: what's in your sight is named (with what it has left), objectives are marked, pickups say what you got
   { const texts = g => g.draw().filter(x => x[0] === "text").map(x => x[1]);
     const ai = L.makeGame(src, {}); ai.tick(1 / 60, pad({})); put(ai, 0, { x: 9.5, y: 7.5, angle: 0 }); ai.tick(1 / 60, pad({}));
@@ -420,7 +428,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
-  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 10 && f(g, "pickups").part(10).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
