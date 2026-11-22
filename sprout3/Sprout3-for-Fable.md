@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 546 pass, 303 for the language and 243 for the games.
+- **Tests:** 664 pass, 421 for the language and 243 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (303)
+node test.js          # language tests (421)
 node game-tests.js    # game tests (243)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 546 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 664 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -838,6 +838,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 109. **Words for a game's screen, and a highlighter that asks Sprout (Claude, 21 Nov; library and host, no change to the language).** Numbers get `pad-left` and `pad-right` (as text has: `5 pad-left [2, "0"]` is `"05"`) and `clock` (`75.4 clock` is `"1:15"`, minutes and seconds, for a game's timer). `Sprout3.knownWords()` gives every word Sprout knows at that moment, the globals and every kind's methods, and `highlight.js` (shared by the editor and SilverEye's program sheet) colours those when it isn't handed its own list. A game's `held` record may carry numbers as well as `true`: the POCKET64 page sends a stick's tilt as `walk` and `strafe`, and how far you've dragged to look as `look`, and `net.js` carries those numbers across the link (`[name, value]` pairs; plain names still mean `true`). Wanted on the way and not built, since it would change the language: a `"` inside a text insert (`"[cond [a, \"x\", any, \"y\"]]"`), which the tokenizer reads as the end of the text; for now such a choice is worked out on its own line first.
 
 110. **Light, sky and things in hand (Claude, 21–22 Nov; host words, no change to the language).** Four more 3D words and two map characters, all in `three-view.js`, so a game can be lit and open to the sky. `light [sky, ground, key, strength]` sets each frame's light: a hemisphere light from the sky colour above to the ground colour below, a key light in the third colour, and a strength (1 is ordinary); without it the defaults come back, so SilverEye sets one per mission and turns it red while the alarm is up. `sky [top, horizon]` draws a gradient behind everything instead of the fog's flat colour. A block's material written `glow:#rrggbb` is lit from within (lamps, screens), whatever the light. `model` takes a ninth argument, the name of a model to carry in the character's right hand (`model ["adventurer", x, 0, z, angle, 1.8, "Walk", time, "blaster_g"]`), found on its hand bone and scaled to the hand; `false` carries nothing. `hold` models, the gun in your hands, are drawn in a scene of their own with a fixed 62-degree camera and the same lights, so they sit the same however wide the view is, and a flash close in front of the camera lights them too. Map text in SilverEye gained `,` (ground out under the sky, with no ceiling over it) and `D` (a door that slides up when anyone comes near); these belong to the game, not to Sprout. Live3's draw list counts the arguments of each word (`light` 4, `sky` 2, `model` 9). `beam [x1, y1, z1, x2, y2, z2, colour]` draws a thin streak lit from within between two points, for a shot's tracer, and a flash coloured `smoke:#rrggbb` is a see-through puff that gives off no light. makeView takes `soft` and `setSoft` switches every texture between sharp (each texel a hard square) and soft (cut to 64 by 64 and filtered smoothly). The 2D word `text` takes an optional sixth value, `"left"` or `"right"`, which pins that edge of the text at x instead of its middle, so a column of lines lines up whatever their letters.
+
+111. **A library distilled from the games (Claude, 22 Nov; library, decisions 80 and 105, from Troy's ask to look at all the TaskIAP games and distil a library of beautiful Sprout cells).** A survey of the 319 TaskIAP apps (the 27 in this repository's folders and the 292 in 2026experiments) counted what they keep writing again: progress saved (118), things eased about (112), tiles and grids (96), cards (96), dice (66), days and nights (59), hit points (57), gravity (57), screen shake (55), matching and merging (53), leagues and schedules (48), idle earnings (45), streaks (42) and more. Sixteen new standard-library modules write those once, in Sprout, each word small, with a comment, an example whose answer the library page shows, and a checked answer in test.js: `motion` (tween, approach, glide, shake, calm, bob, pulse, fall, bounce, drag, jump-speed), `collide` (boxes, circles, in-box, in-circle, circle-box, wrap-around), `cards` (suits, deck, shuffled, deal, faces, name, red, blackjack, poker), `dice` (rolls, roll "2d6+3", odds, at-least, advantage), `combat` (damage through armour, strike, health, hits-to-down, xp-for, level-of, level-progress, ready, cooling, over-time, turn-order), `idle` (price, price-of-many, how-many, away, prestige, wander, short), `league` (rounds by the circle method, table, chance, rate, bracket), `wordplay` (marks, as DECAWORDLE marks a guess, anagram, scramble, hide, solved, vowels), `rewards` (streak-points, day-streak, stars, grade, top, earned, restore), `story` (open, go, flag, typed, typed-all), `daytime` (hour, part, light, sky, season, weekday, stage, ripe), `hex` (around, steps, within, to-screen, snap, from-screen), `particles` (burst, step, fade), `camera` (follow, keep-in, on-screen), `waves` (size, toughness, gap, boss, spawn-point) and `tiles` (runs, fall, slide, turn, ray, sees, seen). Two names were changed on the way: `days` and `progress` are common field names, and a global module of either name kept a loop that reads such a field (ace-schedule's) off the SIMD path, so they are `daytime` and `rewards`. Randomness always comes from a seed, through `seeded`, so a replay and a second phone get the same luck.
 ````
 
 ---
@@ -4074,6 +4076,49 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     ["json read (json write [a : [1, 2], b : \"t\"])", "[a : [1, 2], b : t]"],
   ];
   for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  // the library distilled from the TaskIAP games (motion to wordplay): each word's answer, checked
+  const G = [
+    ["motion tween [0, 100, 1, 2, 1.5, ease out-quad]", "43.75"], ["motion approach [0, 10, 4, 0.5]", "2"], ["motion glide [0, 100, 0.9, 0.1] round", "21"],
+    ["motion calm [0.8, 1.5, 0.2]", "0.5"], ["motion bob [0.1, 1, 0.25]", "0.1"], ["motion pulse [1, 0.25]", "1"],
+    ["motion fall [[x : 0, y : 0, vx : 2, vy : 0], 10, 0.5]", "[x : 1, y : 2.5, vx : 2, vy : 5]"], ["motion bounce [[x : 12, y : 5, vx : 3, vy : 0], 10, 10, 0.8]", "[x : 10, y : 5, vx : -2.4, vy : 0]"],
+    ["motion drag [10, 0.5, 1]", "5"], ["motion jump-speed [2, 9.8] round", "6"],
+    ["collide boxes [[0, 0, 10, 10], [5, 5, 10, 10]]", "true"], ["collide boxes [[0, 0, 10, 10], [10, 0, 5, 5]]", "false"], ["collide circles [[0, 0, 5], [8, 0, 5]]", "true"],
+    ["collide in-box [3, 4, [0, 0, 10, 10]]", "true"], ["collide in-circle [3, 4, [0, 0, 5]]", "false"], ["collide circle-box [[12, 5, 3], [0, 0, 10, 10]]", "true"], ["collide wrap-around [105, -3, 100, 100]", "5x97"],
+    ["cards deck length", "52"], ["cards shuffled 7 length", "52"], ["cards shuffled 7 distinct length", "52"], ["cards name [rank : 12, suit : \"♥\"]", "Q♥"], ["cards red [rank : 1, suit : \"♦\"]", "true"],
+    ["cards deal [cards deck, 2] pile length", "50"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 13, suit : \"♥\"]]", "21"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 1, suit : \"♥\"], [rank : 10, suit : \"♥\"]]", "12"],
+    ["cards poker [[rank : 3, suit : \"♠\"], [rank : 3, suit : \"♥\"], [rank : 9, suit : \"♦\"], [rank : 9, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "full house"],
+    ["cards poker [[rank : 10, suit : \"♠\"], [rank : 11, suit : \"♠\"], [rank : 12, suit : \"♠\"], [rank : 13, suit : \"♠\"], [rank : 1, suit : \"♠\"]]", "straight flush"],
+    ["cards poker [[rank : 2, suit : \"♠\"], [rank : 2, suit : \"♥\"], [rank : 5, suit : \"♦\"], [rank : 5, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "two pair"],
+    ["dice odds [2, 6] @ 6", "[7, 0.1666666667]"], ["dice odds [3, 6] length", "16"], ["dice at-least [2, 6, 10]", "0.1666666667"], ["dice rolls [3, 6, 7] all [f | (f >= 1) and (f <= 6)]", "true"],
+    ["dice roll [\"d20\", 3] between [1, 20]", "true"], ["dice roll [\"3d1-2\", 3]", "1"],
+    ["combat damage [40, 100]", "20"], ["combat health [40, -55, 100]", "0"], ["combat hits-to-down [100, 30]", "4"], ["combat xp-for 5", "800"], ["combat level-of 800", "5"], ["combat level-of 799", "4"],
+    ["combat level-progress 900", "0.3144654088"], ["combat ready [2, 3.1, 1]", "true"], ["combat cooling [2, 2.5, 1]", "0.5"], ["combat over-time [5, 3, 10, 11.5]", "7.5"],
+    ["idle price [10, 1.15, 5] round", "20"], ["idle price-of-many [10, 1.15, 5, 10] round", "408"], ["idle how-many [500, 10, 1.15, 5]", "11"], ["idle away [2.5, 7200, 1]", "9000"],
+    ["idle prestige 4000000", "2"], ["idle short 1234567", "1.2M"], ["idle short 950", "950"], ["idle short 3400000000", "3.4B"],
+    ["league rounds [\"A\", \"B\", \"C\", \"D\"] collect-flat [r | r] length", "6"], ["league rounds [\"A\", \"B\", \"C\"] collect-flat [r | r] length", "3"],
+    ["league table [[\"A\", \"B\", 2, 1], [\"B\", \"C\", 0, 0], [\"C\", \"A\", 1, 3]] collect [t | t team]", "[A, B, C]"], ["league chance [1600, 1400]", "0.7597469266"],
+    ["league rate [1500, 1500, 1, 32]", "[1516, 1484]"], ["league bracket 8", "[[1, 8], [4, 5], [2, 7], [3, 6]]"],
+    ["wordplay marks [\"SPEED\", \"ABIDE\"]", "--Y-Y"], ["wordplay marks [\"crane\", \"crane\"]", "GGGGG"], ["wordplay marks [\"LLAMA\", \"HELLO\"]", "YY---"], ["wordplay anagram [\"listen\", \"silent\"]", "true"],
+    ["wordplay scramble [\"planet\", 7] chars sort = (\"planet\" chars sort)", "true"], ["wordplay hide [\"planet\", \"aep\"]", "p_a_e_"], ["wordplay solved [\"planet\", \"plan\"]", "false"], ["wordplay vowels \"sprout\"", "2"],
+    ["rewards streak-points [100, 4]", "130"], ["rewards streak-points [100, 30]", "200"], ["rewards day-streak [41, 42, 6]", "7"], ["rewards day-streak [41, 41, 6]", "6"], ["rewards day-streak [38, 42, 6]", "1"],
+    ["rewards stars [720, [300, 600, 900]]", "2"], ["rewards grade 0.83", "B"], ["rewards top [[900, 500, 200], 600, 3]", "[900, 600, 500]"],
+    ["rewards earned [[[\"First steps\", [s | s steps >= 1]], [\"Marathon\", [s | s steps >= 1000]]], [steps : 12], [\"First steps\"]]", "[]"],
+    ["rewards restore [[sound : true, speed : 1, level : 1], [speed : 2, colour : \"red\"]]", "[sound : true, speed : 2, level : 1]"],
+    ["story open [[start : [text : \"A door.\", choices : [[\"Open it\", \"hall\"], [\"Pick the lock\", \"vault\", \"lockpick\"]]]], \"start\", [\"lockpick\"]] length", "2"],
+    ["story go [[[\"Open it\", \"hall\"]], 1]", "hall"], ["story flag [[\"has-key\"], \"has-key\"]", "[has-key]"], ["story typed [\"Hello there\", 0.5, 10]", "Hello"], ["story typed-all [\"Hello\", 0.5, 10]", "true"],
+    ["daytime hour [90, 120, 6]", "0"], ["daytime part 18.5", "dusk"], ["daytime part 3", "night"], ["daytime light 6", "0.5"], ["daytime light 19", "0.5"], ["daytime season [40, 28]", "summer"], ["daytime season [113, 28]", "spring"],
+    ["daytime weekday 10", "Wed"], ["daytime stage [0, 25, [10, 10, 10]]", "3"], ["daytime stage [0, 31, [10, 10, 10]]", "4"], ["daytime ripe [0, 30, [10, 10, 10]]", "true"],
+    ["hex steps [[0, 0], [2, -1]]", "2"], ["hex within [[0, 0], 2] length", "19"], ["hex around [3, 3] all [h | hex steps [[3, 3], h] = 1]", "true"], ["hex from-screen [26, 15, 10]", "[1, 1]"], ["hex snap [0.6, 0.7]", "[0, 1]"],
+    ["particles burst [100, 100, 3, 80, 1.5, 12, 7, [#ffd166, #ff7ab2]] length", "3"], ["particles step [particles burst [0, 0, 4, 50, 1, 0, 7, [#ffd166]], 0.1, 200, 2] length", "0"], ["particles fade [[born : 1, life : 2], 2]", "0.5"],
+    ["camera follow [[x : 0, y : 0], [x : 100, y : 0], 0.9, 10, 0.1] x round", "19"], ["camera follow [[x : 0, y : 0], [x : 5, y : 0], 0.9, 10, 0.1] x", "0"],
+    ["camera keep-in [[x : 5, y : 300], 100, 80, 400, 320]", "[x : 50, y : 280]"], ["camera on-screen [[x : 100, y : 100], 130, 90, 320, 240]", "190x110"],
+    ["waves size [5, 4, 1.3]", "11"], ["waves toughness 10", "2.08"], ["waves gap [20, 2, 0.4]", "0.4"], ["waves boss [10, 5]", "true"], ["waves boss [11, 5]", "false"],
+    ["tiles runs [[1, 1, 1, 2], [3, 2, 3, 2], [3, 2, 1, 2]] length", "6"], ["tiles fall [[1, 2], [false, 3], [4, false]]", "[[false, false], [1, 2], [4, 3]]"],
+    ["tiles slide [2, 2, 4, false]", "[row : [4, 4, false, false], points : 4]"], ["tiles slide [2, 2, 2, 2]", "[row : [4, 4, false, false], points : 8]"], ["tiles turn [[1, 2], [3, 4]]", "[[3, 1], [4, 2]]"],
+    ["tiles ray [1, 1, 4, 2]", "[[1, 1], [2, 1], [3, 2], [4, 2]]"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 2, 3, 2, 1]", "false"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 1, 3, 1, 1]", "true"],
+    ["tiles seen [grid make [5, 5, 0], 3, 3, 1, 1] length", "5"],
+  ];
+  for (const [src, want] of G) { const got = val(src); ok("105 the games' library: " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
 // ---------------- wrapped libraries (decision 106)
@@ -7009,7 +7054,7 @@ p with [x : 5] print
 <h2>Read</h2>
 <ul class="list">
 <li><a href="silvereye-guide.html">How SilverEye is made</a><span>A 3D shooter in one Sprout program, explained part by part.</span></li>
-<li><a href="library.html">The library</a><span>Ten modules of our own, from ease to json, and eight wrapped libraries.</span></li>
+<li><a href="library.html">The library</a><span>Twenty-six modules of our own, from ease to json, sixteen of them distilled from the TaskIAP games (cards, dice, combat, idle, league, tiles, wordplay and more), and eight wrapped libraries.</span></li>
 <li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
 <li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
@@ -8692,6 +8737,8 @@ function wordsOf(src) {
   return { intro, words };
 }
 const MODULES = names.map(name => ({ name, ...wordsOf(sources[name]) }));
+// the modules distilled from the TaskIAP games: those whose opening says so
+const GAME_MODULES = names.filter(name => /Distilled from/.test(sources[name].split("\n\n")[0]));
 // json is written in JavaScript, in words.js; its entry is written here
 MODULES.push({ name: "json", intro: ["json: JSON text read into records and lists, and written back. null reads as false; dates, money and other kinds are written as their text."], words: [
   { name: "read", inputs: "", about: ["records and lists from JSON text (put \\[ for a [ inside Sprout text)"], examples: ['json read "{\\"a\\": 1, \\"b\\": \\[true, null]}"'] },
@@ -8731,6 +8778,7 @@ ${style}</head><body>
 <p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
 <p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, start, goal, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines. Every example below was run, and the comment under it is what it gave.</p>
 <p class="toc">${MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+<p>Sixteen of them were distilled from the 319 TaskIAP games and apps: what they kept writing again and again, written once, small and well, in Sprout: ${GAME_MODULES.map(n => `<a href="#${n}">${n}</a>`).join(", ")}. A count in each one's opening says how many games needed it.</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
 ${MODULES.map(section).join("\n")}
 <h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>

@@ -398,6 +398,49 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     ["json read (json write [a : [1, 2], b : \"t\"])", "[a : [1, 2], b : t]"],
   ];
   for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  // the library distilled from the TaskIAP games (motion to wordplay): each word's answer, checked
+  const G = [
+    ["motion tween [0, 100, 1, 2, 1.5, ease out-quad]", "43.75"], ["motion approach [0, 10, 4, 0.5]", "2"], ["motion glide [0, 100, 0.9, 0.1] round", "21"],
+    ["motion calm [0.8, 1.5, 0.2]", "0.5"], ["motion bob [0.1, 1, 0.25]", "0.1"], ["motion pulse [1, 0.25]", "1"],
+    ["motion fall [[x : 0, y : 0, vx : 2, vy : 0], 10, 0.5]", "[x : 1, y : 2.5, vx : 2, vy : 5]"], ["motion bounce [[x : 12, y : 5, vx : 3, vy : 0], 10, 10, 0.8]", "[x : 10, y : 5, vx : -2.4, vy : 0]"],
+    ["motion drag [10, 0.5, 1]", "5"], ["motion jump-speed [2, 9.8] round", "6"],
+    ["collide boxes [[0, 0, 10, 10], [5, 5, 10, 10]]", "true"], ["collide boxes [[0, 0, 10, 10], [10, 0, 5, 5]]", "false"], ["collide circles [[0, 0, 5], [8, 0, 5]]", "true"],
+    ["collide in-box [3, 4, [0, 0, 10, 10]]", "true"], ["collide in-circle [3, 4, [0, 0, 5]]", "false"], ["collide circle-box [[12, 5, 3], [0, 0, 10, 10]]", "true"], ["collide wrap-around [105, -3, 100, 100]", "5x97"],
+    ["cards deck length", "52"], ["cards shuffled 7 length", "52"], ["cards shuffled 7 distinct length", "52"], ["cards name [rank : 12, suit : \"♥\"]", "Q♥"], ["cards red [rank : 1, suit : \"♦\"]", "true"],
+    ["cards deal [cards deck, 2] pile length", "50"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 13, suit : \"♥\"]]", "21"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 1, suit : \"♥\"], [rank : 10, suit : \"♥\"]]", "12"],
+    ["cards poker [[rank : 3, suit : \"♠\"], [rank : 3, suit : \"♥\"], [rank : 9, suit : \"♦\"], [rank : 9, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "full house"],
+    ["cards poker [[rank : 10, suit : \"♠\"], [rank : 11, suit : \"♠\"], [rank : 12, suit : \"♠\"], [rank : 13, suit : \"♠\"], [rank : 1, suit : \"♠\"]]", "straight flush"],
+    ["cards poker [[rank : 2, suit : \"♠\"], [rank : 2, suit : \"♥\"], [rank : 5, suit : \"♦\"], [rank : 5, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "two pair"],
+    ["dice odds [2, 6] @ 6", "[7, 0.1666666667]"], ["dice odds [3, 6] length", "16"], ["dice at-least [2, 6, 10]", "0.1666666667"], ["dice rolls [3, 6, 7] all [f | (f >= 1) and (f <= 6)]", "true"],
+    ["dice roll [\"d20\", 3] between [1, 20]", "true"], ["dice roll [\"3d1-2\", 3]", "1"],
+    ["combat damage [40, 100]", "20"], ["combat health [40, -55, 100]", "0"], ["combat hits-to-down [100, 30]", "4"], ["combat xp-for 5", "800"], ["combat level-of 800", "5"], ["combat level-of 799", "4"],
+    ["combat level-progress 900", "0.3144654088"], ["combat ready [2, 3.1, 1]", "true"], ["combat cooling [2, 2.5, 1]", "0.5"], ["combat over-time [5, 3, 10, 11.5]", "7.5"],
+    ["idle price [10, 1.15, 5] round", "20"], ["idle price-of-many [10, 1.15, 5, 10] round", "408"], ["idle how-many [500, 10, 1.15, 5]", "11"], ["idle away [2.5, 7200, 1]", "9000"],
+    ["idle prestige 4000000", "2"], ["idle short 1234567", "1.2M"], ["idle short 950", "950"], ["idle short 3400000000", "3.4B"],
+    ["league rounds [\"A\", \"B\", \"C\", \"D\"] collect-flat [r | r] length", "6"], ["league rounds [\"A\", \"B\", \"C\"] collect-flat [r | r] length", "3"],
+    ["league table [[\"A\", \"B\", 2, 1], [\"B\", \"C\", 0, 0], [\"C\", \"A\", 1, 3]] collect [t | t team]", "[A, B, C]"], ["league chance [1600, 1400]", "0.7597469266"],
+    ["league rate [1500, 1500, 1, 32]", "[1516, 1484]"], ["league bracket 8", "[[1, 8], [4, 5], [2, 7], [3, 6]]"],
+    ["wordplay marks [\"SPEED\", \"ABIDE\"]", "--Y-Y"], ["wordplay marks [\"crane\", \"crane\"]", "GGGGG"], ["wordplay marks [\"LLAMA\", \"HELLO\"]", "YY---"], ["wordplay anagram [\"listen\", \"silent\"]", "true"],
+    ["wordplay scramble [\"planet\", 7] chars sort = (\"planet\" chars sort)", "true"], ["wordplay hide [\"planet\", \"aep\"]", "p_a_e_"], ["wordplay solved [\"planet\", \"plan\"]", "false"], ["wordplay vowels \"sprout\"", "2"],
+    ["rewards streak-points [100, 4]", "130"], ["rewards streak-points [100, 30]", "200"], ["rewards day-streak [41, 42, 6]", "7"], ["rewards day-streak [41, 41, 6]", "6"], ["rewards day-streak [38, 42, 6]", "1"],
+    ["rewards stars [720, [300, 600, 900]]", "2"], ["rewards grade 0.83", "B"], ["rewards top [[900, 500, 200], 600, 3]", "[900, 600, 500]"],
+    ["rewards earned [[[\"First steps\", [s | s steps >= 1]], [\"Marathon\", [s | s steps >= 1000]]], [steps : 12], [\"First steps\"]]", "[]"],
+    ["rewards restore [[sound : true, speed : 1, level : 1], [speed : 2, colour : \"red\"]]", "[sound : true, speed : 2, level : 1]"],
+    ["story open [[start : [text : \"A door.\", choices : [[\"Open it\", \"hall\"], [\"Pick the lock\", \"vault\", \"lockpick\"]]]], \"start\", [\"lockpick\"]] length", "2"],
+    ["story go [[[\"Open it\", \"hall\"]], 1]", "hall"], ["story flag [[\"has-key\"], \"has-key\"]", "[has-key]"], ["story typed [\"Hello there\", 0.5, 10]", "Hello"], ["story typed-all [\"Hello\", 0.5, 10]", "true"],
+    ["daytime hour [90, 120, 6]", "0"], ["daytime part 18.5", "dusk"], ["daytime part 3", "night"], ["daytime light 6", "0.5"], ["daytime light 19", "0.5"], ["daytime season [40, 28]", "summer"], ["daytime season [113, 28]", "spring"],
+    ["daytime weekday 10", "Wed"], ["daytime stage [0, 25, [10, 10, 10]]", "3"], ["daytime stage [0, 31, [10, 10, 10]]", "4"], ["daytime ripe [0, 30, [10, 10, 10]]", "true"],
+    ["hex steps [[0, 0], [2, -1]]", "2"], ["hex within [[0, 0], 2] length", "19"], ["hex around [3, 3] all [h | hex steps [[3, 3], h] = 1]", "true"], ["hex from-screen [26, 15, 10]", "[1, 1]"], ["hex snap [0.6, 0.7]", "[0, 1]"],
+    ["particles burst [100, 100, 3, 80, 1.5, 12, 7, [#ffd166, #ff7ab2]] length", "3"], ["particles step [particles burst [0, 0, 4, 50, 1, 0, 7, [#ffd166]], 0.1, 200, 2] length", "0"], ["particles fade [[born : 1, life : 2], 2]", "0.5"],
+    ["camera follow [[x : 0, y : 0], [x : 100, y : 0], 0.9, 10, 0.1] x round", "19"], ["camera follow [[x : 0, y : 0], [x : 5, y : 0], 0.9, 10, 0.1] x", "0"],
+    ["camera keep-in [[x : 5, y : 300], 100, 80, 400, 320]", "[x : 50, y : 280]"], ["camera on-screen [[x : 100, y : 100], 130, 90, 320, 240]", "190x110"],
+    ["waves size [5, 4, 1.3]", "11"], ["waves toughness 10", "2.08"], ["waves gap [20, 2, 0.4]", "0.4"], ["waves boss [10, 5]", "true"], ["waves boss [11, 5]", "false"],
+    ["tiles runs [[1, 1, 1, 2], [3, 2, 3, 2], [3, 2, 1, 2]] length", "6"], ["tiles fall [[1, 2], [false, 3], [4, false]]", "[[false, false], [1, 2], [4, 3]]"],
+    ["tiles slide [2, 2, 4, false]", "[row : [4, 4, false, false], points : 4]"], ["tiles slide [2, 2, 2, 2]", "[row : [4, 4, false, false], points : 8]"], ["tiles turn [[1, 2], [3, 4]]", "[[3, 1], [4, 2]]"],
+    ["tiles ray [1, 1, 4, 2]", "[[1, 1], [2, 1], [3, 2], [4, 2]]"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 2, 3, 2, 1]", "false"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 1, 3, 1, 1]", "true"],
+    ["tiles seen [grid make [5, 5, 0], 3, 3, 1, 1] length", "5"],
+  ];
+  for (const [src, want] of G) { const got = val(src); ok("105 the games' library: " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
 // ---------------- wrapped libraries (decision 106)
