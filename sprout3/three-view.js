@@ -8,7 +8,7 @@ import { GLTFLoader } from "./vendor/three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "./vendor/three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "./vendor/three/addons/utils/SkeletonUtils.js";
 
-const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog", "light", "sky"]);
+const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog", "light", "sky", "beam"]);
 const fmt = v => typeof v === "string" ? v : window.Sprout3 ? Sprout3.format(v) : String(v);
 const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
 // Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
@@ -115,6 +115,8 @@ export function makeView(canvas, base, opts) {
   const pools = new Map();   // model name -> [{ root, mixer, actions }]
   const holds = new Map();
   const flashes = [], glow = new THREE.SphereGeometry(1, 16, 12);
+  // beams: thin bright streaks between two points, a shot's tracer; a pool, reused frame to frame
+  const beams = [], beamEnd = new THREE.Vector3();
   // blob shadows, as the old consoles did: a soft dark disc on the floor under everything that stands in the world
   const blobTexture = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.62)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const blobGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false });
@@ -178,7 +180,7 @@ export function makeView(canvas, base, opts) {
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
-    let flashCount = 0, fogSet = false, lightSet = false, skyTexture = null, nearFlash = null;
+    let flashCount = 0, beamCount = 0, fogSet = false, lightSet = false, skyTexture = null, nearFlash = null;
     for (const [word, a] of list) {
       if (!WORDS.has(word)) continue;
       if (word === "view") {
@@ -218,6 +220,14 @@ export function makeView(canvas, base, opts) {
         f.ball.material.opacity = smoke ? 0.3 : 0.85; f.ball.material.depthWrite = !smoke;
         if (!smoke && f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
+      } else if (word === "beam") {
+        // beam [x1, y1, z1, x2, y2, z2, colour]: a streak from the first point to the second, lit from within
+        let b = beams[beamCount];
+        if (!b) { b = new THREE.Mesh(unitBox, new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false })); scene.add(b); beams.push(b); }
+        b.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0)); beamEnd.set(num(a[3], 0), num(a[4], 1), num(a[5], 0));
+        const len = Math.max(0.01, b.position.distanceTo(beamEnd));
+        b.position.lerp(beamEnd, 0.5); b.lookAt(beamEnd); b.scale.set(0.022, 0.022, len);
+        b.material.color.set(fmt(a[6] === undefined ? "#ffe08a" : a[6]).slice(0, 7)); b.visible = true; beamCount++;
       } else if (word === "sky") {
         // sky [top colour, horizon colour]: a dome round the camera, the gradient painted on it with soft clouds above
         // the horizon, so the clouds stay put as you turn; made once per pair of colours
@@ -241,6 +251,7 @@ export function makeView(canvas, base, opts) {
       pool.forEach((p, i) => { if (i >= used) p.root.visible = false; });
     }
     flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
+    beams.forEach((b, i) => { if (i >= beamCount) b.visible = false; });
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
     if (skyTexture) { dome.material.map = skyTexture; dome.material.needsUpdate = dome.material.map !== domeMap; domeMap = skyTexture; dome.visible = true; dome.position.copy(camera.position); scene.background = skyTexture.userData.low; }
     else dome.visible = false;

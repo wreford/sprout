@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (235)
+node game-tests.js    # game tests (237)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 538 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 540 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -764,7 +764,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 
 109. **Words for a game's screen, and a highlighter that asks Sprout (Claude, 21 Nov; library and host, no change to the language).** Numbers get `pad-left` and `pad-right` (as text has: `5 pad-left [2, "0"]` is `"05"`) and `clock` (`75.4 clock` is `"1:15"`, minutes and seconds, for a game's timer). `Sprout3.knownWords()` gives every word Sprout knows at that moment, the globals and every kind's methods, and `highlight.js` (shared by the editor and SilverEye's program sheet) colours those when it isn't handed its own list. A game's `held` record may carry numbers as well as `true`: the POCKET64 page sends a stick's tilt as `walk` and `strafe`, and how far you've dragged to look as `look`, and `net.js` carries those numbers across the link (`[name, value]` pairs; plain names still mean `true`). Wanted on the way and not built, since it would change the language: a `"` inside a text insert (`"[cond [a, \"x\", any, \"y\"]]"`), which the tokenizer reads as the end of the text; for now such a choice is worked out on its own line first.
 
-110. **Light, sky and things in hand (Claude, 21–22 Nov; host words, no change to the language).** Four more 3D words and two map characters, all in `three-view.js`, so a game can be lit and open to the sky. `light [sky, ground, key, strength]` sets each frame's light: a hemisphere light from the sky colour above to the ground colour below, a key light in the third colour, and a strength (1 is ordinary); without it the defaults come back, so SilverEye sets one per mission and turns it red while the alarm is up. `sky [top, horizon]` draws a gradient behind everything instead of the fog's flat colour. A block's material written `glow:#rrggbb` is lit from within (lamps, screens), whatever the light. `model` takes a ninth argument, the name of a model to carry in the character's right hand (`model ["adventurer", x, 0, z, angle, 1.8, "Walk", time, "blaster_g"]`), found on its hand bone and scaled to the hand; `false` carries nothing. `hold` models, the gun in your hands, are drawn in a scene of their own with a fixed 62-degree camera and the same lights, so they sit the same however wide the view is, and a flash close in front of the camera lights them too. Map text in SilverEye gained `,` (ground out under the sky, with no ceiling over it) and `D` (a door that slides up when anyone comes near); these belong to the game, not to Sprout. Live3's draw list counts the arguments of each word (`light` 4, `sky` 2, `model` 9). The 2D word `text` takes an optional sixth value, `"left"` or `"right"`, which pins that edge of the text at x instead of its middle, so a column of lines lines up whatever their letters.
+110. **Light, sky and things in hand (Claude, 21–22 Nov; host words, no change to the language).** Four more 3D words and two map characters, all in `three-view.js`, so a game can be lit and open to the sky. `light [sky, ground, key, strength]` sets each frame's light: a hemisphere light from the sky colour above to the ground colour below, a key light in the third colour, and a strength (1 is ordinary); without it the defaults come back, so SilverEye sets one per mission and turns it red while the alarm is up. `sky [top, horizon]` draws a gradient behind everything instead of the fog's flat colour. A block's material written `glow:#rrggbb` is lit from within (lamps, screens), whatever the light. `model` takes a ninth argument, the name of a model to carry in the character's right hand (`model ["adventurer", x, 0, z, angle, 1.8, "Walk", time, "blaster_g"]`), found on its hand bone and scaled to the hand; `false` carries nothing. `hold` models, the gun in your hands, are drawn in a scene of their own with a fixed 62-degree camera and the same lights, so they sit the same however wide the view is, and a flash close in front of the camera lights them too. Map text in SilverEye gained `,` (ground out under the sky, with no ceiling over it) and `D` (a door that slides up when anyone comes near); these belong to the game, not to Sprout. Live3's draw list counts the arguments of each word (`light` 4, `sky` 2, `model` 9). `beam [x1, y1, z1, x2, y2, z2, colour]` draws a thin streak lit from within between two points, for a shot's tracer, and a flash coloured `smoke:#rrggbb` is a see-through puff that gives off no light. makeView takes `soft` and `setSoft` switches every texture between sharp (each texel a hard square) and soft (cut to 64 by 64 and filtered smoothly). The 2D word `text` takes an optional sixth value, `"left"` or `"right"`, which pins that edge of the text at x instead of its middle, so a column of lines lines up whatever their letters.
 ````
 
 ---
@@ -3032,7 +3032,7 @@ const { ValueCell, Native, isCell, equal, UNSET } = S;
 const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
 // the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2 };
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7 };
 const SOUND = { beep: 2, shake: 1, sound: 1 };
 
 function makeGame(src, opts) {
@@ -4456,6 +4456,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: your mine says when it's armed, and blinks green", f(mn, "mines").count() === 1 && armed && green); }
   { const ft = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}); ft.tick(1 / 60, pad({}));
     ok("silvereye: a match opens with what wins it", ft.draw().some(x => x[0] === "text" && x[1][0] === "FIRST TO 5 TAKEDOWNS")); }
+  // the feel of a fight: guards flinch when hit, and shots leave tracers (yours, and the guards')
+  { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); put(fl, 0, { x: 9.5, y: 7.5, angle: 0 });
+    let flinch = false, mine = false, theirs = false;
+    for (let k = 0; k < 120; k++) { fl.tick(1 / 60, pad({ fire: k < 40 })); put(fl, 0, { health: 100 }); const d = fl.draw();
+      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "HitRecieve"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+    ok("silvereye: a guard who is hit flinches", flinch);
+    const gt = L.makeGame(src, {}); gt.tick(1 / 60, pad({})); put(gt, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 200 && !theirs; k++) { gt.tick(1 / 60, pad({})); put(gt, 0, { health: 100 }); theirs = gt.draw().some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+    ok("silvereye: your shots leave a tracer, and so do the guards'", mine && theirs, [mine, theirs]); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -10713,7 +10722,7 @@ import { GLTFLoader } from "./vendor/three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "./vendor/three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "./vendor/three/addons/utils/SkeletonUtils.js";
 
-const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog", "light", "sky"]);
+const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog", "light", "sky", "beam"]);
 const fmt = v => typeof v === "string" ? v : window.Sprout3 ? Sprout3.format(v) : String(v);
 const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
 // Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
@@ -10820,6 +10829,8 @@ export function makeView(canvas, base, opts) {
   const pools = new Map();   // model name -> [{ root, mixer, actions }]
   const holds = new Map();
   const flashes = [], glow = new THREE.SphereGeometry(1, 16, 12);
+  // beams: thin bright streaks between two points, a shot's tracer; a pool, reused frame to frame
+  const beams = [], beamEnd = new THREE.Vector3();
   // blob shadows, as the old consoles did: a soft dark disc on the floor under everything that stands in the world
   const blobTexture = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.62)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const blobGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false });
@@ -10883,7 +10894,7 @@ export function makeView(canvas, base, opts) {
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
-    let flashCount = 0, fogSet = false, lightSet = false, skyTexture = null, nearFlash = null;
+    let flashCount = 0, beamCount = 0, fogSet = false, lightSet = false, skyTexture = null, nearFlash = null;
     for (const [word, a] of list) {
       if (!WORDS.has(word)) continue;
       if (word === "view") {
@@ -10923,6 +10934,14 @@ export function makeView(canvas, base, opts) {
         f.ball.material.opacity = smoke ? 0.3 : 0.85; f.ball.material.depthWrite = !smoke;
         if (!smoke && f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
+      } else if (word === "beam") {
+        // beam [x1, y1, z1, x2, y2, z2, colour]: a streak from the first point to the second, lit from within
+        let b = beams[beamCount];
+        if (!b) { b = new THREE.Mesh(unitBox, new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false })); scene.add(b); beams.push(b); }
+        b.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0)); beamEnd.set(num(a[3], 0), num(a[4], 1), num(a[5], 0));
+        const len = Math.max(0.01, b.position.distanceTo(beamEnd));
+        b.position.lerp(beamEnd, 0.5); b.lookAt(beamEnd); b.scale.set(0.022, 0.022, len);
+        b.material.color.set(fmt(a[6] === undefined ? "#ffe08a" : a[6]).slice(0, 7)); b.visible = true; beamCount++;
       } else if (word === "sky") {
         // sky [top colour, horizon colour]: a dome round the camera, the gradient painted on it with soft clouds above
         // the horizon, so the clouds stay put as you turn; made once per pair of colours
@@ -10946,6 +10965,7 @@ export function makeView(canvas, base, opts) {
       pool.forEach((p, i) => { if (i >= used) p.root.visible = false; });
     }
     flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
+    beams.forEach((b, i) => { if (i >= beamCount) b.visible = false; });
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
     if (skyTexture) { dome.material.map = skyTexture; dome.material.needsUpdate = dome.material.map !== domeMap; domeMap = skyTexture; dome.visible = true; dome.position.copy(camera.position); scene.background = skyTexture.userData.low; }
     else dome.visible = false;
@@ -11350,9 +11370,9 @@ styles : ["hunter", "flanker", "camper"]
 -- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
 -- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
 guard-looks : [
-  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
-  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
-  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_e"]
+  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_g"]
+  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", hit : "HitReact", death : "Death", size : 1.8, holds : false]
+  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_e"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
@@ -11849,8 +11869,10 @@ draw : [game |
     -- you, taking aim when they're close. The Warden is the mech.
     kinds : mission guard-kinds else [1]
     kit : guard-looks @ (kinds @ (g id - 1 % (kinds length) + 1))
-    clip : cond [g health <= 0, cond [big, "Death", any, kit death], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
-    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
+    -- a guard who has just been hit flinches: the hit plays from the moment the shot landed
+    flinch : (g stagger else 0) > 0
+    clip : cond [g health <= 0, cond [big, "Death", any, kit death], flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
+    time : cond [g health <= 0, now - (g fell else now), flinch, 0.35 - (g stagger else 0), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
     model [cond [big, "mech", any, kit body], g x, 0, g y, g angle, cond [big, 2.5, any, kit size] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, kit holds]]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
@@ -11919,6 +11941,22 @@ draw : [game |
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), cond [(you weapon != "heavy") and (you quiet else false), 0.035, any, 0.08], "#ffd76a"]]
+  -- tracers: a streak from the gun to where the shot lands, for the moment of the shot, yours and everyone's
+  tracer : [sx sy fx fy aimed angle colour |
+    end-far : cast [fx, fy, angle] far - 0.05
+    ex : (aimed != false) [aimed x] else [angle cos * end-far + fx]
+    ey : (aimed != false) [aimed y] else [angle sin * end-far + fy]
+    beam [sx, 1.28, sy, ex, cond [aimed != false, 1.15, any, 1.4], ey, colour]
+  ]
+  (up you) and (you flash > 0.04) [tracer [you angle cos * 0.75 + (you x) - (you angle sin * 0.14), you angle sin * 0.75 + (you y) + (you angle cos * 0.14), you x, you y, you aimed, you angle, cond [you weapon = "heavy", "#9be7ff", any, "#ffe08a"]]]
+  rivals keep [r | (up r) and (r flash > 0.04)] each [r | tracer [r angle cos * 0.5 + (r x), r angle sin * 0.5 + (r y), r x, r y, r aimed else false, r angle, "#ffb38a"]]
+  game guards keep [g | (g health > 0) and (g fired else false)] each [g |
+    mark : game agents keep [a | a id = (g target else 0)] @ 1 else false
+    (mark != false) [
+      miss : cond [g hits else false, 0, any, noise [now * 9, g id] - 0.5 * 0.9]
+      beam [g angle cos * 0.45 + (g x), 1.25, g angle sin * 0.45 + (g y), mark x - (g angle sin * miss), 1.2, mark y + (g angle cos * miss), "#ff9a6a"]
+    ]
+  ]
   -- a hit sparks on whatever it hit
   ((now - (you hit-at) < 0.08) and (you aimed != false)) [flash [you aimed x, 1.1, you aimed y, 0.09, "#ffe08a"]]
   -- a miss sparks where it hits the wall

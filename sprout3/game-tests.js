@@ -417,6 +417,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: your mine says when it's armed, and blinks green", f(mn, "mines").count() === 1 && armed && green); }
   { const ft = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}); ft.tick(1 / 60, pad({}));
     ok("silvereye: a match opens with what wins it", ft.draw().some(x => x[0] === "text" && x[1][0] === "FIRST TO 5 TAKEDOWNS")); }
+  // the feel of a fight: guards flinch when hit, and shots leave tracers (yours, and the guards')
+  { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); put(fl, 0, { x: 9.5, y: 7.5, angle: 0 });
+    let flinch = false, mine = false, theirs = false;
+    for (let k = 0; k < 120; k++) { fl.tick(1 / 60, pad({ fire: k < 40 })); put(fl, 0, { health: 100 }); const d = fl.draw();
+      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "HitRecieve"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+    ok("silvereye: a guard who is hit flinches", flinch);
+    const gt = L.makeGame(src, {}); gt.tick(1 / 60, pad({})); put(gt, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 200 && !theirs; k++) { gt.tick(1 / 60, pad({})); put(gt, 0, { health: 100 }); theirs = gt.draw().some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+    ok("silvereye: your shots leave a tracer, and so do the guards'", mine && theirs, [mine, theirs]); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }

@@ -374,9 +374,9 @@ styles : ["hunter", "flanker", "camper"]
 -- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
 -- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
 guard-looks : [
-  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
-  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
-  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_e"]
+  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_g"]
+  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", hit : "HitReact", death : "Death", size : 1.8, holds : false]
+  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_e"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
@@ -873,8 +873,10 @@ draw : [game |
     -- you, taking aim when they're close. The Warden is the mech.
     kinds : mission guard-kinds else [1]
     kit : guard-looks @ (kinds @ (g id - 1 % (kinds length) + 1))
-    clip : cond [g health <= 0, cond [big, "Death", any, kit death], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
-    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
+    -- a guard who has just been hit flinches: the hit plays from the moment the shot landed
+    flinch : (g stagger else 0) > 0
+    clip : cond [g health <= 0, cond [big, "Death", any, kit death], flinch, cond [big, "HitRecieve_1", any, kit hit], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
+    time : cond [g health <= 0, now - (g fell else now), flinch, 0.35 - (g stagger else 0), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
     model [cond [big, "mech", any, kit body], g x, 0, g y, g angle, cond [big, 2.5, any, kit size] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, kit holds]]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
@@ -943,6 +945,22 @@ draw : [game |
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), cond [(you weapon != "heavy") and (you quiet else false), 0.035, any, 0.08], "#ffd76a"]]
+  -- tracers: a streak from the gun to where the shot lands, for the moment of the shot, yours and everyone's
+  tracer : [sx sy fx fy aimed angle colour |
+    end-far : cast [fx, fy, angle] far - 0.05
+    ex : (aimed != false) [aimed x] else [angle cos * end-far + fx]
+    ey : (aimed != false) [aimed y] else [angle sin * end-far + fy]
+    beam [sx, 1.28, sy, ex, cond [aimed != false, 1.15, any, 1.4], ey, colour]
+  ]
+  (up you) and (you flash > 0.04) [tracer [you angle cos * 0.75 + (you x) - (you angle sin * 0.14), you angle sin * 0.75 + (you y) + (you angle cos * 0.14), you x, you y, you aimed, you angle, cond [you weapon = "heavy", "#9be7ff", any, "#ffe08a"]]]
+  rivals keep [r | (up r) and (r flash > 0.04)] each [r | tracer [r angle cos * 0.5 + (r x), r angle sin * 0.5 + (r y), r x, r y, r aimed else false, r angle, "#ffb38a"]]
+  game guards keep [g | (g health > 0) and (g fired else false)] each [g |
+    mark : game agents keep [a | a id = (g target else 0)] @ 1 else false
+    (mark != false) [
+      miss : cond [g hits else false, 0, any, noise [now * 9, g id] - 0.5 * 0.9]
+      beam [g angle cos * 0.45 + (g x), 1.25, g angle sin * 0.45 + (g y), mark x - (g angle sin * miss), 1.2, mark y + (g angle cos * miss), "#ff9a6a"]
+    ]
+  ]
   -- a hit sparks on whatever it hit
   ((now - (you hit-at) < 0.08) and (you aimed != false)) [flash [you aimed x, 1.1, you aimed y, 0.09, "#ffe08a"]]
   -- a miss sparks where it hits the wall
