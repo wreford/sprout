@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (362)
-node game-tests.js    # game tests (264)
+node game-tests.js    # game tests (270)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 626 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 632 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -797,6 +797,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 125. **SPROUT·16 (Claude, 22 Nov; the host, from Troy's asks for 16-bit games).** `Eight.start({ bits: 16 })`, or `"bits": 16` in a game's registry entry, makes the console a 16-bit one: a 320 by 224 screen, colours snapped to 512 (eight levels of red, green and blue, as on the 16-bit consoles), and songs played with a warmer voice: the lead and harmony a sawtooth through a filter, the bass the triangle as before, and a little echo on the music. The drawing words, sprites, sounds, keys and saving are the same, so a game moves up by changing one number, and the `ui` kit already takes the wider screen from W and H. Its own default handheld is black plastic with a red stripe on the wide body, and `examples/test-card-16.sp` is its test card. frozen-tests.js plays a 16-bit game on a 16-bit screen.
 
 126. **Keys that repeat (Claude, 22 Nov; the game layer, for the puzzles Troy asked for).** The frame's input now has `held-for` (how long each key has been held, in seconds) and `repeated`: a key is repeated on the tick it goes down, again once it has been held a quarter of a second, and then twelve times a second while it stays down, the way a menu cursor or a falling piece slides when you hold an arrow. `g input repeated "left"` reads like `pressed`. The time held is counted from the input the state already holds, and each repeat is found by comparing with the time stored the tick before (not by taking a tick away, which a sum of sixtieths can miss), so rewinds and replays repeat alike.
+
+127. **Fizz Jar, a falling-pair puzzle, and runs (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit falling-pair colour-matching puzzle).** Fizz Jar (`examples/fizz-jar.sp`, at `/fizz-jar/`, on its own frozen Sprout) is an original falling-pair puzzle: pairs of fizzy drops (cherry, lime, berry) fall into a soda jar where grumpy sour candies sit. Four or more of a colour in a row or column, drops and sours together, pop, and what they held up falls, so one pop can set off another, each worth double. Pop every sour to clear the jar; each jar holds two more sours and drops a little faster. The arrows move the pair, down drops it faster, and buttons 1 and 2 turn it, nudging it aside or up when something is in the way. It keeps your best score. It was the first game built on the new pieces: presses from `input pressed` (decision 121), turning with `menu wrap`, moving with `pad across`, and its panels, title, rising scores and prompts drawn with the `ui` kit (decision 122). The library gained `runs` (cell-at, put, open, find, clear, settle, fall, count): a well of cells kept as rows of text, one letter a cell, for falling-block and matching games, which finds the runs of one letter long enough to pop, empties them, and lets what is loose fall while fixed letters stay put. Its handheld is mint soda plastic with bubbles rising through it, a cherry soda label for the brand and a crimped bottle cap for the D-pad (`skins/fizz-jar.css`). It was made by one of several builders working side by side (decision 124).
 ````
 
 ---
@@ -7275,6 +7277,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/fizz-jar/">Fizz Jar</a><span>An 8-bit falling-pair puzzle: drop fizzy pairs into a soda jar and pop the grumpy sours four of a colour at a time; chains score double.</span></li>
 <li><a href="/blended-zebra/">Blended Zebra 8</a><span>The endless black, white and red deckbuilder, small and 8-bit: fight with five cards and three energy, blend two cards into one at the oasis, climb as far as you can.</span></li>
 <li><a href="/crate-cove/">Crate Cove</a><span>An 8-bit pushing puzzle on SPROUT·8: six coves of driftwood to push onto the tide marks, with undo and your fewest moves kept.</span></li>
 <li><a href="/lantern-keep/">Lantern Keep</a><span>An 8-bit maze game on SPROUT·8: light every lantern in a dark keep while shadow wisps hunt you down the corridors.</span></li>
@@ -8998,7 +9001,7 @@ const GROUPS = [
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
   ["Colour", ["palette"]],
