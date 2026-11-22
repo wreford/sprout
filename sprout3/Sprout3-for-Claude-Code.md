@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (232)
+node game-tests.js    # game tests (233)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 535 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 536 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4793,6 +4793,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and the simulants play there", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y")))); }
   { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 20.5 && agent(dy, 2).field("y") === 1.5); }
+  { const tp = L.makeGame(duelSrc, { players: 2, me: 1 }); tp.tick(1 / 60, pad({}), pad({}));
+    put(tp, 0, { x: 8.5, y: 7.5, angle: 0 }); put(tp, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+    for (let k = 0; k < 2; k++) tp.tick(1 / 60, pad({}), pad({ sentry: true }));
+    tp.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a rival's turret in your sight is named, with what it has left", tp.draw().some(x => x[0] === "text" && x[1][0] === "TURRET") && tp.draw().some(x => x[0] === "rect" && x[1][3] === 2 && x[1][4] === "#ff5a4f")); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));
@@ -12025,6 +12030,7 @@ draw : [game |
   (up you) and (sighted != false) and (game over = "") [
     foe : game guards keep [g | g id = (sighted id)] @ 1 else false
     kit : game machines keep [m | m id = (sighted id)] @ 1 else false
+    post : game turrets keep [t | t id = (sighted id)] @ 1 else false
     -- (cond works out every item, so a field of something that may be false is read behind a guard: x [..] else [..])
     warden : (foe != false) [foe boss else false] else [false]
     named : cond [
@@ -12036,7 +12042,8 @@ draw : [game |
     ]
     foe-left : (foe != false) [foe health / (guard-health * (cond [warden, 4, any, 1]))] else [-1]
     kit-left : (kit != false) [kit health / 100] else [-1]
-    remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, any, -1]
+    post-left : (post != false) [post health / 60] else [-1]
+    remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, sighted who = "turret", post-left, any, -1]
     text [named, W / 2, H / 2 + 17, 7, cond [sighted who = "scientist", "#bfe3ff", (sighted who = "agent") and (game versus not), "#9be7ff", any, red]]
     (remaining >= 0) [rect [W / 2 - 14, H / 2 + 23, 28, 2, "#00000099"], rect [W / 2 - 14, H / 2 + 23, remaining max 0 min 1 * 28, 2, red]]
   ]

@@ -756,6 +756,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and the simulants play there", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y")))); }
   { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 20.5 && agent(dy, 2).field("y") === 1.5); }
+  { const tp = L.makeGame(duelSrc, { players: 2, me: 1 }); tp.tick(1 / 60, pad({}), pad({}));
+    put(tp, 0, { x: 8.5, y: 7.5, angle: 0 }); put(tp, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+    for (let k = 0; k < 2; k++) tp.tick(1 / 60, pad({}), pad({ sentry: true }));
+    tp.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: a rival's turret in your sight is named, with what it has left", tp.draw().some(x => x[0] === "text" && x[1][0] === "TURRET") && tp.draw().some(x => x[0] === "rect" && x[1][3] === 2 && x[1][4] === "#ff5a4f")); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));

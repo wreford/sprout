@@ -1075,6 +1075,7 @@ draw : [game |
   (up you) and (sighted != false) and (game over = "") [
     foe : game guards keep [g | g id = (sighted id)] @ 1 else false
     kit : game machines keep [m | m id = (sighted id)] @ 1 else false
+    post : game turrets keep [t | t id = (sighted id)] @ 1 else false
     -- (cond works out every item, so a field of something that may be false is read behind a guard: x [..] else [..])
     warden : (foe != false) [foe boss else false] else [false]
     named : cond [
@@ -1086,7 +1087,8 @@ draw : [game |
     ]
     foe-left : (foe != false) [foe health / (guard-health * (cond [warden, 4, any, 1]))] else [-1]
     kit-left : (kit != false) [kit health / 100] else [-1]
-    remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, any, -1]
+    post-left : (post != false) [post health / 60] else [-1]
+    remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, sighted who = "turret", post-left, any, -1]
     text [named, W / 2, H / 2 + 17, 7, cond [sighted who = "scientist", "#bfe3ff", (sighted who = "agent") and (game versus not), "#9be7ff", any, red]]
     (remaining >= 0) [rect [W / 2 - 14, H / 2 + 23, 28, 2, "#00000099"], rect [W / 2 - 14, H / 2 + 23, remaining max 0 min 1 * 28, 2, red]]
   ]
