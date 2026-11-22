@@ -198,6 +198,7 @@ body.lefty #bZ{left:auto;right:8px}body.lefty #bZ+.lbl{left:auto;right:80px}
 #srcHL{color:#ececf0;pointer-events:none;overflow:hidden}
 #srcHL i{font-style:normal}#srcHL .c{color:#7d8597;font-style:italic}#srcHL .s{color:#9be7a0}#srcHL .n,#srcHL .l{color:#ffb86b}#srcHL .k{color:#ff7ab2}#srcHL .a{color:#8fd8ff}#srcHL .o{color:#e9b90f}#srcHL .tp{background:#ffffff14;border-radius:3px}
 #src:focus{outline:none}
+#srcHL .bad{background:#ff3b3038;box-shadow:0 0 0 2px #ff3b3038;border-radius:2px}
 #status{margin:6px 0 0;font-size:11px;color:var(--ink2);min-height:1.3em}
 #status.bad{color:#ff7a6b}
 #prog .row{display:flex;gap:6px;margin-top:6px}
@@ -523,21 +524,26 @@ function say(t, bad) { status.textContent = t; status.classList.toggle("bad", !!
 S.setLog(m => {
   const n = +((m.match(/\(line (\d+)\)/) || [])[1] || 0), sp = cellSpan(code, PROGRAMS[tab]);
   const first = sp ? code.slice(0, sp[0]).split("\n").length : 0;
+  if (sp && n >= first && n < first + ta.value.split("\n").length) { badLine = n - first + 1; paintCode(); }
   if (sp && n >= first && n < first + ta.value.split("\n").length) say(m.replace(/ \(line (\d+)\)/, (_, l) => " (line " + (l - first + 1) + ")").replace(/ \(and more; not shown again\)/, ""), true);
   else console.log("sprout: " + m);
 });
 let editT = 0, good = {};
+// the program line Sprout couldn't take (counting from 1), marked red in the code until it's fixed
+let badLine = 0;
+const cellLine = (src, n) => { const sp = cellSpan(src, PROGRAMS[tab]), first = sp ? src.slice(0, sp[0]).split("\n").length : 0; return sp && n >= first && n < first + ta.value.split("\n").length ? n - first + 1 : 0; };
 function applyProgram() {
   const src = compose({ [tab]: ta.value });
-  try { S.load(src); } catch (e) { say("Not yet: " + msgOf(e) + " · the last one that worked keeps running.", true); return; }
+  try { S.load(src); } catch (e) { badLine = cellLine(src, lineOf(e)); paintCode(); say("Not yet" + (badLine ? ", line " + badLine : "") + ": " + msgOf(e) + " · the last one that worked keeps running.", true); return; }
+  if (badLine) { badLine = 0; paintCode(); }
   if (window.build(src, false)) { programs[tab] = ta.value; good = Object.assign({}, programs); store.set("silvereye.programs", programs); say(window.NET && NET.active ? "Running your program, on both phones." : "Running your program."); }
 }
 // the program is coloured as you type: a highlighted copy sits under the textarea, scrolled with it
 // every word Sprout knows is coloured, and the game's own helper words too
 const HLWORDS = new Set([...S.knownWords(), "wrap", "clamp"]);
-function paintCode() { $("srcHL").innerHTML = ta.value.split("\n").map(l => Sprout3Highlight.line(l, HLWORDS)).join("\n") + "\n "; $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; }
+function paintCode() { $("srcHL").innerHTML = ta.value.split("\n").map((l, i) => { const h = Sprout3Highlight.line(l, HLWORDS); return i + 1 === badLine ? '<span class="bad">' + (h || " ") + "</span>" : h; }).join("\n") + "\n "; $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; }
 ta.addEventListener("scroll", () => { $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; });
-ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); clearTimeout(snapT); snapT = setTimeout(snapshot, 700); });
+ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); clearTimeout(snapT); snapT = setTimeout(snapshot, 700); undoUI(); });
 // undo: each program keeps the versions it went through (a pause in typing, an example, a word put in), last 50
 const undo = { turret: [], simulant: [] };
 let snapT = 0;

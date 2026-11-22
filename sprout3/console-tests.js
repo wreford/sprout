@@ -61,6 +61,12 @@ server.listen(0, async () => {
     ok("tapping one puts it in the program", /it how-far/.test(await page.inputValue("#src")));
     await page.click("#pUndo");
     ok("Undo takes it out again", !/it how-far/.test(await page.inputValue("#src")));
+    // a mistake: its line is marked in red and named, and the last program that worked keeps running
+    await page.evaluate(() => { ta.value = "turret-program : [it |\n  [turn : it off-target * 4, fire : (it sees-someone]\n]\n"; ta.dispatchEvent(new Event("input")); });
+    await page.waitForSelector("#srcHL .bad", { timeout: 3000 }).catch(() => {});
+    ok("a mistake marks its line in red, and says which", (await page.$$("#srcHL .bad")).length === 1 && /line 2/.test(await page.textContent("#status")), await page.textContent("#status"));
+    await page.click("#pUndo"); await page.waitForTimeout(400);
+    ok("fixing it clears the mark", (await page.$$("#srcHL .bad")).length === 0);
     await page.click("#examples button:text-is('Sprayer')"); await page.click("#pUndo");
     ok("and undoes an example, back to the program you had", /it off-target \* 4/.test(await page.inputValue("#src")) && !/Sprayer/.test(await page.inputValue("#src")));
     await page.click("#pReset");
