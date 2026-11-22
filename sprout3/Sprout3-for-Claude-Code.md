@@ -8671,7 +8671,8 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "csv", "json"]],
-  ["Time and motion", ["ease", "motion", "daytime"]],
+  ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
+  ["Touch and sound", ["gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
