@@ -437,6 +437,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
     ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
     put(mk, 0, { angle: 0.3 + Math.PI }); mk.tick(1 / 60, pad({}));
+    const nm = L.makeGame(src.replace(/^markers : true/m, "markers : false"), {}); for (let k = 0; k < 300; k++) { nm.tick(1 / 60, pad({})); put(nm, 0, { x: 2.5, y: 2.5, angle: 0.3, health: 100 }); }
+    ok("silvereye: with markers off there are none", !nm.draw().some(x => x[0] === "text" && /^\d+m$/.test(x[1][0])));
     ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3);
     const edge = texts(mk).filter(t => t[0] === "▶" || t[0] === "◀");
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }

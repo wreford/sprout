@@ -128,6 +128,7 @@ difficulty : 2             -- a mission's guards: 1 rookie (no generators to wre
 -- seeing
 fov-across : 110           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
+markers : true             -- objective markers on screen (off: find your own way, as on the old consoles)
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
@@ -1051,7 +1052,7 @@ draw : [game |
     clear : (on not) or ((sx - (W / 2)) abs > 16) or ((sy - (H / 2)) abs > 16)
     clear [text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour], text ["[gd round]m", sx, sy + 9, 7, colour]]
   ]
-  (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
+  markers and (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
     game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc", m id]]
     (game intel not) [mark-at [mission intel @ 1, mission intel @ 2, "#ff7ab2cc", 0]]
     finished : (game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)

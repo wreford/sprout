@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (231)
+node game-tests.js    # game tests (232)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 534 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 535 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4474,6 +4474,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
     ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
     put(mk, 0, { angle: 0.3 + Math.PI }); mk.tick(1 / 60, pad({}));
+    const nm = L.makeGame(src.replace(/^markers : true/m, "markers : false"), {}); for (let k = 0; k < 300; k++) { nm.tick(1 / 60, pad({})); put(nm, 0, { x: 2.5, y: 2.5, angle: 0.3, health: 100 }); }
+    ok("silvereye: with markers off there are none", !nm.draw().some(x => x[0] === "text" && /^\d+m$/.test(x[1][0])));
     ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3);
     const edge = texts(mk).filter(t => t[0] === "▶" || t[0] === "◀");
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
@@ -11076,6 +11078,7 @@ difficulty : 2             -- a mission's guards: 1 rookie (no generators to wre
 -- seeing
 fov-across : 110           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
+markers : true             -- objective markers on screen (off: find your own way, as on the old consoles)
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
@@ -11999,7 +12002,7 @@ draw : [game |
     clear : (on not) or ((sx - (W / 2)) abs > 16) or ((sy - (H / 2)) abs > 16)
     clear [text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour], text ["[gd round]m", sx, sy + 9, 7, colour]]
   ]
-  (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
+  markers and (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
     game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc", m id]]
     (game intel not) [mark-at [mission intel @ 1, mission intel @ 2, "#ff7ab2cc", 0]]
     finished : (game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)
