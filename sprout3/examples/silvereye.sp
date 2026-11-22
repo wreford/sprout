@@ -588,7 +588,9 @@ play : [game |
       staggered : (g stagger else 0) > 0
       pace : cond [staggered, 0, alert and (gd < 3), 0, alert, 1.2, any, 0.8]
       head : goal-y - (g y) atan2 (goal-x - (g x))
-      went : cond [gap < 0.05, [x : g x, y : g y], any, slide [g x, g y, head cos * pace * dt, head sin * pace * dt]]
+      -- an alert guard at range steps from side to side as he comes, so he's harder to hit
+      side : cond [alert and (gd > 2.5) and (gd < 8) and (staggered not), now * 1.9 + (g id * 1.3) sin * 0.9, any, 0]
+      went : cond [(gap < 0.05) and (side = 0), [x : g x, y : g y], any, slide [g x, g y, head cos * pace - (head sin * side) * dt, head sin * pace + (head cos * side) * dt]]
       arrived : (alert not) and (gap < 0.3)
       fires : sees and (g wait <= 0) and (staggered not)
       next-x : cond [arrived, g home-x, any, g to-x]

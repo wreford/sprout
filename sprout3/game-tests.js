@@ -407,6 +407,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const d = wk.draw();
     ok("silvereye: a wrecked target sinks and smokes", d.some(x => x[0] === "model" && x[1][2] === -0.1) && d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#3f3f44").length === 3);
     ok("silvereye: a blast's fireball gives way to smoke", d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#4d4d52").length === 3 && !d.some(x => x[0] === "flash" && x[1][4] === "#ffb347" && x[1][3] >= 0.5)); }
+  { const sd = L.makeGame(src, {}); sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, angle: 0 });
+    const g3 = () => S.partsOf(f(sd, "guards")).find(g => g.field("id") === 3);
+    const ys = []; for (let k = 0; k < 90; k++) { sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, health: 100 }); if (g3().field("alert")) ys.push(g3().field("y")); }
+    ok("silvereye: an alert guard at range steps from side to side", ys.length > 30 && Math.max(...ys) - Math.min(...ys) > 0.15, [ys.length, Math.min(...ys), Math.max(...ys)]); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }

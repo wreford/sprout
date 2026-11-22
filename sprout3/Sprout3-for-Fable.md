@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 533 pass, 303 for the language and 230 for the games.
+- **Tests:** 534 pass, 303 for the language and 231 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (230)
+node game-tests.js    # game tests (231)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 533 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 534 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4517,6 +4517,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const d = wk.draw();
     ok("silvereye: a wrecked target sinks and smokes", d.some(x => x[0] === "model" && x[1][2] === -0.1) && d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#3f3f44").length === 3);
     ok("silvereye: a blast's fireball gives way to smoke", d.filter(x => x[0] === "flash" && x[1][4] === "smoke:#4d4d52").length === 3 && !d.some(x => x[0] === "flash" && x[1][4] === "#ffb347" && x[1][3] >= 0.5)); }
+  { const sd = L.makeGame(src, {}); sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, angle: 0 });
+    const g3 = () => S.partsOf(f(sd, "guards")).find(g => g.field("id") === 3);
+    const ys = []; for (let k = 0; k < 90; k++) { sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, health: 100 }); if (g3().field("alert")) ys.push(g3().field("y")); }
+    ok("silvereye: an alert guard at range steps from side to side", ys.length > 30 && Math.max(...ys) - Math.min(...ys) > 0.15, [ys.length, Math.min(...ys), Math.max(...ys)]); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -11605,7 +11609,9 @@ play : [game |
       staggered : (g stagger else 0) > 0
       pace : cond [staggered, 0, alert and (gd < 3), 0, alert, 1.2, any, 0.8]
       head : goal-y - (g y) atan2 (goal-x - (g x))
-      went : cond [gap < 0.05, [x : g x, y : g y], any, slide [g x, g y, head cos * pace * dt, head sin * pace * dt]]
+      -- an alert guard at range steps from side to side as he comes, so he's harder to hit
+      side : cond [alert and (gd > 2.5) and (gd < 8) and (staggered not), now * 1.9 + (g id * 1.3) sin * 0.9, any, 0]
+      went : cond [(gap < 0.05) and (side = 0), [x : g x, y : g y], any, slide [g x, g y, head cos * pace - (head sin * side) * dt, head sin * pace + (head cos * side) * dt]]
       arrived : (alert not) and (gap < 0.3)
       fires : sees and (g wait <= 0) and (staggered not)
       next-x : cond [arrived, g home-x, any, g to-x]
