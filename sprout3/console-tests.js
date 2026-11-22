@@ -114,6 +114,19 @@ server.listen(0, async () => {
     ok("a faster win says NEW BEST TIME, with the old one", /NEW BEST TIME · 1:40 \(was 166:39\)/.test(await page.textContent("#toast")), await page.textContent("#toast"));
     ok("the campaign remembers the mission you beat", await page.evaluate(() => !!JSON.parse(localStorage.getItem("silvereye.campaign") || "{}")[1]));
     ok("no errors on the page", errors.length === 0, errors);
+    // turned sideways: a wide handheld (the shell solid), then see-through (the game fills the screen)
+    for (const shell of ["solid", "clear"]) {
+      const ctx = await browser.newContext(devices["iPhone 13 landscape"]); await ctx.addInitScript(s => localStorage.setItem("silvereye.settings", JSON.stringify({ shell: s })), shell);
+      const wp = await ctx.newPage(), werr = []; wp.on("pageerror", e => werr.push(e.message));
+      await wp.goto(url); await wp.waitForFunction(() => !document.getElementById("boot"), null, { timeout: 15000 }).catch(() => {});
+      const st = await wp.evaluate(() => ({ wide: document.body.classList.contains("wide"), see: document.body.classList.contains("see"), GW, GH, SW, SH, iw: innerWidth, a: (r => r.right <= innerWidth && r.bottom <= innerHeight && r.width > 40)(document.getElementById("bA").getBoundingClientRect()) }));
+      ok("sideways, " + shell + ": a wide handheld, the game's shape following the screen, every button on screen", st.wide && st.see === (shell !== "solid") && st.GW === 380 && st.a && (shell === "solid" ? st.SW < st.iw * 0.6 : st.SW === st.iw), st);
+      await wp.click("#title"); await wp.click("#titleMenu button[data-do=campaign]"); await wp.click("#missionMenu button[data-do=stage1]"); await wp.waitForTimeout(400);
+      const ab = await (await wp.$("#bA")).boundingBox(); await wp.mouse.move(ab.x + ab.width / 2, ab.y + ab.height / 2); await wp.mouse.down();
+      await wp.waitForFunction(() => game.state.field("agents").part(1).field("shots-fired") >= 1, null, { timeout: 8000 }).catch(() => {}); await wp.mouse.up();
+      ok("sideways, " + shell + ": A fires, with no errors", (await wp.evaluate(() => game.state.field("agents").part(1).field("shots-fired"))) >= 1 && werr.length === 0, werr);
+      await ctx.close();
+    }
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");

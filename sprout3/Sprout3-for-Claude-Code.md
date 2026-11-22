@@ -3101,6 +3101,8 @@ function makeGame(src, opts) {
     // the state put in place, as when two screens agree to the first one's state again
     setState(v, c) { state = v; if (typeof c === "number") clock = c; },
     setRandom(f) { randomSource = f || Math.random; },
+    // the screen changed shape (a phone turned): W and H change; swap the same code in to take them up
+    resize(w, h) { host.W = w; host.H = h; },
     draw() { draws.length = 0; const d = file.field("draw"); if (d !== UNSET) d.run(state); return draws; },
     // rewind: a saved frame is just the state it held, since cells never change
     rewind(i) { state = history[i].state; clock = history[i].clock; },
