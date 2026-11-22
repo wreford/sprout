@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (345)
-node game-tests.js    # game tests (253)
+node game-tests.js    # game tests (255)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 598 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 600 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -773,6 +773,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 113. **SPROUT·8, an 8-bit console page, and Sprig (Claude, 22 Nov; host, library and a game, from Troy's ask for a loop of new games in the style of the Sega Master System, using outside libraries and the code already made; no change to the language).** `eight.js` is a console any Sprout game can run on: `Eight.start({ game: "examples/x.sp" })` gives a 256x192 screen whose colours are snapped to 64 (red, green and blue each at one of four levels), an 8x8 pixel font (Press Start 2P, by CodeMan38, under the SIL Open Font License, in `vendor/fonts`), square waves, a triangle bass and hiss for noise, and a D-pad with buttons 1 and 2 from the keys (arrows or WASD, Z and X), the touch screen or a controller, with pause, sound and a full screen. The game layer gained two drawing words and a sound: `sprite [art, x, y, ink, flip]` draws pixel art written as rows of letters, each letter coloured by an ink record (`.` is clear), and `tiles [map, set, ink, x, y]` draws a whole level written as rows of characters from a set of [character, art] pairs; the page draws each picture once and keeps it, so a scrolling level costs one image a frame. `hiss [length, pitch]` is the noise channel beside `beep` (it couldn't be `noise`, which is the smooth random function, and host words share the globals). A state may name a `song`, which the page plays from the program's `songs` record (bpm, beats, lead, harmony, bass and drums, and once for a jingle), and a `keep` record, which the page saves on the phone and hands back as `saved` when the game next loads. The page runs one frame before drawing the first, since the state has its clock only once update has run. ZzFX (the Zuper Zmall Zound Zynth, by Frank Force, MIT) is the ninth wrapped library: `zzfx preset "jump"` plays one of ten ready-made sounds (coin, jump, hit, hurt, explode, power, laser, blip, select, step), `[name, pitch]` plays it higher or lower, and `zzfx play` takes ZzFX's own numbers; its micro build is in `vendor/zzfx`, with two lines that hand its names to the window. The library gained `tilemap` (char-at, to-cell, to-pixel, size-of, find, clear, solid, touches, `move`, which carries a body through a map without passing into walls and onto one-way platforms only from above, and drop-ahead) and `music track`, which reads a line of notes written as text (`"C4 - E4 . | kick"`, a word a step) into [beat, note, beats]. Sprig (`examples/sprig.sp`, on its own page at `/sprig/`) is the first game: a seedling crossing three gardens (a meadow, root caves, a thorn garden at dusk) to the flower at the end of each, stomping grubs, spitting seeds at bees and hopping caps, gathering dew (a hundred is a life) and three sun seeds hidden in each garden, with a checkpoint flag, hearts and lives; its art, levels and four songs and two jingles are all written in the program, and it uses tilemap, music, motion, flipbook, camera, collide, particles and ease. A bot that reads the map clears the first garden in game-tests.js, and clears all three when left to play.
 
 114. **Each game keeps its own Sprout (Claude, 22 Nov; host, from Troy's ask that every game have its own version of Sprout so that updates don't break it).** A published game no longer runs on `/sprout3/`. `node sprout3/freeze.js <game>` copies the runtime as it is that day (sprout3.js, words.js, parse.js, stdlib.js, libs.js, kernels.js, live3.js, eight.js), the pixel font, the wrapped libraries its program names and the program itself (as `game.sp`) into the game's own folder, `/<game>/sprout/`, with a `VERSION` naming the commit it came from, and writes the game's page and manifest with its base set to that folder. `sprout3/games.json` lists the published games with their titles and descriptions. Sprout can then change as it likes: a game changes only when it is frozen again, on purpose. `frozen-tests.js` loads each game in a Node of its own from its own folder and plays it for twenty seconds, and it runs before every push. Sprig was frozen first. Comet Lance (`examples/comet-lance.sp`, at `/comet-lance/`) is the second game on SPROUT·8: a vertical shooter in which the Lance flies up through the comet belt against waves of drones (which weave and fire), darters (which dive at you) and spinners (which circle down), with a boss every fifth wave that fires a spread, P capsules that widen the shot to two and then three, a scrolling starfield and a song each for the title, the waves and the boss. It uses waves (size, toughness, boss), seeded, particles, collide, music track and ZzFX, and `vec` gained `aim` (the velocity that heads from one point to another) and `fan` (copies of a velocity spread across an angle), which it uses for the shots aimed at you.
+
+115. **Lantern Keep (Claude, 22 Nov; a game and library, no change to the language).** The third SPROUT·8 game (`examples/lantern-keep.sp`, at `/lantern-keep/`, on its own frozen Sprout): Wick the lamplighter lights every lantern on three floors of a dark keep, where only what is near Wick or near a lit lantern can be seen, while shadow wisps hunt him; lighting the last one opens the gate to the floor above, and an oil flare turns the wisps blue for six seconds so he can banish them (each is gone for three seconds, then comes back from where it started). A wisp waits two seconds at the start of each life, and at each crossing it chases two times in three and wanders the other time, so a lamplighter can always slip away. `grid` gained `next-step` (the next cell on the shortest way to a cell, for a chaser) and `away-step` (the open neighbour farthest from a threat, for something fleeing). A walker that heads for the nearest unlit lantern and steers round the wisps clears the first floor in game-tests.js.
 ````
 
 ---
@@ -4993,6 +4995,38 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Lantern Keep: a maze game for SPROUT·8; a walker that heads for the lanterns and steers round wisps
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/lantern-keep.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const grids = S.partsOf(g.file.field("grids")).map(gr => S.partsOf(gr).map(r => S.partsOf(r).map(String)));
+  const key = c => c[0] + "," + c[1];
+  const firstStep = (gr, from, goal, blocked) => { const came = new Map([[key(from), null]]), q = [from];
+    while (q.length) { const c = q.shift(); if (key(c) === key(goal)) break; for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const n = [c[0] + d[0], c[1] + d[1]], ch = (gr[n[1] - 1] || [])[n[0] - 1]; if (ch && ch !== "#" && !came.has(key(n)) && !blocked.has(key(n))) { came.set(key(n), c); q.push(n); } } }
+    if (!came.has(key(goal))) return null; let c = goal; while (came.get(key(c)) && key(came.get(key(c))) !== key(from)) c = came.get(key(c)); return c; };
+  let litSome = false, cleared = false, t = 0;
+  for (; t < 60 * 60 && !cleared; t++) {
+    const st = g.state, mode = st.field("mode"); let keys = [];
+    if (mode === "play") {
+      const w = st.field("wick"), cell = [w.field("cell").x, w.field("cell").y], gr = grids[st.field("floor") - 1];
+      const dark = S.partsOf(st.field("lanterns")).filter(l => !l.field("lit")).map(l => [l.field("cell").x, l.field("cell").y]);
+      const goal = dark.length ? dark.sort((a, b) => Math.hypot(a[0] - cell[0], a[1] - cell[1]) - Math.hypot(b[0] - cell[0], b[1] - cell[1]))[0] : [st.field("gate").x, st.field("gate").y];
+      const blocked = new Set(); if (st.field("flare-until") <= st.field("clock")) for (const v of S.partsOf(st.field("wisps"))) { const c = [v.field("cell").x, v.field("cell").y]; for (const d of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) blocked.add(key([c[0] + d[0], c[1] + d[1]])); }
+      const step = firstStep(gr, cell, goal, blocked) || firstStep(gr, cell, goal, new Set()) || goal, dx = step[0] - cell[0], dy = step[1] - cell[1];
+      keys = dx > 0 ? ["right"] : dx < 0 ? ["left"] : dy > 0 ? ["down"] : dy < 0 ? ["up"] : [];
+    } else keys = t % 30 < 2 ? ["one"] : [];
+    g.tick(1 / 60, held(keys));
+    if (S.partsOf(g.state.fieldNames().includes("lanterns") ? g.state.field("lanterns") : S.valueCellOf([], new Map())).some(l => l.field("lit"))) litSome = true;
+    if (f(g, "mode") === "clear" && f(g, "floor") === 1) cleared = true;
+  }
+  ok("lantern keep: a walker lights the lanterns and leaves the first floor by the gate", litSome && cleared, [f(g, "mode"), f(g, "floor"), (t / 60).toFixed(1) + "s", f(g, "score")]);
+  ok("lantern keep: wanders without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -7030,6 +7064,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/lantern-keep/">Lantern Keep</a><span>An 8-bit maze game on SPROUT·8: light every lantern in a dark keep while shadow wisps hunt you down the corridors.</span></li>
 <li><a href="/comet-lance/">Comet Lance</a><span>An 8-bit vertical shooter on SPROUT·8: waves of drones, darters and spinners, a boss every fifth wave, and P capsules that widen your shot.</span></li>
 <li><a href="/sprig/">Sprig</a><span>An 8-bit platform game across three gardens, on SPROUT·8: the console page any Sprout game can use, with a 64-colour screen, pixel art, square-wave music and a D-pad.</span></li>
 <li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on the POCKET64 handheld: missions with objectives and medals, a combat sim against simulants, duel or co-op for two phones with no server, two maps. Turrets and simulants you program in Sprout as you play.</span></li>
@@ -9131,6 +9166,19 @@ sees : [g from to wall | line : ray [from, to], line drop 1 take (line length - 
 -- the cells within r of one that can be seen from it (fog of war lifting round a player)
 -- e.g. grid seen [grid make [5x5, 0], 3x3, 1, 1] length → 5
 seen : [g from r wall | cells g keep [[c, v] | (vec distance [c, from] <= r) and (sees [g, from, c, wall])] collect [[c, v] | c]]
+
+-- the next cell on the shortest way from one cell to another through cells whose value passes open (the cell itself
+-- when it's there, or when there's no way): one step for a chaser
+-- e.g. grid next-step [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], 1x1, 1x3, [v | v = 0]] → 2x1
+next-step : [g from to open | way : path [g, from, to, open], ((way != false) and (way length > 1)) [way @ 2] else [from]]
+
+-- the open cell beside one that is farthest from a threat, in a straight line (the cell itself when none is open):
+-- one step for something fleeing
+-- e.g. grid away-step [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], 2x2, 1x1, [v | v = 0]] → 3x2
+away-step : [g from threat open |
+  choices : beside [g, from] keep [c | open (at [g, c])]
+  (choices length > 0) [choices largest-by [c | vec distance [c, threat]]] else [from]
+]
 ````
 
 ## lib/palette.sp

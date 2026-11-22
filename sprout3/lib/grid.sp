@@ -135,3 +135,16 @@ sees : [g from to wall | line : ray [from, to], line drop 1 take (line length - 
 -- the cells within r of one that can be seen from it (fog of war lifting round a player)
 -- e.g. grid seen [grid make [5x5, 0], 3x3, 1, 1] length → 5
 seen : [g from r wall | cells g keep [[c, v] | (vec distance [c, from] <= r) and (sees [g, from, c, wall])] collect [[c, v] | c]]
+
+-- the next cell on the shortest way from one cell to another through cells whose value passes open (the cell itself
+-- when it's there, or when there's no way): one step for a chaser
+-- e.g. grid next-step [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], 1x1, 1x3, [v | v = 0]] → 2x1
+next-step : [g from to open | way : path [g, from, to, open], ((way != false) and (way length > 1)) [way @ 2] else [from]]
+
+-- the open cell beside one that is farthest from a threat, in a straight line (the cell itself when none is open):
+-- one step for something fleeing
+-- e.g. grid away-step [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], 2x2, 1x1, [v | v = 0]] → 3x2
+away-step : [g from threat open |
+  choices : beside [g, from] keep [c | open (at [g, c])]
+  (choices length > 0) [choices largest-by [c | vec distance [c, threat]]] else [from]
+]

@@ -907,5 +907,37 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Lantern Keep: a maze game for SPROUT·8; a walker that heads for the lanterns and steers round wisps
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/lantern-keep.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const grids = S.partsOf(g.file.field("grids")).map(gr => S.partsOf(gr).map(r => S.partsOf(r).map(String)));
+  const key = c => c[0] + "," + c[1];
+  const firstStep = (gr, from, goal, blocked) => { const came = new Map([[key(from), null]]), q = [from];
+    while (q.length) { const c = q.shift(); if (key(c) === key(goal)) break; for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const n = [c[0] + d[0], c[1] + d[1]], ch = (gr[n[1] - 1] || [])[n[0] - 1]; if (ch && ch !== "#" && !came.has(key(n)) && !blocked.has(key(n))) { came.set(key(n), c); q.push(n); } } }
+    if (!came.has(key(goal))) return null; let c = goal; while (came.get(key(c)) && key(came.get(key(c))) !== key(from)) c = came.get(key(c)); return c; };
+  let litSome = false, cleared = false, t = 0;
+  for (; t < 60 * 60 && !cleared; t++) {
+    const st = g.state, mode = st.field("mode"); let keys = [];
+    if (mode === "play") {
+      const w = st.field("wick"), cell = [w.field("cell").x, w.field("cell").y], gr = grids[st.field("floor") - 1];
+      const dark = S.partsOf(st.field("lanterns")).filter(l => !l.field("lit")).map(l => [l.field("cell").x, l.field("cell").y]);
+      const goal = dark.length ? dark.sort((a, b) => Math.hypot(a[0] - cell[0], a[1] - cell[1]) - Math.hypot(b[0] - cell[0], b[1] - cell[1]))[0] : [st.field("gate").x, st.field("gate").y];
+      const blocked = new Set(); if (st.field("flare-until") <= st.field("clock")) for (const v of S.partsOf(st.field("wisps"))) { const c = [v.field("cell").x, v.field("cell").y]; for (const d of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) blocked.add(key([c[0] + d[0], c[1] + d[1]])); }
+      const step = firstStep(gr, cell, goal, blocked) || firstStep(gr, cell, goal, new Set()) || goal, dx = step[0] - cell[0], dy = step[1] - cell[1];
+      keys = dx > 0 ? ["right"] : dx < 0 ? ["left"] : dy > 0 ? ["down"] : dy < 0 ? ["up"] : [];
+    } else keys = t % 30 < 2 ? ["one"] : [];
+    g.tick(1 / 60, held(keys));
+    if (S.partsOf(g.state.fieldNames().includes("lanterns") ? g.state.field("lanterns") : S.valueCellOf([], new Map())).some(l => l.field("lit"))) litSome = true;
+    if (f(g, "mode") === "clear" && f(g, "floor") === 1) cleared = true;
+  }
+  ok("lantern keep: a walker lights the lanterns and leaves the first floor by the gate", litSome && cleared, [f(g, "mode"), f(g, "floor"), (t / 60).toFixed(1) + "s", f(g, "score")]);
+  ok("lantern keep: wanders without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
