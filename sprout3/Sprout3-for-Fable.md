@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 623 pass, 359 for the language and 264 for the games.
+- **Tests:** 624 pass, 360 for the language and 264 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (359)
+node test.js          # language tests (360)
 node game-tests.js    # game tests (264)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 623 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 624 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -866,6 +866,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 123. **The arcade cabinet (Claude, 22 Nov; the host, for Basketball Legends 8).** A skin can now make the handheld a small arcade cabinet: `shape: "cabinet"` (the logo lit in a marquee on top, a square bezel, the controls on a deck), `dpadShape: "stick"` (a ball-top joystick in a round gate that leans the way it's pushed), `buttonStyle: "ball"` (buttons drawn as basketballs, seams and all), `stick` (the joystick's colour) and `pattern: "wood"` (hardwood planks with the three-point line painted round the controls).
 
 124. **Games made side by side (Claude, 22 Nov; the host, from Troy's ask for rapid iterations done in parallel).** A new game now lives in files of its own, so several can be made at once without two hands on one file: its program (`examples/<game>.sp`), its entry in the registry (`games.d/<game>.json`: title, file, about, a one-line `line` for Sprout's page, the skin, and `bits` for a 16-bit game), its tests (`tests8/<game>.js`, a function given the test helpers, run by game-tests.js), its icons, and, when the skin's options aren't enough, its own handheld (`skins/<game>.css`, laid over the shell's stylesheet and frozen with the game). `registry.js` reads games.json and games.d together for freeze.js and frozen-tests.js, and `node publish.js <game>` puts a game on the site in one go: frozen, with a row at the top of the home page and a line on Sprout's page.
+
+125. **SPROUT·16 (Claude, 22 Nov; the host, from Troy's asks for 16-bit games).** `Eight.start({ bits: 16 })`, or `"bits": 16` in a game's registry entry, makes the console a 16-bit one: a 320 by 224 screen, colours snapped to 512 (eight levels of red, green and blue, as on the 16-bit consoles), and songs played with a warmer voice: the lead and harmony a sawtooth through a filter, the bass the triangle as before, and a little echo on the music. The drawing words, sprites, sounds, keys and saving are the same, so a game moves up by changing one number, and the `ui` kit already takes the wider screen from W and H. Its own default handheld is black plastic with a red stripe on the wide body, and `examples/test-card-16.sp` is its test card. frozen-tests.js plays a 16-bit game on a 16-bit screen.
 ````
 
 ---

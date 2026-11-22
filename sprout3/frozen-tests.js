@@ -17,7 +17,8 @@ for (const name of S.libraries.mentions(fs.readFileSync(dir + "/game.sp", "utf8"
   const words = Object.keys(S.libraries.LIBRARIES[name].words({}));
   Object.defineProperty(S.globals, name, { value: S.valueCellOf([], new Map(words.map(w => [w, quiet(w)]))), configurable: true, writable: true, enumerable: true });
 }
-const g = L.makeGame(fs.readFileSync(dir + "/game.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()), console8: true } });
+// the screen of the game's console: SPROUT·8's, or SPROUT·16's (decision 125)
+const g = L.makeGame(fs.readFileSync(dir + "/game.sp", "utf8"), { W: +process.argv[2] || 256, H: +process.argv[3] || 192, host: { saved: S.valueCellOf([], new Map()), console8: true } });
 const keys = ["left", "right", "up", "down", "one", "two"];
 let drawn = 0;
 for (let t = 0; t < 1200; t++) {
@@ -39,7 +40,8 @@ for (const name of Object.keys(games)) {
   const manifest = JSON.parse(fs.readFileSync(path.join(SITE, name, "manifest.webmanifest"), "utf8"));
   ok(name + ": installs as an app of its own", manifest.display === "standalone" && manifest.scope === `/${name}/` && fs.readFileSync(path.join(SITE, name, "index.html"), "utf8").includes(`register("/${name}/sw.js"`));
   let res = null;
-  try { res = JSON.parse(execFileSync("node", ["-e", PLAY, dir], { timeout: 120000 }).toString().trim().split("\n").pop()); } catch (e) { res = { error: String(e.message).slice(0, 300) }; }
+  const screen = games[name].bits === 16 ? ["320", "224"] : ["256", "192"];
+  try { res = JSON.parse(execFileSync("node", ["-e", PLAY, dir, ...screen], { timeout: 120000 }).toString().trim().split("\n").pop()); } catch (e) { res = { error: String(e.message).slice(0, 300) }; }
   ok(name + ": plays twenty seconds on its own copy, quietly", res && !res.error && res.logs.length === 0 && res.drawn > 100, res);
 }
 console.log(pass + " passed, " + fail + " failed");

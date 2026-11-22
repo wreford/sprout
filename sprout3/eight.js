@@ -10,10 +10,14 @@
 //   song : "name" in the state      plays songs's song of that name: [bpm, beats, lead, bass, drums, once]
 //   keep : [...] in the state       saved on this phone, and handed back next time as saved
 //   held keys: left, right, up, down, one, two
+// SPROUT·16 (decision 125): Eight.start({ bits: 16 }) makes the same console a 16-bit one: a 320x224 screen, colours
+// snapped to 512 (eight levels of red, green and blue), and songs played with a warmer sawtooth lead through a filter,
+// with a little echo. Everything else is the same, so a game moves up by changing one number.
 (function (root) {
 "use strict";
 const S = root.Sprout3, LIVE = root.Sprout3Live;
-const W = 256, H = 192, STEP = 1 / 60;
+let W = 256, H = 192, LEVELS = 4, BITS = 8;
+const STEP = 1 / 60;
 
 // ---------------------------------------------------------------- the console's look
 const CSS = `
@@ -114,13 +118,17 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
   #e8 .bezel,#e8.touch .bezel{margin:6px 0;padding:6px 6px 6px 22px;border-radius:8px}#e8 .bezel .lines{display:none}#e8 .led{left:7px;font-size:0}
   #e8 .dpad{margin:0 16px}#e8 .btns{margin:0 16px}#e8 .pills{padding:0 0 12px;gap:10px}
 }`;
+// the look a 16-bit game gets when it brings none: SPROUT·16's black plastic
+const PLAIN16 = { shape: "wide", logo: "SPROUT·16", badge: "SPROUT·16", tagline: "16-BIT COLOUR", page: "#050507", page2: "#1a1a22", body: "#1b1b1f", body2: "#0c0c0e",
+  ink: "#8d8d96", bezel: "#0a0a0c", bezelInk: "#6c6c74", stripe1: "#e8202c", stripe2: "#f2f2f2", logoColour: "#f2f2f2", subColour: "#e8202c",
+  button: "#2b2b31", buttonInk: "#e8202c", dpad: "#0e0e10", pill: "#2b2b31", hint: "#6c6c74" };
 // the look a game gets when it brings none: the SPROUT·8 console's own
 const PLAIN = { logo: "SPROUT·8", sub: "", badge: "SPROUT·8", tagline: "8-BIT COLOUR", page: "#09090c", page2: "#1c1c24", body: "#2e2e35", body2: "#202026",
   ink: "#9a9aa5", bezel: "#17171c", bezelInk: "#77777f", stripe1: "#e83a3a", stripe2: "#2f5fd0", logoColour: "#e83a3a", subColour: "#9a9aa5",
   font: "Press Start 2P", logoSize: "17px", logoWeight: "400", logoStyle: "italic", logoTrack: "1px", button: "#c42222", buttonInk: "#ffd9d6", dpad: "#1c1c22",
   pill: "#3a3a44", hint: "#6e6e78" };
 
-// ---------------------------------------------------------------- colours: 64 of them
+// ---------------------------------------------------------------- colours: 64 of them, or 512 on SPROUT·16
 const snapped = new Map();
 function snap(c) {
   const t = typeof c === "string" ? c : S.format(c);
@@ -128,7 +136,8 @@ function snap(c) {
   if (s === undefined) {
     let hex = t.trim();
     if (/^#[0-9a-f]{3}$/i.test(hex)) hex = "#" + hex.slice(1).split("").map(h => h + h).join("");
-    s = /^#[0-9a-f]{6}/i.test(hex) ? "#" + [1, 3, 5].map(i => (Math.round(parseInt(hex.slice(i, i + 2), 16) / 85) * 85).toString(16).padStart(2, "0")).join("") : t;
+    const step = 255 / (LEVELS - 1);
+    s = /^#[0-9a-f]{6}/i.test(hex) ? "#" + [1, 3, 5].map(i => Math.round(Math.round(parseInt(hex.slice(i, i + 2), 16) / step) * step).toString(16).padStart(2, "0")).join("") : t;
     snapped.set(t, s);
   }
   return s;
@@ -184,6 +193,16 @@ function wordBitmap(t, colour) {
 
 // ---------------------------------------------------------------- sound: two square-wave voices, a triangle bass and hiss
 let AC = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, muted = false;
+// SPROUT·16's sound (decision 125): the songs go through a little echo, and the lead is a sawtooth through a filter
+function echoed(into) {
+  const delay = AC.createDelay(1), back = AC.createGain(), wet = AC.createGain();
+  delay.delayTime.value = 0.27; back.gain.value = 0.28; wet.gain.value = 0.3;
+  into.connect(delay); delay.connect(back).connect(delay); delay.connect(wet).connect(master);
+}
+function warm(freq, len, when, bus, vol, cutoff) {
+  const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = cutoff; f.Q.value = 2; f.connect(bus);
+  return tone("sawtooth", freq, len, when, f, vol);
+}
 function audio() {
   if (!AC) {
     try {
@@ -191,6 +210,7 @@ function audio() {
       master = AC.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(AC.destination);
       sfxBus = AC.createGain(); sfxBus.gain.value = 0.55; sfxBus.connect(master);
       musicBus = AC.createGain(); musicBus.gain.value = 0.3; musicBus.connect(master);
+      if (BITS === 16) echoed(musicBus);
     } catch (e) { AC = null; return null; }
   }
   if (AC.state === "suspended") AC.resume();
@@ -229,7 +249,8 @@ function readSong(rec) {
 
 function start(opts) {
   opts = opts || {};
-  const skin = Object.assign({}, PLAIN, opts.skin || {});
+  if (opts.bits === 16) { W = 320; H = 224; LEVELS = 8; BITS = 16; snapped.clear(); }
+  const skin = Object.assign({}, PLAIN, BITS === 16 ? PLAIN16 : {}, opts.skin || {});
   const style = document.createElement("style");
   style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "");
   document.head.appendChild(style);
@@ -410,6 +431,7 @@ function start(opts) {
       if (at >= AC.currentTime - 0.02) {
         const dur = Math.max(0.03, ev.beats * spb * 0.92);
         if (ev.voice === "drums") drum(String(ev.note), at);
+        else if (typeof ev.note === "number" && BITS === 16 && ev.voice !== "bass") warm(hz(ev.note), dur, at, musicBus, ev.voice === "harmony" ? 0.05 : 0.08, ev.voice === "harmony" ? 1500 : 2600);
         else if (typeof ev.note === "number") tone(ev.voice === "bass" ? "triangle" : "square", hz(ev.note), dur, at, musicBus, ev.voice === "bass" ? 0.16 : ev.voice === "harmony" ? 0.035 : 0.055);
       }
       song.i++;
@@ -464,5 +486,5 @@ function start(opts) {
   return { get game() { return game; } };
 }
 
-root.Eight = { start, snap, W, H };
+root.Eight = { start, snap, get W() { return W; }, get H() { return H; }, get bits() { return BITS; } };
 })(window);

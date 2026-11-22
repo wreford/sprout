@@ -131,6 +131,20 @@ server.listen(0, async () => {
       ok("sideways, " + shell + ": A fires, with no errors", (await wp.evaluate(() => game.state.field("agents").part(1).field("shots-fired"))) >= 1 && werr.length === 0, werr);
       await ctx.close();
     }
+    // SPROUT·16 (decision 125): the same console, one number up: a 320x224 screen in 512 colours, the 16-bit test card
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 } }), sp = await ctx.newPage(), serr = [];
+      sp.on("pageerror", e => serr.push(e.message)); sp.on("console", m => { if (m.type() === "error") serr.push(m.text()); });
+      const base = new URL(url).origin + "/sprout3/", runtime = ["sprout3.js", "words.js", "parse.js", "stdlib.js", "libs.js", "kernels.js", "live3.js", "eight.js"];
+      await sp.goto(base + "index.html");
+      await sp.setContent(`<!doctype html><html><head><meta charset="utf-8"><base href="${base}"></head><body>${runtime.map(f => `<script src="${f}"></script>`).join("")}<script>Eight.start({ game: "examples/test-card-16.sp", title: "Test card", key: "card16", bits: 16 });</script></body></html>`);
+      await sp.waitForTimeout(2200);
+      const st = await sp.evaluate(() => { const c = document.querySelector(".screen canvas"), d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let lit = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 0) lit++;
+        return { w: c.width, h: c.height, bits: Eight.bits, snap: Eight.snap("#123456"), wide: !!document.querySelector(".gb.wide"), lit }; });
+      ok("SPROUT·16: a 320 by 224 screen, colours snapped to eight levels, the wide body, the test card drawn", st.w === 320 && st.h === 224 && st.bits === 16 && st.snap === "#002449" && st.wide && st.lit > 20000, st);
+      ok("SPROUT·16: no errors on the page", serr.length === 0, serr);
+      await ctx.close();
+    }
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");
