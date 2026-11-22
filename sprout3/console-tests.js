@@ -59,6 +59,10 @@ server.listen(0, async () => {
     ok("the sheet shows what a turret knows (blue) and answers (gold)", (await page.$$("#knows button[data-w]")).length === 5 && (await page.$$("#knows button.ans")).length === 2);
     await page.click("#knows button[data-w=how-far]");
     ok("tapping one puts it in the program", /it how-far/.test(await page.inputValue("#src")));
+    await page.click("#pUndo");
+    ok("Undo takes it out again", !/it how-far/.test(await page.inputValue("#src")));
+    await page.click("#examples button:text-is('Sprayer')"); await page.click("#pUndo");
+    ok("and undoes an example, back to the program you had", /it off-target \* 4/.test(await page.inputValue("#src")) && !/Sprayer/.test(await page.inputValue("#src")));
     await page.click("#pReset");
     // TUNE: every number the game is built on, on a slider, taken at once
     await page.click("#tabs button[data-p=tune]");

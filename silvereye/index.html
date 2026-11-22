@@ -124,7 +124,8 @@ body.soft #tv{image-rendering:auto;filter:blur(.45px) saturate(1.08)}
 /* TUNE: every number the game is built on, on a slider */
 #tune{display:none;flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;border-top:1px solid #ffffff14}
 #prog.tuning #tune{display:block}
-#prog.tuning #codeBox,#prog.tuning #knows,#prog.tuning #examples{display:none}
+#prog.tuning #codeBox,#prog.tuning #knows,#prog.tuning #examples,#prog.tuning #pUndo{display:none}
+#prog .row button:disabled{opacity:.35}
 .knob{display:grid;grid-template-columns:1fr auto;gap:1px 8px;padding:6px 2px 7px;border-bottom:1px solid #ffffff10}
 .knob b{font:700 11.5px var(--mono);color:#8fd8ff}
 .knob output{font:800 12px var(--mono);color:#ffd166;text-align:right}
@@ -357,7 +358,7 @@ body.lefty #bZ{left:auto;right:8px}body.lefty #bZ+.lbl{left:auto;right:80px}
     <div id="tune"></div>
     <div id="codeBox"><pre id="srcHL" aria-hidden="true"></pre><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
     <div id="status"></div>
-    <div class="row"><button id="pReset">Put the first one back</button><button id="pClose">Done</button></div>
+    <div class="row"><button id="pUndo">Undo</button><button id="pReset">Put the first one back</button><button id="pClose">Done</button></div>
   </div>
 </div>
 <div id="toast"></div>
@@ -536,7 +537,12 @@ function applyProgram() {
 const HLWORDS = new Set([...S.knownWords(), "wrap", "clamp"]);
 function paintCode() { $("srcHL").innerHTML = ta.value.split("\n").map(l => Sprout3Highlight.line(l, HLWORDS)).join("\n") + "\n "; $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; }
 ta.addEventListener("scroll", () => { $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; });
-ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); });
+ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); clearTimeout(snapT); snapT = setTimeout(snapshot, 700); });
+// undo: each program keeps the versions it went through (a pause in typing, an example, a word put in), last 50
+const undo = { turret: [], simulant: [] };
+let snapT = 0;
+function snapshot() { const st = undo[tab]; if (!st) return; if (!st.length || st[st.length - 1] !== ta.value) { st.push(ta.value); if (st.length > 50) st.shift(); } }
+function undoUI() { $("pUndo").disabled = !undo[tab] || undo[tab].length < 2 && (undo[tab][0] === ta.value || !undo[tab].length); }
 ta.addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); ta.setRangeText("  ", ta.selectionStart, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input")); } e.stopPropagation(); });
 // example programs: each a small idea, explained in its comments; tap one and it runs at once
 const EXAMPLES = {
@@ -622,7 +628,7 @@ simulant-program : [it |
 };
 function examplesUI() {
   const box = $("examples"); box.innerHTML = "";
-  for (const name in EXAMPLES[tab]) { const b = document.createElement("button"); b.textContent = name; b.onclick = () => { ta.value = EXAMPLES[tab][name]; paintCode(); applyProgram(); }; box.appendChild(b); }
+  for (const name in EXAMPLES[tab]) { const b = document.createElement("button"); b.textContent = name; b.onclick = () => { snapshot(); ta.value = EXAMPLES[tab][name]; paintCode(); applyProgram(); snapshot(); undoUI(); }; box.appendChild(b); }
 }
 function showTab(k) {
   tab = k; $("prog").classList.toggle("tuning", k === "tune");
@@ -630,6 +636,7 @@ function showTab(k) {
   $("pReset").textContent = k === "tune" ? "Put every number back" : "Put the first one back";
   if (k === "tune") { $("progHelp").innerHTML = HELP.tune; tuneUI(); say(Object.keys(tune).length ? Object.keys(tune).length + " changed (marked •)." : "Nothing changed yet."); return; }
   ta.value = programs[k] || original[k]; paintCode(); $("progHelp").innerHTML = HELP[k];
+  if (!undo[k].length) undo[k].push(ta.value); undoUI();
   examplesUI(); knowsUI();
   say(k === "turret" ? "Set down a turret (C-up) and watch what it knows change." : "Simulants play in Combat sim, and join a duel.");
 }
@@ -658,7 +665,7 @@ function knowsUI() {
 function putWord(w, about) {
   const who = (ta.value.match(/^[a-z][a-z0-9-]* : \[([a-z][a-z0-9-]*) \|/m) || [])[1] || "it";
   const at = ta.selectionStart, before = ta.value.slice(0, at), gap = /[\s(\[]$/.test(before) || !before ? "" : " ";
-  ta.setRangeText(gap + who + " " + w, at, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input"));
+  snapshot(); ta.setRangeText(gap + who + " " + w, at, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input")); snapshot(); undoUI();
   say(w + ": " + about + ".");
 }
 setInterval(() => { if ($("prog").classList.contains("on") && tab !== "tune") knowsUI(); }, 250);
@@ -697,7 +704,13 @@ function applyTune() {
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.p); });
 const openProgram = on => { $("prog").classList.toggle("on", on); if (on) { closeScreens(); setTimeout(() => ta.focus({ preventScroll: true }), 50); } else ta.blur(); };
 $("pClose").onclick = () => openProgram(false);
-$("pReset").onclick = () => { if (tab === "tune") { for (const k in tune) delete tune[k]; tuneUI(); applyTune(); return; } ta.value = original[tab]; paintCode(); applyProgram(); };
+$("pReset").onclick = () => { if (tab === "tune") { for (const k in tune) delete tune[k]; tuneUI(); applyTune(); return; } snapshot(); ta.value = original[tab]; paintCode(); applyProgram(); snapshot(); undoUI(); };
+$("pUndo").onclick = () => {
+  const st = undo[tab]; if (!st) return;
+  snapshot();
+  if (st.length < 2) { say("Nothing to undo yet."); return; }
+  st.pop(); ta.value = st[st.length - 1]; paintCode(); applyProgram(); undoUI();
+};
 
 // ---- the title, settings, about and pause screens, worked by tapping or by the stick and A
 const SKILLS = ["", "ROOKIE", "AGENT", "ACE"], FOVS = [90, 100, 110, 120, 130];
