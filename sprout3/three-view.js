@@ -35,6 +35,8 @@ export function makeView(canvas, base, opts) {
   holdScene.add(holdCamera);
   const holdHemi = new THREE.HemisphereLight(0xdde6f5, 0x3a2e22, 1.25), holdSun = new THREE.DirectionalLight(0xfff1dc, 1.35);
   holdSun.position.set(-1.5, 2.5, 1.5); holdScene.add(holdHemi); holdScene.add(holdSun);
+  // a flash close in front of you (your own shot) lights the gun in your hands as well as the room
+  const holdFlash = new THREE.PointLight(0xffaa55, 0, 2.5, 2); holdFlash.position.set(0.1, -0.05, -0.85); holdScene.add(holdFlash);
   const holdGroup = new THREE.Group(); holdCamera.add(holdGroup);
   renderer.autoClear = false;
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -148,7 +150,7 @@ export function makeView(canvas, base, opts) {
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
-    let flashCount = 0, fogSet = false, lightSet = false, skyTexture = null;
+    let flashCount = 0, fogSet = false, lightSet = false, skyTexture = null, nearFlash = null;
     for (const [word, a] of list) {
       if (!WORDS.has(word)) continue;
       if (word === "view") {
@@ -184,6 +186,7 @@ export function makeView(canvas, base, opts) {
         const c = new THREE.Color(fmt(a[4]).slice(0, 7)), r = num(a[3], 0.3);
         f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
         f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
+        if (f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
       } else if (word === "sky") {
         // sky [top colour, horizon colour]: a gradient behind everything, made once per pair of colours
@@ -214,6 +217,7 @@ export function makeView(canvas, base, opts) {
     if (holdGroup.children.some(c => c.visible)) {
       holdHemi.color.copy(hemi.color); holdHemi.groundColor.copy(hemi.groundColor); holdHemi.intensity = hemi.intensity;
       holdSun.color.copy(sun.color); holdSun.intensity = sun.intensity;
+      if (nearFlash) { holdFlash.color.copy(nearFlash.c); holdFlash.intensity = 4 + nearFlash.r * 20; } else holdFlash.intensity = 0;
       holdCamera.aspect = camera.aspect; holdCamera.updateProjectionMatrix();
       renderer.clearDepth(); renderer.render(holdScene, holdCamera);
     }
