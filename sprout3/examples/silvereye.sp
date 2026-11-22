@@ -149,7 +149,7 @@ compound-spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5
 compound-heavy : [5.5, 5.5]
 missions : [
   [
-    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
+    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", band : #2a9d8f, air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
     spawn-at : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS", target-one : "GENERATOR"
@@ -159,7 +159,7 @@ missions : [
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
   [
-    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #3a3528, floor : "wood", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
+    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", band : #e0a526, air : #3a3528, floor : "wood", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
     spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS", target-one : "FUEL STACK"
@@ -169,7 +169,7 @@ missions : [
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
   ]
   [
-    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #1d2a3a, floor : "metal", ceiling : "plate", haze : 18, light : [#dff0ff, #2e3a4e, #c8e4ff, 1.2]
+    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", band : #3d7cc9, air : #1d2a3a, floor : "metal", ceiling : "plate", haze : 18, light : [#dff0ff, #2e3a4e, #c8e4ff, 1.2]
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
@@ -769,8 +769,10 @@ draw : [game |
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, scene walls]]
   -- lamps in the ceiling: lit panels over the floor (drawn glowing, so they're bright whatever the light)
   ceiling-lamps each [[lx, lz] | block [lx, 2.485, lz, 0.62, 0.03, 0.62, "glow:#fff4d8"]]
-  -- skirting at the foot of every wall
+  -- skirting at the foot of every wall, and a painted band round it at waist height, in the place's own colour
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
+  band : scene band else false
+  (band != false) [wall-cells each [[c, r] | block [c - 0.5, 1.05, r - 0.5, 1.015, 0.14, 1.015, band]]]
   -- doors slide up as anyone comes near, and drop shut behind them
   movers : game agents keep up .. (game guards keep [g | g health > 0]) .. (game scientists keep [c | c health > 0])
   door-cells each [d |
@@ -778,6 +780,8 @@ draw : [game |
     lift-by : 1.9 - nearest / 0.9 max 0 min 1 * 2.3
     block [d x, 1.25 + lift-by, d y, cond [d spans-x, 1, any, 0.14], 2.5, cond [d spans-x, 0.14, any, 1], "plate"]
     block [d x, 2.47, d y, cond [d spans-x, 1.04, any, 0.2], 0.06, cond [d spans-x, 0.2, any, 1.04], "#d6a531"]
+    -- a green light over every door, on both sides, so a way through is easy to spot
+    block [d x, 2.39, d y, cond [d spans-x, 0.3, any, 0.22], 0.07, cond [d spans-x, 0.22, any, 0.3], "glow:#3ddc84"]
   ]
   -- bullet holes where shots struck the walls
   (game holes else []) each [h | block [h x, h rise, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]

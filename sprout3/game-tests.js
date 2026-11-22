@@ -390,6 +390,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({})); put(al, 0, { x: 9.5, y: 7.5, angle: 0 }); for (let k = 0; k < 10; k++) al.tick(1 / 60, pad({}));
     const lights = al.draw().filter(x => x[0] === "light");
     ok("silvereye: when the alarm is up the light turns red", lights.length === 1 && ["#ff5a4a", "#c0605a"].includes(String(lights[0][1][2]).toLowerCase()), lights.map(l => l[1])); }
+  { const bd = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "block" && x[1][1] === 1.05 && x[1][4] === 0.14); };
+    const lab = bd(1), yard = bd(4);
+    ok("silvereye: indoors, the walls have a painted band in the place's colour; out in the compound, none", lab.length > 50 && lab.every(x => String(x[1][6]).toLowerCase() === "#2a9d8f") && yard.length === 0); }
+  { const dr = L.makeGame(src, {}); dr.tick(1 / 60, pad({}));
+    ok("silvereye: a green light glows over every door", dr.draw().filter(x => x[0] === "block" && x[1][6] === "glow:#3ddc84").length === dr.draw().filter(x => x[0] === "block" && x[1][6] === "#d6a531").length); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
