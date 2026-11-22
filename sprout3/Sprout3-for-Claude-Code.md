@@ -4723,10 +4723,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
     ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
   ok("silvereye: guards are the adventurer, with a blaster in his hand", g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][8] === "blaster_g").length >= 5);
-  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["adventurer", "soldier", "astronaut"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
+  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["adventurer", "soldier", "hooded_adventurer"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
     const depot = bodies(2), relay = bodies(3), yard = bodies(4);
-    ok("silvereye: each mission has its own guards: soldiers in the depot, sealed suits at the relay, a mix in the compound",
-      depot.length === 7 && depot.every(b => b === "soldier:Run") && relay.length === 8 && relay.every(b => b === "astronaut:Walk_Gun") && yard.filter(b => /^soldier/.test(b)).length === 5 && yard.filter(b => /^adventurer/.test(b)).length === 5, [depot, relay, yard]); }
+    ok("silvereye: each mission has its own guards: soldiers in the depot, hooded elites with field agents at the relay, a mix in the compound",
+      depot.length === 7 && depot.every(b => b === "soldier:Run") && relay.length === 8 && relay.filter(b => b === "hooded_adventurer:Walk").length === 4 && relay.filter(b => b === "adventurer:Walk").length === 4 && yard.filter(b => /^soldier/.test(b)).length === 5 && yard.filter(b => /^adventurer/.test(b)).length === 5, [depot, relay, yard]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11087,7 +11087,7 @@ missions : [
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
-    guard-kinds : [3]
+    guard-kinds : [3, 1]
     intel : [8.0, 7.5], intel-name : "CODEBOOK", silencer : [1.5, 14.5]
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
@@ -11220,11 +11220,11 @@ simulant-program : [it |
 ]
 styles : ["hunter", "flanker", "camper"]
 -- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
--- walk, so their run is played slowly for a patrol), and guards in sealed suits. All CC0, by Quaternius.
+-- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
 guard-looks : [
   [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
   [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
-  [body : "astronaut", walk : "Walk_Gun", pace : 0.9, run : "Run_Gun", aim : "Idle_Gun", shoot : "Run_Gun_Shoot", death : "Death", size : 1.7, holds : false]
+  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_e"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [

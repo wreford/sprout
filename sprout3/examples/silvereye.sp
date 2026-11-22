@@ -180,7 +180,7 @@ missions : [
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
-    guard-kinds : [3]
+    guard-kinds : [3, 1]
     intel : [8.0, 7.5], intel-name : "CODEBOOK", silencer : [1.5, 14.5]
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
@@ -313,11 +313,11 @@ simulant-program : [it |
 ]
 styles : ["hunter", "flanker", "camper"]
 -- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
--- walk, so their run is played slowly for a patrol), and guards in sealed suits. All CC0, by Quaternius.
+-- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
 guard-looks : [
   [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
   [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
-  [body : "astronaut", walk : "Walk_Gun", pace : 0.9, run : "Run_Gun", aim : "Idle_Gun", shoot : "Run_Gun_Shoot", death : "Death", size : 1.7, holds : false]
+  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_e"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
