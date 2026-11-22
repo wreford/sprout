@@ -451,6 +451,41 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("119 a program's own record still lints when its field is named like a name in scope", logs.some(m => /both a field/.test(m)));
 }
 
+// ---------------- pressed and released (decision 121)
+{
+  const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
+  const seen = src => { const g = L.makeGame(src); return t => { g.tick(1 / 60, keysOf(t[0]), t[1] ? keysOf(t[1]) : undefined); return g; }; };
+  const step = seen("start : [log : []]\nupdate : [g | g with [log : g log .. [[g input pressed keys, g input released keys]]]]");
+  let g; for (const t of [[[]], [["one"]], [["one", "left"]], [["left"]], [[]]]) g = step(t);
+  ok("121 a key is pressed on the tick it goes down, and released on the tick it comes up", S.format(g.state.field("log")) === "[[[], []], [[one], []], [[left], []], [[], [one]], [[], [left]]]", S.format(g.state.field("log")));
+  const two = L.makeGame("start : [log : []]\nupdate : [g | g with [log : g log .. [g input2 pressed keys]]]", { players: 2 });
+  two.tick(1 / 60, keysOf([]), keysOf(["two"])); two.tick(1 / 60, keysOf([]), keysOf(["two"]));
+  ok("121 the second player's keys are pressed in input2", S.format(two.state.field("log")) === "[[two], []]", S.format(two.state.field("log")));
+  ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
+}
+
+// ---------------- kits: modules that draw (decision 122)
+{
+  const kitDir = __dirname + "/kit", files = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).sort();
+  ok("122 stdlib.js holds exactly what kit/ holds (run node make-stdlib.js)", JSON.stringify(Object.keys(S.stdlib.KITS).sort()) === JSON.stringify(files.map(f => f.slice(0, -3))) && files.every(f => S.stdlib.KITS[f.slice(0, -3)] === fs.readFileSync(kitDir + "/" + f, "utf8")));
+  S.setLog(m => logs.push(m));
+  let drawn = 0, right = true;
+  for (const name of S.stdlib.kitNames) for (const m of S.stdlib.KITS[name].matchAll(/^-- e\.g\. (.*)$/gm)) {
+    logs.length = 0; drawn++;
+    const [src, draws] = m[1].split(" draws "), [, stated] = m[1].split(" → ");
+    const got = draws !== undefined ? L.drawsOf(src) : L.answerOf(m[1].split(" → ")[0]);
+    if (logs.length || got !== (draws !== undefined ? draws : stated).trim()) { right = false; console.log("   kit example", src, "gives", got, logs); }
+  }
+  ok("122 every kit example draws what it says, quietly (" + drawn + " of them)", right && drawn >= 10);
+  const g = L.makeGame("start : 0\nupdate : [g | g]\ndraw : [g | ui panel [1x2, 8x8, #ffffff, #000000]]", { W: 64, H: 48 });
+  const drew = g.draw().map(([name, args]) => name + " " + S.format(S.valueCellOf(args, new Map()))).join(", ");
+  ok("122 a game that names a kit draws with it, on its own screen", drew === "rect [1, 2, 8, 8, #ffffff], rect [3, 4, 4, 4, #000000]", drew);
+  const plain = L.makeGame("start : 0\nupdate : [g | g]\ndraw : [g | rect [0, 0, 1, 1, #ffffff]]");
+  ok("122 a kit comes along only when a game names it", !("ui" in plain.file.fieldNames()) && L.drawsOf("ui banner [\"A\", 9, 8, #ffffff]", { W: 100 }) === "text [A, 51, 10, 8, #000000], text [A, 50, 9, 8, #ffffff]");
+  logs.length = 0; L.makeGame("ui : [banner : [a | \"mine\"]]\nstart : 0\nupdate : [g | g]\nresult : ui banner 1");
+  ok("122 a game's own name wins over a kit's", logs.length === 0, logs);
+}
+
 // ---------------- wrapped libraries (decision 106)
 {
   S.setLog(m => logs.push(m));

@@ -30,6 +30,11 @@ function makeGame(src, opts) {
   }
   for (const name in SOUND) host[name] = new Native(name, a => S.effect(() => opts.onEffect && opts.onEffect([name, argsOf(a, SOUND[name])])), true);
   Object.assign(host, opts.host || {});
+  // kits (decision 122): library modules written in Sprout that draw and sound, so they are loaded with this game's own
+  // drawing words; one comes along when the game names it (ui banner [...])
+  const kits = (S.stdlib && S.stdlib.KITS) || {};
+  const addKits = code => { for (const name in kits) if (!(name in host) && new RegExp("(^|[^\\w-])" + name + " ").test(code)) host[name] = S.load(kits[name], { host }); };
+  addKits(src);
   if (opts.onPrint) S.setOut(opts.onPrint);
 
   // outside reads: the random numbers a tick used are recorded, and played back on replay (decision 54)
@@ -89,6 +94,7 @@ function makeGame(src, opts) {
     replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd, next.held2); return state; },
     // hot-swap: build the new file; keep live values whose starting value didn't change
     swap(newSrc) {
+      addKits(newSrc);
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");
       const out = S.fieldsOf(state);
       for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !equal(was, v)) out.set(k, v); }
@@ -98,6 +104,20 @@ function makeGame(src, opts) {
   return api;
 }
 
-const api = { makeGame };
+// what some drawing code draws, as words: "text [GO, 128, 40, 8, #ffffff], rect [...]", or "nothing" (for a kit's
+// examples, decision 122); the screen is SPROUT·8's unless opts says
+function drawsOf(code, opts) {
+  const g = makeGame("start : 0\nupdate : [g | g]\ndraw : [g |\n  " + code + "\n]", Object.assign({ W: 256, H: 192 }, opts));
+  const shown = g.draw().map(([name, args]) => name + " [" + args.map(a => S.format(a)).join(", ") + "]");
+  return shown.length ? shown.join(", ") : "nothing";
+}
+
+// what some code gives in a game's world, where the kits it names come along (decision 122)
+function answerOf(code, opts) {
+  const g = makeGame("start : 0\nupdate : [g | g]\nresult : " + code, Object.assign({ W: 256, H: 192 }, opts));
+  return S.format(g.file.field("result"));
+}
+
+const api = { makeGame, drawsOf, answerOf };
 if (typeof module !== "undefined") module.exports = api; else root.Sprout3Live = api;
 })(typeof window !== "undefined" ? window : globalThis);

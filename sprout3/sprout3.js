@@ -1164,9 +1164,15 @@ rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
 rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
 every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
-fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
+fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : []]
+-- the keys true in now that weren't in was, as a record like held: [one : true] (decision 121)
+keys-new : [now was | now keys fold [[], [found name | (was get-in [name]) = true [found] else [found set-in [[name], true]]]]]
+-- an input as it is this tick: what's held, and what went down or up since the tick before
+input-now : [input down-now | input with [held : down-now, pressed : keys-new [down-now, input held], released : keys-new [input held, down-now]]]
 -- frame update: events in, one update per tick (decision 34)
 -- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
+-- pressed and released (decision 121): the keys that went down or came up this tick, so a game needs no keys of its own
+-- from the tick before
 frame : [update |
   [state event |
     second : event player else 1 = 2
@@ -1180,9 +1186,13 @@ frame : [update |
       "move", put (current-input with [touch-x : event x, touch-y : event y])
       "up", put (current-input with [touching : false])
       "tick", pair [
-        before : state with [dt : event dt, clock : event clock, input : first-input with [held : event held], input2 : second-input with [held : event held2]]
-        update before with [input : first-input with [tapped : false, held : event held], input2 : second-input with [tapped : false, held : event held2]]
-      ] else [update (state with [dt : event dt, clock : event clock, input : first-input with [held : event held]]) with [input : first-input with [tapped : false, held : event held]]]
+        one-now : input-now [first-input, event held]
+        two-now : input-now [second-input, event held2]
+        update (state with [dt : event dt, clock : event clock, input : one-now, input2 : two-now]) with [input : one-now with [tapped : false], input2 : two-now with [tapped : false]]
+      ] else [
+        one-now : input-now [first-input, event held]
+        update (state with [dt : event dt, clock : event clock, input : one-now]) with [input : one-now with [tapped : false]]
+      ]
       any, state
     ]]
   ]

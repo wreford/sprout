@@ -74,6 +74,26 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
 #e8 .btns.row{transform:none;align-items:center}#e8 .btns.row .btn.two{margin-bottom:0}
 #e8[class*="pattern-"] .top span,#e8[class*="pattern-"] .pill span{background:var(--plate);color:var(--ink);padding:3px 6px;border-radius:5px}
 #e8 .brand.plate{background:var(--plate);border-radius:12px;margin:10px 7% 0;padding:8px 12px;box-shadow:inset 0 1px 3px #0005}
+/* an arcade cabinet (decision 123): the logo lit up in a marquee on top, a square bezel, a joystick and big buttons */
+#e8 .gb.cabinet{border-radius:22px 22px 12px 12px;grid-template-rows:auto auto 1fr auto;grid-template-areas:"brand brand" "bezel bezel" "dpad btns" "pills pills"}
+#e8 .gb.cabinet .top,#e8 .gb.cabinet .grille,#e8 .gb.cabinet .led{display:none}
+#e8 .gb.cabinet .brand{position:relative;flex-direction:column;justify-content:center;gap:7px;margin:14px 6% 12px;padding:12px 56px;border-radius:10px;background:var(--plate);
+  box-shadow:0 0 0 3px #0007,inset 0 0 22px #000a,0 0 26px color-mix(in srgb,var(--logo) 40%,transparent)}
+#e8 .gb.cabinet .brand .sub{order:-1;align-self:center;padding:0}
+#e8 .gb.cabinet .brand .logo{text-shadow:0 0 10px var(--logo),0 2px 0 #0009}
+#e8 .gb.cabinet .brand .mascot{position:absolute;right:10px;top:50%;width:40px;height:40px;margin:-20px 0 0}
+#e8 .gb.cabinet .bezel{margin:0 6%;padding:22px 4% 14px;border-radius:10px}
+#e8.touch .gb.cabinet{border-radius:0}
+/* a joystick: a ball on a stick in a round gate, leaning the way it's pushed */
+#e8 .dpad.stick{border-radius:50%;background:radial-gradient(circle,#0000 29%,#0000004d 30% 34%,#0000 35%),var(--dpad);box-shadow:inset 0 3px 7px #000a,0 2px 0 #ffffff22,0 0 0 6px #00000030}
+#e8 .dpad.stick .h,#e8 .dpad.stick .v{display:none}
+#e8 .dpad.stick .c{left:33px;top:33px;width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 36% 30%,#ffffffaa,transparent 42%),var(--stick);
+  box-shadow:0 6px 0 #0007,0 11px 12px #0006;transform:translate(var(--sx,0px),var(--sy,0px));transition:transform .05s}
+#e8 .dpad.stick.on-left{--sx:-18px}#e8 .dpad.stick.on-right{--sx:18px}#e8 .dpad.stick.on-up{--sy:-18px}#e8 .dpad.stick.on-down{--sy:18px}
+/* buttons like basketballs, black seams and all */
+#e8 .btns.ball .btn{--seam:#24100a;text-shadow:0 0 3px #000,0 0 3px #000;background:radial-gradient(circle at 34% 28%,#ffffff66,transparent 38%),
+  linear-gradient(90deg,#0000 calc(50% - 1.5px),var(--seam) 0 calc(50% + 1.5px),#0000 0),linear-gradient(#0000 calc(50% - 1.5px),var(--seam) 0 calc(50% + 1.5px),#0000 0),
+  radial-gradient(circle at -22% 50%,#0000 57%,var(--seam) 0 calc(57% + 3px),#0000 0),radial-gradient(circle at 122% 50%,#0000 57%,var(--seam) 0 calc(57% + 3px),#0000 0),var(--btn)}
 @media (orientation:landscape) and (min-height:561px){
   #e8 .gb.wide{width:min(96vw,calc((100vh - 64px) * 1.8));aspect-ratio:18/10;border-radius:46% 46% 46% 46% / 22% 22% 30% 30%;padding:0 0 16px;
     grid-template-columns:1fr auto 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top top top" "dpad bezel btns" "pills brand ."}
@@ -213,20 +233,22 @@ function start(opts) {
   const style = document.createElement("style");
   style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "");
   document.head.appendChild(style);
+  // the game's own handheld (decision 124): its stylesheet laid over the shell's
+  if (opts.css) { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = opts.css; document.head.appendChild(link); }
   const touch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in root;
   const box = document.createElement("div"); box.id = "e8"; if (touch) box.classList.add("touch");
   if (skin.pattern) box.classList.add("pattern-" + skin.pattern);
   const vars = { plate: skin.plate || "transparent", page: skin.page, page2: skin.page2, body: skin.body, body2: skin.body2, ink: skin.ink, bezel: skin.bezel, "bezel-ink": skin.bezelInk, s1: skin.stripe1, s2: skin.stripe2,
     logo: skin.logoColour, sub: skin.subColour, brand: `"${skin.font}"`, "logo-size": skin.logoSize, "logo-weight": skin.logoWeight, "logo-style": skin.logoStyle, "logo-track": skin.logoTrack,
-    btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint };
+    btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint, stick: skin.stick || skin.button };
   for (const k in vars) box.style.setProperty("--" + k, vars[k]);
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  box.innerHTML = `<div class="gb${skin.shape === "wide" ? " wide" : ""}">
+  box.innerHTML = `<div class="gb${skin.shape === "wide" || skin.shape === "cabinet" ? " " + skin.shape : ""}">
   <div class="top"><i></i><span>${esc(skin.badge)}</span><i></i></div>
   <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
   <div class="brand${skin.plate ? " plate" : ""}"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
-  <div class="dpad${skin.dpadShape === "disc" ? " disc" : ""}"><i class="h"></i><i class="v"></i><i class="c"></i></div>
-  <div class="btns${skin.buttonRow ? " row" : ""}"><div class="btn one">1</div><div class="btn two">2</div></div>
+  <div class="dpad${skin.dpadShape === "disc" || skin.dpadShape === "stick" ? " " + skin.dpadShape : ""}"><i class="h"></i><i class="v"></i><i class="c"></i></div>
+  <div class="btns${skin.buttonRow ? " row" : ""}${skin.buttonStyle === "ball" ? " ball" : ""}"><div class="btn one">1</div><div class="btn two">2</div></div>
   <div class="pills"><div class="pill mute2"><b></b><span>SOUND</span></div><div class="pill pause"><b></b><span>PAUSE</span></div></div>
   <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 </div>
@@ -240,6 +262,13 @@ function start(opts) {
     const body = box.querySelector(".gb");
     body.style.backgroundImage = `url("data:image/svg+xml,${svg.replace(/</g, "%3C").replace(/>/g, "%3E").replace(/ /g, "%20")}"),linear-gradient(165deg,${skin.body},${skin.body2})`;
     body.style.backgroundSize = "180px 180px, auto";
+  }
+  // hardwood (decision 123): planks with their seams and grain, and the three-point line painted round the controls
+  if (skin.pattern === "wood") {
+    const body = box.querySelector(".gb");
+    body.style.backgroundImage = [`radial-gradient(ellipse 62% 30% at 50% 100%,#0000 calc(100% - 4px),${skin.line || "#f4ecdc"} calc(100% - 4px) 100%,#0000 100%)`,
+      "repeating-linear-gradient(90deg,#0000 0 34px,#00000034 34px 36px)", "repeating-linear-gradient(90deg,#ffffff12 0 2px,#0000 2px 9px,#00000014 9px 11px,#0000 11px 18px)",
+      `linear-gradient(165deg,${skin.body},${skin.body2})`].join(",");
   }
   // iOS Safari zooms in on a quick second tap, and on a pinch, whatever the viewport says (it ignores user-scalable=no):
   // a game wants neither, so the second tap of a double tap and every pinch are cancelled. Text boxes are left alone.

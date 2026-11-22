@@ -2,7 +2,7 @@
 // is loaded in a Node of its own from its folder, played for twenty seconds with buttons pressed now and then, and
 // drawn; it must not throw or say anything.
 const fs = require("fs"), path = require("path"), { execFileSync } = require("child_process");
-const SITE = path.join(__dirname, ".."), games = JSON.parse(fs.readFileSync(path.join(__dirname, "games.json"), "utf8"));
+const SITE = path.join(__dirname, ".."), games = require("./registry.js").games();
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log("FAIL", name, extra === undefined ? "" : extra); } };
 const PLAY = `

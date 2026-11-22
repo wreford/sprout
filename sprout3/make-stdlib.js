@@ -5,6 +5,10 @@ const dir = path.join(__dirname, "lib");
 const names = fs.readdirSync(dir).filter(f => f.endsWith(".sp")).map(f => f.slice(0, -3)).sort();
 const sources = {};
 for (const name of names) sources[name] = fs.readFileSync(path.join(dir, name + ".sp"), "utf8");
+// kits (decision 122): modules that draw, in kit/; a game loads one with its own drawing words when it names it
+const kitDir = path.join(__dirname, "kit"), kitNames = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).map(f => f.slice(0, -3)).sort();
+const kits = {};
+for (const name of kitNames) kits[name] = fs.readFileSync(path.join(kitDir, name + ".sp"), "utf8");
 const out = `// The standard library (decision 105), made by make-stdlib.js from lib/*.sp. Don't edit this file: edit lib/ and run
 // node make-stdlib.js. Each module is a global cell whose fields are its words, written in Sprout; it is compiled the
 // first time a program uses it.
@@ -12,14 +16,16 @@ const out = `// The standard library (decision 105), made by make-stdlib.js from
 "use strict";
 const S = root.Sprout3 || (typeof module !== "undefined" ? require("./sprout3.js") : null);
 const SOURCES = ${JSON.stringify(sources, null, 1)};
+// kits (decision 122): modules that draw; the game layer (live3.js) loads one with a game's own drawing words
+const KITS = ${JSON.stringify(kits, null, 1)};
 const loaded = {};
 for (const name in SOURCES)
   Object.defineProperty(S.globals, name, { get: () => loaded[name] || (loaded[name] = S.load(SOURCES[name])), enumerable: true, configurable: true });
-S.stdlib = { SOURCES, names: Object.keys(SOURCES) };
+S.stdlib = { SOURCES, names: Object.keys(SOURCES), KITS, kitNames: Object.keys(KITS) };
 })(typeof window !== "undefined" ? window : globalThis);
 `;
 fs.writeFileSync(path.join(__dirname, "stdlib.js"), out);
-console.log("stdlib.js:", names.join(", "));
+console.log("stdlib.js:", names.join(", "), "| kits:", kitNames.join(", "));
 
 // ---- library.html: the reference, made from each module's comments; every example is run and its answer shown
 const S = require("./sprout3.js");
@@ -42,6 +48,7 @@ function wordsOf(src) {
   return { intro, words };
 }
 const MODULES = names.map(name => ({ name, ...wordsOf(sources[name]) }));
+const KIT_MODULES = kitNames.map(name => ({ name, kit: true, ...wordsOf(kits[name]) }));
 // the modules distilled from the TaskIAP games: those whose opening says so
 const GAME_MODULES = names.filter(name => /Distilled from/.test(sources[name].split("\n\n")[0].replace(/\n-- /g, " ")));
 // json is written in JavaScript, in words.js; its entry is written here
@@ -55,7 +62,7 @@ const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
-  ["Touch and sound", ["gesture", "music"]],
+  ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
@@ -84,6 +91,15 @@ const example = (e, mustState) => {
   if (stated !== undefined) { checked++; if (shown(out) !== stated.trim()) { failures++; console.log("WRONG ANSWER:", src, "gives", shown(out), "not", stated.trim()); } }
   return `<pre>${esc(src)}\n<span class="cm">-- ${esc(out).replace(/\n/g, "\n-- ")}</span></pre>`;
 };
+// a kit's example is "expression draws what": what it draws on a SPROUT·8 screen, checked like an answer; or "→ answer"
+const L = require("./live3.js");
+const kitExample = e => {
+  const drawing = e.includes(" draws "), [src, stated] = e.split(drawing ? " draws " : " → ");
+  logs.length = 0; let out; try { out = drawing ? L.drawsOf(src) : shown(L.answerOf(src)); } catch (err) { out = "error: " + err.message; }
+  const bad = logs.filter(l => !l.startsWith("lint"));
+  checked++; if (out !== stated.trim() || bad.length) { failures++; console.log("WRONG DRAWING:", src, "draws", out, "not", stated.trim(), bad.join(" | ")); }
+  return `<pre>${esc(src)}\n<span class="cm">-- ${drawing ? "draws " : ""}${esc(out)}</span></pre>`;
+};
 const section = (mod, mustState) => {
   const plain = mod.intro.join(" ").replace(/^[\w-]+: /, ""), intro = plain.charAt(0).toUpperCase() + plain.slice(1);
   return `<section id="${mod.name}">
@@ -91,7 +107,7 @@ const section = (mod, mustState) => {
 <p>${esc(intro)}</p>
 <dl>
 ${mod.words.map(w => `<dt><code><b>${mod.name} ${w.name}</b>${w.inputs ? " [" + esc(w.inputs.split(/\s+/).join(", ")) + "]" : ""}</code></dt>
-<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => example(e, mustState)).join("")}</dd>`).join("\n")}
+<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => mod.kit ? kitExample(e) : example(e, mustState)).join("")}</dd>`).join("\n")}
 </dl>
 </section>`;
 };
@@ -105,13 +121,17 @@ const page = `<!doctype html>
 ${style}</head><body>
 <main>
 <h1><a href="./">Sprout</a></h1>
-<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
+<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#kits">${KIT_MODULES.length} ${KIT_MODULES.length === 1 ? "kit" : "kits"}</a> that draw, and <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
 <p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, from, to, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines.</p>
 <p>One way of working runs through all of them. A point, a size, a cell of a grid and a hex are pairs, like <code>3x4</code>, read with <code>p x</code> and <code>p y</code>, and added and scaled like numbers. A word's inputs come in the same order: what it works on, then how, then the time or the seed. Randomness only ever comes from a seed, through <code>seeded</code>, so a game that rewinds, and a second phone playing along, get the same luck. And every example below shows its answer, which is worked out, and checked, each time the library is built.</p>
 ${GROUPS.map(([title, ns]) => `<p class="toc"><b>${title}</b> ${ns.filter(n => byName[n]).map(n => `<a href="#${n}">${n}</a>`).join(" ")}</p>`).join("\n")}
 <p>Of these, ${GAME_MODULES.length} were distilled from the 319 TaskIAP games and apps: what they kept writing again and again, written once, small and well, in Sprout: ${GAME_MODULES.map(n => `<a href="#${n}">${n}</a>`).join(", ")}. A count in each one's opening says how many games needed it.</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
 ${GROUPS.map(([title, ns]) => `<h2 class="group">${title}</h2>\n` + ns.filter(n => byName[n]).map(n => section(byName[n], true)).join("\n")).join("\n")}
+<h2 id="kits" style="margin-top:72px">Kits</h2>
+<p>Modules that draw. A kit is written in Sprout like the modules above, but it draws with the game's own drawing words, so it comes along with a game that names it: <code>ui banner ["GO", 40, 8, #ffffff]</code>. Each example shows what it draws on a SPROUT·8 screen, 256 pixels across and 192 down, and that is checked each time the library is built too.</p>
+<p class="toc">${KIT_MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+${KIT_MODULES.map(m => section(m)).join("\n")}
 <h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>
 <p>Popular JavaScript libraries, each a module like the ones above. A library is loaded only when a program names it, from this site, so nothing is fetched unless it is used.</p>
 <p class="toc">${LIBS.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>

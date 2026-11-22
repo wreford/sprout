@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (352)
+node test.js          # language tests (359)
 node game-tests.js    # game tests (264)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 616 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 623 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -785,6 +785,14 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 119. **cond works out only what it chooses, and library words don't clash with a program's names (Claude, 22 Nov; the language, from Troy's ask that each new game make Sprout the language better, not only its libraries).** `cond [test, answer, ...]` was a word of the prelude that took a list, so every test and every answer was worked out before it chose: an answer that called its own cell again never stopped (three games met this), and the sounds and other effects written in the answers not chosen happened anyway. The compiler now writes a `cond` given its list in place as a chain of choices: the tests are worked out in order up to the first that is true (or any), and only that answer is worked out, in the tail of the cell when the cond is, so an answer can call its own cell again as deep as it likes (`f : [n | cond [n < 1, 0, any, f (n - 1)]]` runs to twenty thousand). The answers given are the same as before. A program's own `cond`, and `cond` given a list made elsewhere, are as they were. And the lint "is both a field here and a name in scope" no longer fires for a word read straight from a global named in place (`piles draw`, `vec size`): every game has a cell called draw, and a library module's word can't mean it; a program's own records still lint as before.
 
 120. **Blended Zebra 8, and handhelds that differ in more than colour (Claude, 22 Nov; a game, the host and the library, from Troy's asks for a simple 8-bit Blended Zebra and for more variety in each new game's handheld).** Blended Zebra 8 (`examples/blended-zebra.sp`, at `/blended-zebra/`, on its own frozen Sprout) is the endless black, white and red deckbuilder made small: a zebra climbs a savanna floor by floor, picking a door (a fight, an oasis every third floor, a boss every fifth); a fight deals five cards and three energy a turn, attacks go through the foe's guard, blocks last the turn, and the foe shows its next move (attack, guard or roar); after a win you take one of three cards; at an oasis you rest or blend two cards into one that does both, at the dearer cost, under a name made of both (BITE and HIDE blend to BIDE), and a blend can be blended once more before it is MAX; BITE and KICK make the ancestral CRUSH. It keeps your best floor. The library gained `piles` (fresh, draw, play, exhaust, end-turn, all-cards: the stock, hand and discard of a deckbuilder, the discard shuffled back by seed when the stock runs out) and `prose blend` (two words into one, half of each). The skins gained options that change the handheld's shape and feel, not only its colours: `shape: "wide"` (a landscape body with the screen in the middle, the D-pad on the left and the buttons on the right, on a computer or a tablet held sideways), `pattern: "zebra"` (wavy stripes in the plastic), `dpadShape: "disc"` (a round pad), `buttonRow` (the buttons side by side) and `plate` (a light panel behind the brand, and behind the small labels on a patterned body). Blended Zebra's handheld uses all of them, in white plastic with black stripes and red controls, with its own font, Sora (SIL Open Font License). `sprite` takes a sixth value, a whole number, to draw a picture that many times bigger. And SPROUT·8 now latches a press until the next frame has seen it, so a tap quicker than a frame still counts.
+
+121. **Pressed and released (Claude, 22 Nov; the game layer, from Troy's ask to make Sprout better with each new game).** The frame now gives a game's input `pressed` and `released` beside `held`: records of the keys that went down, or came up, since the tick before (`g input pressed "one"` is true on the one tick a button goes in). Every game so far kept last tick's keys in its own state to see a press; now none needs to. The second player's input2 gets them too. They are worked out from the input the state already holds, so a rewind or a replay sees the same presses. A key held down shows in `held` every tick and in `pressed` once.
+
+122. **Kits: library modules that draw (Claude, 22 Nov; the host and the library, from Troy's ask for a system for making apps easily by reusing Sprout code).** A kit is a module written in Sprout, in `kit/`, that draws and sounds with a game's own words. A game that names one gets it, loaded with its own drawing words (`ui banner ["GO", 40, 8, #ffffff]`); a game that doesn't, doesn't. The first kit, `ui`, holds what the 8-bit games kept writing again: `banner` (words across the middle with a shadow), `blink` (a prompt shown half of every second), `panel`, `meter`, `choices` (a menu with its pointer), `strip` (words along the top), `talk` and `talked` (a line typed out in a box, a letter at a time), `float` (words that rise from where something happened) and `wipe` (bars closing between scenes). A kit's examples say what they draw (`ui panel [10x20, 40x30, #ffffff, #000000] draws rect [10, 20, 40, 30, #ffffff], rect [12, 22, 36, 26, #000000]`), and that is checked when the library is built, as answers are. The game layer gained `drawsOf` and `answerOf` for that. Two modules joined the library with them: `pad` (way, across, upward, either, any-in: the arrows as a pair, and whether button 1 or 2 is in) and `menu` (wrap, clamp, grid, top, window, spend: a cursor over choices, cards or a grid, scrolling a long list, and points spent along a row of values, as when building a player).
+
+123. **The arcade cabinet (Claude, 22 Nov; the host, for Basketball Legends 8).** A skin can now make the handheld a small arcade cabinet: `shape: "cabinet"` (the logo lit in a marquee on top, a square bezel, the controls on a deck), `dpadShape: "stick"` (a ball-top joystick in a round gate that leans the way it's pushed), `buttonStyle: "ball"` (buttons drawn as basketballs, seams and all), `stick` (the joystick's colour) and `pattern: "wood"` (hardwood planks with the three-point line painted round the controls).
+
+124. **Games made side by side (Claude, 22 Nov; the host, from Troy's ask for rapid iterations done in parallel).** A new game now lives in files of its own, so several can be made at once without two hands on one file: its program (`examples/<game>.sp`), its entry in the registry (`games.d/<game>.json`: title, file, about, a one-line `line` for Sprout's page, the skin, and `bits` for a 16-bit game), its tests (`tests8/<game>.js`, a function given the test helpers, run by game-tests.js), its icons, and, when the skin's options aren't enough, its own handheld (`skins/<game>.css`, laid over the shell's stylesheet and frozen with the game). `registry.js` reads games.json and games.d together for freeze.js and frozen-tests.js, and `node publish.js <game>` puts a game on the site in one go: frozen, with a row at the top of the home page and a line on Sprout's page.
 ````
 
 ---
@@ -1962,9 +1970,15 @@ rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
 rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
 every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
-fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
+fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : []]
+-- the keys true in now that weren't in was, as a record like held: [one : true] (decision 121)
+keys-new : [now was | now keys fold [[], [found name | (was get-in [name]) = true [found] else [found set-in [[name], true]]]]]
+-- an input as it is this tick: what's held, and what went down or up since the tick before
+input-now : [input down-now | input with [held : down-now, pressed : keys-new [down-now, input held], released : keys-new [input held, down-now]]]
 -- frame update: events in, one update per tick (decision 34)
 -- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
+-- pressed and released (decision 121): the keys that went down or came up this tick, so a game needs no keys of its own
+-- from the tick before
 frame : [update |
   [state event |
     second : event player else 1 = 2
@@ -1978,9 +1992,13 @@ frame : [update |
       "move", put (current-input with [touch-x : event x, touch-y : event y])
       "up", put (current-input with [touching : false])
       "tick", pair [
-        before : state with [dt : event dt, clock : event clock, input : first-input with [held : event held], input2 : second-input with [held : event held2]]
-        update before with [input : first-input with [tapped : false, held : event held], input2 : second-input with [tapped : false, held : event held2]]
-      ] else [update (state with [dt : event dt, clock : event clock, input : first-input with [held : event held]]) with [input : first-input with [tapped : false, held : event held]]]
+        one-now : input-now [first-input, event held]
+        two-now : input-now [second-input, event held2]
+        update (state with [dt : event dt, clock : event clock, input : one-now, input2 : two-now]) with [input : one-now with [tapped : false], input2 : two-now with [tapped : false]]
+      ] else [
+        one-now : input-now [first-input, event held]
+        update (state with [dt : event dt, clock : event clock, input : one-now]) with [input : one-now with [tapped : false]]
+      ]
       any, state
     ]]
   ]
@@ -3091,6 +3109,11 @@ function makeGame(src, opts) {
   }
   for (const name in SOUND) host[name] = new Native(name, a => S.effect(() => opts.onEffect && opts.onEffect([name, argsOf(a, SOUND[name])])), true);
   Object.assign(host, opts.host || {});
+  // kits (decision 122): library modules written in Sprout that draw and sound, so they are loaded with this game's own
+  // drawing words; one comes along when the game names it (ui banner [...])
+  const kits = (S.stdlib && S.stdlib.KITS) || {};
+  const addKits = code => { for (const name in kits) if (!(name in host) && new RegExp("(^|[^\\w-])" + name + " ").test(code)) host[name] = S.load(kits[name], { host }); };
+  addKits(src);
   if (opts.onPrint) S.setOut(opts.onPrint);
 
   // outside reads: the random numbers a tick used are recorded, and played back on replay (decision 54)
@@ -3150,6 +3173,7 @@ function makeGame(src, opts) {
     replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd, next.held2); return state; },
     // hot-swap: build the new file; keep live values whose starting value didn't change
     swap(newSrc) {
+      addKits(newSrc);
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");
       const out = S.fieldsOf(state);
       for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !equal(was, v)) out.set(k, v); }
@@ -3159,7 +3183,21 @@ function makeGame(src, opts) {
   return api;
 }
 
-const api = { makeGame };
+// what some drawing code draws, as words: "text [GO, 128, 40, 8, #ffffff], rect [...]", or "nothing" (for a kit's
+// examples, decision 122); the screen is SPROUT·8's unless opts says
+function drawsOf(code, opts) {
+  const g = makeGame("start : 0\nupdate : [g | g]\ndraw : [g |\n  " + code + "\n]", Object.assign({ W: 256, H: 192 }, opts));
+  const shown = g.draw().map(([name, args]) => name + " [" + args.map(a => S.format(a)).join(", ") + "]");
+  return shown.length ? shown.join(", ") : "nothing";
+}
+
+// what some code gives in a game's world, where the kits it names come along (decision 122)
+function answerOf(code, opts) {
+  const g = makeGame("start : 0\nupdate : [g | g]\nresult : " + code, Object.assign({ W: 256, H: 192 }, opts));
+  return S.format(g.file.field("result"));
+}
+
+const api = { makeGame, drawsOf, answerOf };
 if (typeof module !== "undefined") module.exports = api; else root.Sprout3Live = api;
 })(typeof window !== "undefined" ? window : globalThis);
 ````
@@ -4092,6 +4130,41 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("119 a library's word read in place doesn't clash with the program's own name", !logs.some(m => /both a field/.test(m)), logs);
   logs.length = 0; S.load("size : 3\nbox : [size : 4]\nresult : box size").field("result");
   ok("119 a program's own record still lints when its field is named like a name in scope", logs.some(m => /both a field/.test(m)));
+}
+
+// ---------------- pressed and released (decision 121)
+{
+  const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
+  const seen = src => { const g = L.makeGame(src); return t => { g.tick(1 / 60, keysOf(t[0]), t[1] ? keysOf(t[1]) : undefined); return g; }; };
+  const step = seen("start : [log : []]\nupdate : [g | g with [log : g log .. [[g input pressed keys, g input released keys]]]]");
+  let g; for (const t of [[[]], [["one"]], [["one", "left"]], [["left"]], [[]]]) g = step(t);
+  ok("121 a key is pressed on the tick it goes down, and released on the tick it comes up", S.format(g.state.field("log")) === "[[[], []], [[one], []], [[left], []], [[], [one]], [[], [left]]]", S.format(g.state.field("log")));
+  const two = L.makeGame("start : [log : []]\nupdate : [g | g with [log : g log .. [g input2 pressed keys]]]", { players: 2 });
+  two.tick(1 / 60, keysOf([]), keysOf(["two"])); two.tick(1 / 60, keysOf([]), keysOf(["two"]));
+  ok("121 the second player's keys are pressed in input2", S.format(two.state.field("log")) === "[[two], []]", S.format(two.state.field("log")));
+  ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
+}
+
+// ---------------- kits: modules that draw (decision 122)
+{
+  const kitDir = __dirname + "/kit", files = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).sort();
+  ok("122 stdlib.js holds exactly what kit/ holds (run node make-stdlib.js)", JSON.stringify(Object.keys(S.stdlib.KITS).sort()) === JSON.stringify(files.map(f => f.slice(0, -3))) && files.every(f => S.stdlib.KITS[f.slice(0, -3)] === fs.readFileSync(kitDir + "/" + f, "utf8")));
+  S.setLog(m => logs.push(m));
+  let drawn = 0, right = true;
+  for (const name of S.stdlib.kitNames) for (const m of S.stdlib.KITS[name].matchAll(/^-- e\.g\. (.*)$/gm)) {
+    logs.length = 0; drawn++;
+    const [src, draws] = m[1].split(" draws "), [, stated] = m[1].split(" → ");
+    const got = draws !== undefined ? L.drawsOf(src) : L.answerOf(m[1].split(" → ")[0]);
+    if (logs.length || got !== (draws !== undefined ? draws : stated).trim()) { right = false; console.log("   kit example", src, "gives", got, logs); }
+  }
+  ok("122 every kit example draws what it says, quietly (" + drawn + " of them)", right && drawn >= 10);
+  const g = L.makeGame("start : 0\nupdate : [g | g]\ndraw : [g | ui panel [1x2, 8x8, #ffffff, #000000]]", { W: 64, H: 48 });
+  const drew = g.draw().map(([name, args]) => name + " " + S.format(S.valueCellOf(args, new Map()))).join(", ");
+  ok("122 a game that names a kit draws with it, on its own screen", drew === "rect [1, 2, 8, 8, #ffffff], rect [3, 4, 4, 4, #000000]", drew);
+  const plain = L.makeGame("start : 0\nupdate : [g | g]\ndraw : [g | rect [0, 0, 1, 1, #ffffff]]");
+  ok("122 a kit comes along only when a game names it", !("ui" in plain.file.fieldNames()) && L.drawsOf("ui banner [\"A\", 9, 8, #ffffff]", { W: 100 }) === "text [A, 51, 10, 8, #000000], text [A, 50, 9, 8, #ffffff]");
+  logs.length = 0; L.makeGame("ui : [banner : [a | \"mine\"]]\nstart : 0\nupdate : [g | g]\nresult : ui banner 1");
+  ok("122 a game's own name wins over a kit's", logs.length === 0, logs);
 }
 
 // ---------------- wrapped libraries (decision 106)
@@ -5126,6 +5199,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("blended zebra: a bot fights up past the third floor, blending two cards into one at the oasis", st("floor") >= 4 && blended && S.partsOf(st("deck")).some(c => c.field("level") >= 1), [st("floor"), st("mode"), blended]);
   ok("blended zebra: climbs without a message", logs.length === 0, logs.slice(0, 3));
   Object.defineProperty(S.globals, "zzfx", was);
+}
+
+// ---------------- one file a game in tests8/ (decision 124), so games made side by side never write the same file
+// each exports a function given the helpers here; quiet(name, words) puts in a library that makes no sound
+{
+  const quiet = (lib, words) => { const was = Object.getOwnPropertyDescriptor(S.globals, lib), word = w => new S.Native(w, () => S.effect(() => {}), true);
+    Object.defineProperty(S.globals, lib, { value: S.valueCellOf([], new Map(words.map(w => [w, word(w)]))), configurable: true, writable: true, enumerable: true });
+    return () => Object.defineProperty(S.globals, lib, was); };
+  for (const file of fs.readdirSync(__dirname + "/tests8").filter(n => n.endsWith(".js")).sort())
+    require("./tests8/" + file)({ S, L, fs, ok, logs, game, held, f, putCell, quiet, dir: __dirname });
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -8830,6 +8913,10 @@ const dir = path.join(__dirname, "lib");
 const names = fs.readdirSync(dir).filter(f => f.endsWith(".sp")).map(f => f.slice(0, -3)).sort();
 const sources = {};
 for (const name of names) sources[name] = fs.readFileSync(path.join(dir, name + ".sp"), "utf8");
+// kits (decision 122): modules that draw, in kit/; a game loads one with its own drawing words when it names it
+const kitDir = path.join(__dirname, "kit"), kitNames = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).map(f => f.slice(0, -3)).sort();
+const kits = {};
+for (const name of kitNames) kits[name] = fs.readFileSync(path.join(kitDir, name + ".sp"), "utf8");
 const out = `// The standard library (decision 105), made by make-stdlib.js from lib/*.sp. Don't edit this file: edit lib/ and run
 // node make-stdlib.js. Each module is a global cell whose fields are its words, written in Sprout; it is compiled the
 // first time a program uses it.
@@ -8837,14 +8924,16 @@ const out = `// The standard library (decision 105), made by make-stdlib.js from
 "use strict";
 const S = root.Sprout3 || (typeof module !== "undefined" ? require("./sprout3.js") : null);
 const SOURCES = ${JSON.stringify(sources, null, 1)};
+// kits (decision 122): modules that draw; the game layer (live3.js) loads one with a game's own drawing words
+const KITS = ${JSON.stringify(kits, null, 1)};
 const loaded = {};
 for (const name in SOURCES)
   Object.defineProperty(S.globals, name, { get: () => loaded[name] || (loaded[name] = S.load(SOURCES[name])), enumerable: true, configurable: true });
-S.stdlib = { SOURCES, names: Object.keys(SOURCES) };
+S.stdlib = { SOURCES, names: Object.keys(SOURCES), KITS, kitNames: Object.keys(KITS) };
 })(typeof window !== "undefined" ? window : globalThis);
 `;
 fs.writeFileSync(path.join(__dirname, "stdlib.js"), out);
-console.log("stdlib.js:", names.join(", "));
+console.log("stdlib.js:", names.join(", "), "| kits:", kitNames.join(", "));
 
 // ---- library.html: the reference, made from each module's comments; every example is run and its answer shown
 const S = require("./sprout3.js");
@@ -8867,6 +8956,7 @@ function wordsOf(src) {
   return { intro, words };
 }
 const MODULES = names.map(name => ({ name, ...wordsOf(sources[name]) }));
+const KIT_MODULES = kitNames.map(name => ({ name, kit: true, ...wordsOf(kits[name]) }));
 // the modules distilled from the TaskIAP games: those whose opening says so
 const GAME_MODULES = names.filter(name => /Distilled from/.test(sources[name].split("\n\n")[0].replace(/\n-- /g, " ")));
 // json is written in JavaScript, in words.js; its entry is written here
@@ -8880,7 +8970,7 @@ const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
-  ["Touch and sound", ["gesture", "music"]],
+  ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
@@ -8909,6 +8999,15 @@ const example = (e, mustState) => {
   if (stated !== undefined) { checked++; if (shown(out) !== stated.trim()) { failures++; console.log("WRONG ANSWER:", src, "gives", shown(out), "not", stated.trim()); } }
   return `<pre>${esc(src)}\n<span class="cm">-- ${esc(out).replace(/\n/g, "\n-- ")}</span></pre>`;
 };
+// a kit's example is "expression draws what": what it draws on a SPROUT·8 screen, checked like an answer; or "→ answer"
+const L = require("./live3.js");
+const kitExample = e => {
+  const drawing = e.includes(" draws "), [src, stated] = e.split(drawing ? " draws " : " → ");
+  logs.length = 0; let out; try { out = drawing ? L.drawsOf(src) : shown(L.answerOf(src)); } catch (err) { out = "error: " + err.message; }
+  const bad = logs.filter(l => !l.startsWith("lint"));
+  checked++; if (out !== stated.trim() || bad.length) { failures++; console.log("WRONG DRAWING:", src, "draws", out, "not", stated.trim(), bad.join(" | ")); }
+  return `<pre>${esc(src)}\n<span class="cm">-- ${drawing ? "draws " : ""}${esc(out)}</span></pre>`;
+};
 const section = (mod, mustState) => {
   const plain = mod.intro.join(" ").replace(/^[\w-]+: /, ""), intro = plain.charAt(0).toUpperCase() + plain.slice(1);
   return `<section id="${mod.name}">
@@ -8916,7 +9015,7 @@ const section = (mod, mustState) => {
 <p>${esc(intro)}</p>
 <dl>
 ${mod.words.map(w => `<dt><code><b>${mod.name} ${w.name}</b>${w.inputs ? " [" + esc(w.inputs.split(/\s+/).join(", ")) + "]" : ""}</code></dt>
-<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => example(e, mustState)).join("")}</dd>`).join("\n")}
+<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => mod.kit ? kitExample(e) : example(e, mustState)).join("")}</dd>`).join("\n")}
 </dl>
 </section>`;
 };
@@ -8930,13 +9029,17 @@ const page = `<!doctype html>
 ${style}</head><body>
 <main>
 <h1><a href="./">Sprout</a></h1>
-<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
+<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#kits">${KIT_MODULES.length} ${KIT_MODULES.length === 1 ? "kit" : "kits"}</a> that draw, and <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
 <p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, from, to, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines.</p>
 <p>One way of working runs through all of them. A point, a size, a cell of a grid and a hex are pairs, like <code>3x4</code>, read with <code>p x</code> and <code>p y</code>, and added and scaled like numbers. A word's inputs come in the same order: what it works on, then how, then the time or the seed. Randomness only ever comes from a seed, through <code>seeded</code>, so a game that rewinds, and a second phone playing along, get the same luck. And every example below shows its answer, which is worked out, and checked, each time the library is built.</p>
 ${GROUPS.map(([title, ns]) => `<p class="toc"><b>${title}</b> ${ns.filter(n => byName[n]).map(n => `<a href="#${n}">${n}</a>`).join(" ")}</p>`).join("\n")}
 <p>Of these, ${GAME_MODULES.length} were distilled from the 319 TaskIAP games and apps: what they kept writing again and again, written once, small and well, in Sprout: ${GAME_MODULES.map(n => `<a href="#${n}">${n}</a>`).join(", ")}. A count in each one's opening says how many games needed it.</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
 ${GROUPS.map(([title, ns]) => `<h2 class="group">${title}</h2>\n` + ns.filter(n => byName[n]).map(n => section(byName[n], true)).join("\n")).join("\n")}
+<h2 id="kits" style="margin-top:72px">Kits</h2>
+<p>Modules that draw. A kit is written in Sprout like the modules above, but it draws with the game's own drawing words, so it comes along with a game that names it: <code>ui banner ["GO", 40, 8, #ffffff]</code>. Each example shows what it draws on a SPROUT·8 screen, 256 pixels across and 192 down, and that is checked each time the library is built too.</p>
+<p class="toc">${KIT_MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+${KIT_MODULES.map(m => section(m)).join("\n")}
 <h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>
 <p>Popular JavaScript libraries, each a module like the ones above. A library is loaded only when a program names it, from this site, so nothing is fetched unless it is used.</p>
 <p class="toc">${LIBS.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
