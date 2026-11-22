@@ -367,7 +367,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
-  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "adventurer").length === 6 && count("hold") === 1);
+  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "rig:guard").length === 6 && count("hold") === 1);
   ok("silvereye: the overlay is still 2D words, with touch buttons in the editor", count("text") > 0 && d.some(x => x[0] === "text" && x[1][0] === "MINE"));
   // the stick walks and strafes, the look drag turns
   const w = L.makeGame(src, {}); w.tick(1 / 60, pad({ look: 0 }));
@@ -382,7 +382,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
   put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
-  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][6] === "Death");
+  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard" && x[1][6] === "death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
@@ -421,7 +421,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); put(fl, 0, { x: 9.5, y: 7.5, angle: 0 });
     let flinch = false, mine = false, theirs = false;
     for (let k = 0; k < 120; k++) { fl.tick(1 / 60, pad({ fire: k < 40 })); put(fl, 0, { health: 100 }); const d = fl.draw();
-      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "HitRecieve"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "hit"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
     ok("silvereye: a guard who is hit flinches", flinch);
     const gt = L.makeGame(src, {}); gt.tick(1 / 60, pad({})); put(gt, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let k = 0; k < 200 && !theirs; k++) { gt.tick(1 / 60, pad({})); put(gt, 0, { health: 100 }); theirs = gt.draw().some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
@@ -669,7 +669,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
   // scientists: they walk their rounds, freeze when the alarm is up, and hurting one fails the mission
   { const sc = L.makeGame(src, {}); sc.tick(1 / 60, pad({}));
-    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "worker") && sc.draw().some(x => x[0] === "text" && /BONUS: NO SCIENTISTS HURT/.test(x[1][0])));
+    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "rig:scientist") && sc.draw().some(x => x[0] === "text" && /BONUS: NO SCIENTISTS HURT/.test(x[1][0])));
     const x0 = f(sc, "scientists").part(1).field("x"); for (let t = 0; t < 60; t++) sc.tick(1 / 60, pad({}));
     ok("silvereye: a scientist walks their rounds", f(sc, "scientists").part(1).field("x") > x0 + 0.3);
     put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
@@ -686,7 +686,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
   { const bd = L.makeGame(src, {}); bd.tick(1 / 60, pad({})); put(bd, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 30; t++) bd.tick(1 / 60, pad({ fire: true }));
-    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer").length, before = soldiers();
+    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard").length, before = soldiers();
     for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
     ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
   { const bh = L.makeGame(src, {}); bh.tick(1 / 60, pad({})); put(bh, 0, { x: 2.5, y: 2.5, angle: Math.PI });
@@ -712,11 +712,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     fc.tick(1 / 60, pad({})); const g3 = f(fc, "guards").part(3), toYou = Math.atan2(7.5 - g3.field("y"), 9.5 - g3.field("x"));
     const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
     ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
-  ok("silvereye: guards are the adventurer, with a blaster in his hand", g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][8] === "blaster_g").length >= 5);
-  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["adventurer", "soldier", "hooded_adventurer"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
+  ok("silvereye: guards are our own figures in fatigues, each carrying a gun", g.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard" && x[1][8] === "gun").length >= 5);
+  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["rig:guard", "rig:soldier", "rig:elite"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
     const depot = bodies(2), relay = bodies(3), yard = bodies(4);
     ok("silvereye: each mission has its own guards: soldiers in the depot, hooded elites with field agents at the relay, a mix in the compound",
-      depot.length === 7 && depot.every(b => b === "soldier:Run") && relay.length === 8 && relay.filter(b => b === "hooded_adventurer:Walk").length === 4 && relay.filter(b => b === "adventurer:Walk").length === 4 && yard.filter(b => /^soldier/.test(b)).length === 5 && yard.filter(b => /^adventurer/.test(b)).length === 5, [depot, relay, yard]); }
+      depot.length === 7 && depot.every(b => b === "rig:soldier:walk") && relay.length === 8 && relay.filter(b => b === "rig:elite:walk").length === 4 && relay.filter(b => b === "rig:guard:walk").length === 4 && yard.filter(b => /^rig:soldier/.test(b)).length === 5 && yard.filter(b => /^rig:guard/.test(b)).length === 5, [depot, relay, yard]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

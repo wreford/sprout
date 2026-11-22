@@ -371,12 +371,13 @@ simulant-program : [it |
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
--- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
--- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
+-- the guards' looks, by mission (guard-kinds): guards in fatigues and caps, soldiers in helmets and vests, and elites
+-- in black with masks. They're our own figures (rig: in the 3D words): a grown person's proportions, built from boxes,
+-- each carrying a gun, posed by code to walk, run, aim, shoot, flinch and fall.
 guard-looks : [
-  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_g"]
-  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", hit : "HitReact", death : "Death", size : 1.8, holds : false]
-  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_e"]
+  [body : "rig:guard", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.8, holds : "gun"]
+  [body : "rig:soldier", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.82, holds : "gun"]
+  [body : "rig:elite", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.84, holds : "gun"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
@@ -387,6 +388,8 @@ looks : [
   [name : "TROOPER", body : "soldier", run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
   [name : "SCIENTIST", body : "worker", run : "Man_Run", aim : "Man_Idle", shoot : "Man_Idle", death : "Man_Death", size : 1.75, holds : false]
   [name : "GUNNER", body : "robot_gunner", run : "Run", aim : "Idle", shoot : "Shoot", death : "Death", size : 1.6, holds : false]
+  [name : "THE AGENT", body : "rig:agent", run : "run", aim : "aim", shoot : "shoot", death : "death", size : 1.82, holds : "gun"]
+  [name : "COMMANDO", body : "rig:soldier", run : "run", aim : "aim", shoot : "shoot", death : "death", size : 1.82, holds : "gun"]
 ]
 robot-look : looks @ 7
 -- simulants' codenames, by number (players are 1 and 2, so the first simulant is usually 2 or 3)
@@ -881,8 +884,8 @@ draw : [game |
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |
-    clip : cond [c health <= 0, "Man_Death", alarm, "Man_Idle", any, "Man_Walk"]
-    model ["worker", c x, 0, c y, c angle, 1.7, clip, cond [c health <= 0, now - (c fell else now), any, now]]
+    clip : cond [c health <= 0, "death", alarm, "idle", any, "walk"]
+    model ["rig:scientist", c x, 0, c y, c angle, 1.74, clip, cond [c health <= 0, now - (c fell else now), any, now], false]
   ]
   -- the other player
   rivals keep [r | gone (r down-at) not] each [r |

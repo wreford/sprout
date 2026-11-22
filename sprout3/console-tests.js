@@ -36,8 +36,8 @@ server.listen(0, async () => {
     await page.click("#agentMenu button[data-do=codename]");
     for (const ch of "ACE") await page.click("#letterGrid button:text-is('" + ch + "')");
     await page.click("#letterGrid button:text-is('OK')");
-    ok("the creator picks a look and a codename", (await page.textContent("#lookName")) === "FIELD AGENT" && (await page.textContent("#codeName")) === "ACE");
-    ok("your look and codename are kept for next time", await page.evaluate(() => JSON.parse(localStorage.getItem("silvereye.agent")).look === 2 && JSON.parse(localStorage.getItem("silvereye.agent")).name === "ACE"));
+    ok("the creator picks a look and a codename", (await page.textContent("#lookName")) === "COMMANDO" && (await page.textContent("#codeName")) === "ACE");
+    ok("your look and codename are kept for next time", await page.evaluate(() => JSON.parse(localStorage.getItem("silvereye.agent")).look === 9 && JSON.parse(localStorage.getItem("silvereye.agent")).name === "ACE"));
     await page.click("#agentMenu button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
     const fov = await page.textContent("#vFov"); await page.click("#settingsMenu button[data-do=fov]");
     ok("Settings change the view", (await page.textContent("#vFov")) !== fov);
@@ -59,7 +59,7 @@ server.listen(0, async () => {
       onMotion(new DeviceMotionEvent("devicemotion", { rotationRate: { alpha: 0, beta: 0, gamma: -90 }, accelerationIncludingGravity: { x: 0, y: -9.8, z: 0 }, interval: 16 }));
       const after = pad.look; settings.gyro = "off"; return after - before; });
     ok("with gyro aim on, turning the phone right turns you right", turned > 0.01 && turned < 0.2, turned);
-    ok("you play as the agent you made", await page.evaluate(() => { const a = game.state.field("agents").part(1); return a.field("skin") === 2 && a.field("tag") === "ACE"; }));
+    ok("you play as the agent you made", await page.evaluate(() => { const a = game.state.field("agents").part(1); return a.field("skin") === 9 && a.field("tag") === "ACE"; }));
     const a = await (await page.$("#bA")).boundingBox();
     // software 3D draws few frames a second here, and each frame is at most 0.05 s of game time, so hold A a while
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down(); await page.waitForFunction(() => game.state.field("agents").part(1).field("shots-fired") >= 2, null, { timeout: 8000 }).catch(() => {}); await page.mouse.up();

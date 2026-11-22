@@ -120,7 +120,116 @@ export function makeView(canvas, base, opts) {
   // blob shadows, as the old consoles did: a soft dark disc on the floor under everything that stands in the world
   const blobTexture = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.62)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const blobGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false });
+  // ---- people of our own: low-poly figures in a grown person's proportions, the way the late-90s shooters drew them,
+  // built from boxes and posed by code. model ["rig:guard", x, 0, z, angle, 1.8, "walk", time, "gun"]: the dress is the
+  // name after rig: (guard, soldier, elite, scientist, agent), the clip is walk, run, aim, shoot, hit, death or idle,
+  // and anything held makes it carry a gun in its right hand. The pose comes only from the clip and the time, so a
+  // replay, and the other phone, pose it the same.
+  const RIG = {
+    guard: { shirt: 0x5b6a3c, legs: 0x4a5431, skin: 0xc8976f, head: "cap", hat: 0x3d4829, hair: 0x2a1d14, boots: 0x1c1915 },
+    soldier: { shirt: 0x3d4934, legs: 0x323b2a, skin: 0xb5875f, head: "helmet", hat: 0x2e3825, hair: 0x231a12, boots: 0x141310, vest: 0x262b1f },
+    elite: { shirt: 0x1f2125, legs: 0x18191c, skin: 0x9c7252, head: "mask", hat: 0x101113, hair: 0x101113, boots: 0x0c0c0d, vest: 0x2b2d31 },
+    scientist: { shirt: 0xe9edf0, legs: 0x586071, skin: 0xd8ad8a, head: "bare", hat: 0, hair: 0x6a5846, boots: 0x2a2620, coat: true, glasses: true },
+    agent: { shirt: 0x3a3e46, legs: 0x2d3037, skin: 0xc99f7e, head: "bare", hat: 0, hair: 0x1e160f, boots: 0x111111, tie: 0x7a1f22, collar: 0xe8e8e8 },
+  };
+  const rigMats = new Map();
+  const rigMat = c => { let m = rigMats.get(c); if (!m) { m = new THREE.MeshLambertMaterial({ color: c }); rigMats.set(c, m); } return m; };
+  const hexOf = n => "#" + n.toString(16).padStart(6, "0");
+  function faceTexture(d) {
+    const c = document.createElement("canvas"); c.width = c.height = 16; const g = c.getContext("2d");
+    g.fillStyle = hexOf(d.skin); g.fillRect(0, 0, 16, 16);
+    if (d.head === "mask") { g.fillStyle = hexOf(d.hat); g.fillRect(0, 0, 16, 16); g.fillStyle = hexOf(d.skin); g.fillRect(2, 5, 12, 4); }
+    else { g.fillStyle = hexOf(d.hair); g.fillRect(0, 0, 16, 3); g.fillRect(0, 3, 1, 3); g.fillRect(15, 3, 1, 3); }
+    g.fillStyle = "#00000055"; g.fillRect(3, 5, 4, 1); g.fillRect(9, 5, 4, 1);
+    g.fillStyle = "#f4f1ea"; g.fillRect(4, 6, 2, 2); g.fillRect(10, 6, 2, 2);
+    g.fillStyle = "#1a1410"; g.fillRect(5, 6, 1, 2); g.fillRect(10, 6, 1, 2);
+    if (d.head !== "mask") { g.fillStyle = "#00000022"; g.fillRect(7, 8, 2, 3); g.fillStyle = "#7a4a3a"; g.fillRect(6, 12, 4, 1); }
+    if (d.glasses) { g.strokeStyle = "#2a2a2a"; g.lineWidth = 1; g.strokeRect(3.5, 5.5, 4, 3); g.strokeRect(8.5, 5.5, 4, 3); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; return t;
+  }
+  const rigBox = (w, h, d, mat, x, y, z, parent) => { const m = new THREE.Mesh(unitBox, mat); m.scale.set(w, h, d); m.position.set(x, y, z); parent.add(m); return m; };
+  const rigJoint = (x, y, z, parent) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
+  // one unit tall, facing +z like the model files; the figure's right is -x
+  function buildRig(kind) {
+    const d = RIG[kind] || RIG.guard, body = new THREE.Group(), j = {};
+    const shirt = rigMat(d.shirt), legs = rigMat(d.legs), skin = rigMat(d.skin), boots = rigMat(d.boots);
+    j.hips = rigJoint(0, 0.52, 0, body);
+    rigBox(0.2, 0.08, 0.12, legs, 0, 0, 0, j.hips);
+    for (const s of [-1, 1]) {
+      const side = s < 0 ? "R" : "L", hip = rigJoint(s * 0.055, -0.02, 0, j.hips), knee = rigJoint(0, -0.235, 0, hip);
+      rigBox(0.088, 0.24, 0.1, legs, 0, -0.115, 0, hip); rigBox(0.076, 0.22, 0.086, legs, 0, -0.1, 0, knee);
+      rigBox(0.082, 0.045, 0.14, boots, 0, -0.226, 0.025, knee);
+      j["leg" + side] = hip; j["knee" + side] = knee;
+    }
+    j.spine = rigJoint(0, 0.035, 0, j.hips);
+    rigBox(0.23, 0.3, 0.13, shirt, 0, 0.15, 0, j.spine);
+    if (d.vest) rigBox(0.245, 0.19, 0.152, rigMat(d.vest), 0, 0.18, 0, j.spine);
+    if (d.coat) rigBox(0.245, 0.27, 0.145, shirt, 0, -0.08, 0, j.spine);
+    if (d.collar) rigBox(0.07, 0.1, 0.012, rigMat(d.collar), 0, 0.235, 0.066, j.spine);
+    if (d.tie) rigBox(0.028, 0.17, 0.014, rigMat(d.tie), 0, 0.19, 0.072, j.spine);
+    j.neck = rigJoint(0, 0.305, 0, j.spine);
+    rigBox(0.055, 0.04, 0.055, skin, 0, 0.012, 0, j.neck);
+    const hair = rigMat(d.hair), headMats = [skin, skin, hair, skin, new THREE.MeshLambertMaterial({ map: faceTexture(d) }), hair];
+    j.head = new THREE.Mesh(unitBox, headMats); j.head.scale.set(0.1, 0.12, 0.11); j.head.position.set(0, 0.092, 0); j.neck.add(j.head);
+    if (d.head === "cap") { rigBox(0.11, 0.032, 0.116, rigMat(d.hat), 0, 0.162, -0.002, j.neck); rigBox(0.1, 0.01, 0.06, rigMat(d.hat), 0, 0.15, 0.078, j.neck); }
+    if (d.head === "helmet") { rigBox(0.126, 0.055, 0.13, rigMat(d.hat), 0, 0.168, -0.004, j.neck); rigBox(0.136, 0.02, 0.142, rigMat(d.hat), 0, 0.142, -0.002, j.neck); }
+    for (const s of [-1, 1]) {
+      const side = s < 0 ? "R" : "L", sh = rigJoint(s * 0.148, 0.285, 0, j.spine), el = rigJoint(0, -0.17, 0, sh), hand = rigJoint(0, -0.165, 0, el);
+      rigBox(0.07, 0.18, 0.076, shirt, 0, -0.08, 0, sh); rigBox(0.062, 0.165, 0.066, d.coat ? shirt : shirt, 0, -0.078, 0, el);
+      rigBox(0.054, 0.062, 0.06, skin, 0, -0.022, 0, hand);
+      j["arm" + side] = sh; j["elbow" + side] = el; j["hand" + side] = hand;
+    }
+    // a gun in the right hand, its barrel running out along the forearm, sights up when it's raised
+    j.gun = rigJoint(0, 0, 0, j.handR);
+    const gm = rigMat(0x1c1d21); rigBox(0.034, 0.25, 0.052, gm, 0, -0.1, 0.026, j.gun); rigBox(0.02, 0.12, 0.02, rigMat(0x2b2c31), 0, -0.27, 0.036, j.gun);
+    rigBox(0.03, 0.045, 0.075, gm, 0, -0.03, -0.03, j.gun); rigBox(0.028, 0.03, 0.06, gm, 0, -0.16, -0.025, j.gun);
+    return { body, j };
+  }
+  const RIG_JOINTS = ["hips", "legL", "legR", "kneeL", "kneeR", "spine", "neck", "armL", "armR", "elbowL", "elbowR"];
+  function rigPose(inst, clip, time) {
+    const j = inst.j, c = String(clip || "idle").toLowerCase(), armed = inst.armed, t = num(time, 0);
+    for (const k of RIG_JOINTS) j[k].rotation.set(0, 0, 0);
+    j.hips.position.y = 0.52;
+    const walking = c === "walk" || c === "run", run = c === "run", amp = run ? 0.72 : 0.42, ph = t * (run ? 6.6 : 4.4), sw = Math.sin(ph);
+    if (walking) {
+      j.legL.rotation.x = -sw * amp; j.legR.rotation.x = sw * amp;
+      j.kneeL.rotation.x = Math.max(0, sw) * amp * 1.4; j.kneeR.rotation.x = Math.max(0, -sw) * amp * 1.4;
+      j.hips.position.y = 0.52 - Math.abs(Math.cos(ph)) * (run ? 0.02 : 0.01);
+      j.spine.rotation.x = run ? 0.2 : 0.04;
+      if (!armed) { j.armL.rotation.x = sw * amp * 0.9; j.armR.rotation.x = -sw * amp * 0.9; j.elbowL.rotation.x = j.elbowR.rotation.x = -0.35; }
+    } else j.spine.rotation.x = Math.sin(t * 1.7) * 0.015;
+    const aiming = c === "aim" || c === "shoot";
+    if (armed && !aiming && c !== "death" && c !== "hit") {
+      // carried at the ready, pointing forward and down across the body
+      j.armR.rotation.set(-0.55, 0, 0.1); j.elbowR.rotation.x = -0.95; j.armL.rotation.set(-0.7, 0, -0.4); j.elbowL.rotation.x = -1.05;
+    }
+    if (aiming) {
+      const kick = c === "shoot" ? Math.max(0, 1 - (t % 0.25) / 0.12) * 0.22 : 0;
+      j.armR.rotation.set(-1.5 - kick, 0, 0.06); j.elbowR.rotation.x = -0.04;
+      j.armL.rotation.set(-1.38 - kick, 0, -0.5); j.elbowL.rotation.x = -0.38; j.neck.rotation.x = 0.06;
+      if (!walking) { j.legL.rotation.x = -0.12; j.legR.rotation.x = 0.1; }
+    }
+    if (c === "hit") {
+      const k = Math.sin(Math.min(1, t / 0.35) * Math.PI);
+      j.spine.rotation.x = -0.38 * k; j.neck.rotation.x = -0.32 * k; j.armL.rotation.set(-0.5 * k, 0, 0.7 * k); j.armR.rotation.set(-0.5 * k, 0, -0.7 * k); j.legL.rotation.x = 0.18 * k;
+    }
+    if (c === "death") {
+      const p = Math.min(1, t / 0.75), e = p * p * (3 - 2 * p);
+      j.hips.rotation.x = -e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.46;
+      j.kneeL.rotation.x = Math.sin(e * Math.PI) * 0.8; j.kneeR.rotation.x = Math.sin(e * Math.PI) * 0.55;
+      j.armL.rotation.set(-0.3, 0, 1.25 * e); j.armR.rotation.set(-0.3, 0, -1.25 * e); j.neck.rotation.x = -0.25 * e;
+    }
+  }
   function instance(name, k, parent) {
+    if (name.startsWith("rig:")) {
+      let pool = pools.get(name); if (!pool) { pool = []; pools.set(name, pool); }
+      while (pool.length <= k) {
+        const root = new THREE.Group(), r = buildRig(name.slice(4)); root.add(r.body); parent.add(root);
+        const blob = new THREE.Mesh(blobGeometry, blobMaterial); blob.scale.setScalar(0.62); blob.position.y = 0.012; blob.renderOrder = 1; root.add(blob); root.userData.blob = blob;
+        pool.push({ root, mixer: null, actions: new Map(), current: null, rig: true, j: r.j, armed: false });
+      }
+      return pool[k];
+    }
     const a = asset(name); if (!a.ready) return null;
     let pool = pools.get(name + (parent === holdGroup ? "@hold" : ""));
     if (!pool) { pool = []; pools.set(name + (parent === holdGroup ? "@hold" : ""), pool); }
@@ -145,6 +254,7 @@ export function makeView(canvas, base, opts) {
     return (inst.hand = h);
   }
   function carry(inst, heldName, size) {
+    if (inst.rig) { inst.armed = !!heldName; inst.j.gun.visible = inst.armed; return; }
     if (!heldName) { if (inst.carried) inst.carried.pivot.visible = false; return; }
     const ha = asset(heldName), hand = handOf(inst); if (!ha.ready || !hand) return;
     if (!inst.carried || inst.carried.name !== heldName) {
@@ -160,6 +270,7 @@ export function makeView(canvas, base, opts) {
     inst.carried.pivot.visible = true;
   }
   function pose(inst, name, clipName, time) {
+    if (inst.rig) return rigPose(inst, clipName, time);
     const a = asset(name); if (!inst.mixer || !clipName) return;
     let action = inst.actions.get(clipName);
     if (!action) {
@@ -203,6 +314,7 @@ export function makeView(canvas, base, opts) {
         // the shadow stays on the floor when a model floats (pickups bob)
         if (inst.root.userData.blob) inst.root.userData.blob.position.y = (0.012 - num(a[2], 0)) / Math.max(0.01, num(a[5], 1));
         inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
+        if (inst.rig) inst.armed = !(a[8] === undefined || a[8] === false);
         pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
         carry(inst, a[8] === undefined || a[8] === false ? null : fmt(a[8]), num(a[5], 1));
       } else if (word === "hold") {

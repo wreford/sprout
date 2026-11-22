@@ -4406,7 +4406,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
-  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "adventurer").length === 6 && count("hold") === 1);
+  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "rig:guard").length === 6 && count("hold") === 1);
   ok("silvereye: the overlay is still 2D words, with touch buttons in the editor", count("text") > 0 && d.some(x => x[0] === "text" && x[1][0] === "MINE"));
   // the stick walks and strafes, the look drag turns
   const w = L.makeGame(src, {}); w.tick(1 / 60, pad({ look: 0 }));
@@ -4421,7 +4421,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
   put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
-  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][6] === "Death");
+  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard" && x[1][6] === "death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
@@ -4460,7 +4460,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); put(fl, 0, { x: 9.5, y: 7.5, angle: 0 });
     let flinch = false, mine = false, theirs = false;
     for (let k = 0; k < 120; k++) { fl.tick(1 / 60, pad({ fire: k < 40 })); put(fl, 0, { health: 100 }); const d = fl.draw();
-      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "HitRecieve"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
+      flinch = flinch || d.some(x => x[0] === "model" && x[1][6] === "hit"); mine = mine || d.some(x => x[0] === "beam" && x[1][6] === "#ffe08a"); theirs = theirs || d.some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
     ok("silvereye: a guard who is hit flinches", flinch);
     const gt = L.makeGame(src, {}); gt.tick(1 / 60, pad({})); put(gt, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let k = 0; k < 200 && !theirs; k++) { gt.tick(1 / 60, pad({})); put(gt, 0, { health: 100 }); theirs = gt.draw().some(x => x[0] === "beam" && x[1][6] === "#ff9a6a"); }
@@ -4708,7 +4708,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
   // scientists: they walk their rounds, freeze when the alarm is up, and hurting one fails the mission
   { const sc = L.makeGame(src, {}); sc.tick(1 / 60, pad({}));
-    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "worker") && sc.draw().some(x => x[0] === "text" && /BONUS: NO SCIENTISTS HURT/.test(x[1][0])));
+    ok("silvereye: the lab has two scientists, drawn as workers, and an objective to keep them safe", f(sc, "scientists").count() === 2 && sc.draw().some(x => x[0] === "model" && x[1][0] === "rig:scientist") && sc.draw().some(x => x[0] === "text" && /BONUS: NO SCIENTISTS HURT/.test(x[1][0])));
     const x0 = f(sc, "scientists").part(1).field("x"); for (let t = 0; t < 60; t++) sc.tick(1 / 60, pad({}));
     ok("silvereye: a scientist walks their rounds", f(sc, "scientists").part(1).field("x") > x0 + 0.3);
     put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
@@ -4725,7 +4725,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
   { const bd = L.makeGame(src, {}); bd.tick(1 / 60, pad({})); put(bd, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 30; t++) bd.tick(1 / 60, pad({ fire: true }));
-    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer").length, before = soldiers();
+    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard").length, before = soldiers();
     for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
     ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
   { const bh = L.makeGame(src, {}); bh.tick(1 / 60, pad({})); put(bh, 0, { x: 2.5, y: 2.5, angle: Math.PI });
@@ -4751,11 +4751,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     fc.tick(1 / 60, pad({})); const g3 = f(fc, "guards").part(3), toYou = Math.atan2(7.5 - g3.field("y"), 9.5 - g3.field("x"));
     const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
     ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
-  ok("silvereye: guards are the adventurer, with a blaster in his hand", g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][8] === "blaster_g").length >= 5);
-  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["adventurer", "soldier", "hooded_adventurer"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
+  ok("silvereye: guards are our own figures in fatigues, each carrying a gun", g.draw().filter(x => x[0] === "model" && x[1][0] === "rig:guard" && x[1][8] === "gun").length >= 5);
+  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["rig:guard", "rig:soldier", "rig:elite"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
     const depot = bodies(2), relay = bodies(3), yard = bodies(4);
     ok("silvereye: each mission has its own guards: soldiers in the depot, hooded elites with field agents at the relay, a mix in the compound",
-      depot.length === 7 && depot.every(b => b === "soldier:Run") && relay.length === 8 && relay.filter(b => b === "hooded_adventurer:Walk").length === 4 && relay.filter(b => b === "adventurer:Walk").length === 4 && yard.filter(b => /^soldier/.test(b)).length === 5 && yard.filter(b => /^adventurer/.test(b)).length === 5, [depot, relay, yard]); }
+      depot.length === 7 && depot.every(b => b === "rig:soldier:walk") && relay.length === 8 && relay.filter(b => b === "rig:elite:walk").length === 4 && relay.filter(b => b === "rig:guard:walk").length === 4 && yard.filter(b => /^rig:soldier/.test(b)).length === 5 && yard.filter(b => /^rig:guard/.test(b)).length === 5, [depot, relay, yard]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10834,7 +10834,116 @@ export function makeView(canvas, base, opts) {
   // blob shadows, as the old consoles did: a soft dark disc on the floor under everything that stands in the world
   const blobTexture = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.62)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const blobGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false });
+  // ---- people of our own: low-poly figures in a grown person's proportions, the way the late-90s shooters drew them,
+  // built from boxes and posed by code. model ["rig:guard", x, 0, z, angle, 1.8, "walk", time, "gun"]: the dress is the
+  // name after rig: (guard, soldier, elite, scientist, agent), the clip is walk, run, aim, shoot, hit, death or idle,
+  // and anything held makes it carry a gun in its right hand. The pose comes only from the clip and the time, so a
+  // replay, and the other phone, pose it the same.
+  const RIG = {
+    guard: { shirt: 0x5b6a3c, legs: 0x4a5431, skin: 0xc8976f, head: "cap", hat: 0x3d4829, hair: 0x2a1d14, boots: 0x1c1915 },
+    soldier: { shirt: 0x3d4934, legs: 0x323b2a, skin: 0xb5875f, head: "helmet", hat: 0x2e3825, hair: 0x231a12, boots: 0x141310, vest: 0x262b1f },
+    elite: { shirt: 0x1f2125, legs: 0x18191c, skin: 0x9c7252, head: "mask", hat: 0x101113, hair: 0x101113, boots: 0x0c0c0d, vest: 0x2b2d31 },
+    scientist: { shirt: 0xe9edf0, legs: 0x586071, skin: 0xd8ad8a, head: "bare", hat: 0, hair: 0x6a5846, boots: 0x2a2620, coat: true, glasses: true },
+    agent: { shirt: 0x3a3e46, legs: 0x2d3037, skin: 0xc99f7e, head: "bare", hat: 0, hair: 0x1e160f, boots: 0x111111, tie: 0x7a1f22, collar: 0xe8e8e8 },
+  };
+  const rigMats = new Map();
+  const rigMat = c => { let m = rigMats.get(c); if (!m) { m = new THREE.MeshLambertMaterial({ color: c }); rigMats.set(c, m); } return m; };
+  const hexOf = n => "#" + n.toString(16).padStart(6, "0");
+  function faceTexture(d) {
+    const c = document.createElement("canvas"); c.width = c.height = 16; const g = c.getContext("2d");
+    g.fillStyle = hexOf(d.skin); g.fillRect(0, 0, 16, 16);
+    if (d.head === "mask") { g.fillStyle = hexOf(d.hat); g.fillRect(0, 0, 16, 16); g.fillStyle = hexOf(d.skin); g.fillRect(2, 5, 12, 4); }
+    else { g.fillStyle = hexOf(d.hair); g.fillRect(0, 0, 16, 3); g.fillRect(0, 3, 1, 3); g.fillRect(15, 3, 1, 3); }
+    g.fillStyle = "#00000055"; g.fillRect(3, 5, 4, 1); g.fillRect(9, 5, 4, 1);
+    g.fillStyle = "#f4f1ea"; g.fillRect(4, 6, 2, 2); g.fillRect(10, 6, 2, 2);
+    g.fillStyle = "#1a1410"; g.fillRect(5, 6, 1, 2); g.fillRect(10, 6, 1, 2);
+    if (d.head !== "mask") { g.fillStyle = "#00000022"; g.fillRect(7, 8, 2, 3); g.fillStyle = "#7a4a3a"; g.fillRect(6, 12, 4, 1); }
+    if (d.glasses) { g.strokeStyle = "#2a2a2a"; g.lineWidth = 1; g.strokeRect(3.5, 5.5, 4, 3); g.strokeRect(8.5, 5.5, 4, 3); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; return t;
+  }
+  const rigBox = (w, h, d, mat, x, y, z, parent) => { const m = new THREE.Mesh(unitBox, mat); m.scale.set(w, h, d); m.position.set(x, y, z); parent.add(m); return m; };
+  const rigJoint = (x, y, z, parent) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
+  // one unit tall, facing +z like the model files; the figure's right is -x
+  function buildRig(kind) {
+    const d = RIG[kind] || RIG.guard, body = new THREE.Group(), j = {};
+    const shirt = rigMat(d.shirt), legs = rigMat(d.legs), skin = rigMat(d.skin), boots = rigMat(d.boots);
+    j.hips = rigJoint(0, 0.52, 0, body);
+    rigBox(0.2, 0.08, 0.12, legs, 0, 0, 0, j.hips);
+    for (const s of [-1, 1]) {
+      const side = s < 0 ? "R" : "L", hip = rigJoint(s * 0.055, -0.02, 0, j.hips), knee = rigJoint(0, -0.235, 0, hip);
+      rigBox(0.088, 0.24, 0.1, legs, 0, -0.115, 0, hip); rigBox(0.076, 0.22, 0.086, legs, 0, -0.1, 0, knee);
+      rigBox(0.082, 0.045, 0.14, boots, 0, -0.226, 0.025, knee);
+      j["leg" + side] = hip; j["knee" + side] = knee;
+    }
+    j.spine = rigJoint(0, 0.035, 0, j.hips);
+    rigBox(0.23, 0.3, 0.13, shirt, 0, 0.15, 0, j.spine);
+    if (d.vest) rigBox(0.245, 0.19, 0.152, rigMat(d.vest), 0, 0.18, 0, j.spine);
+    if (d.coat) rigBox(0.245, 0.27, 0.145, shirt, 0, -0.08, 0, j.spine);
+    if (d.collar) rigBox(0.07, 0.1, 0.012, rigMat(d.collar), 0, 0.235, 0.066, j.spine);
+    if (d.tie) rigBox(0.028, 0.17, 0.014, rigMat(d.tie), 0, 0.19, 0.072, j.spine);
+    j.neck = rigJoint(0, 0.305, 0, j.spine);
+    rigBox(0.055, 0.04, 0.055, skin, 0, 0.012, 0, j.neck);
+    const hair = rigMat(d.hair), headMats = [skin, skin, hair, skin, new THREE.MeshLambertMaterial({ map: faceTexture(d) }), hair];
+    j.head = new THREE.Mesh(unitBox, headMats); j.head.scale.set(0.1, 0.12, 0.11); j.head.position.set(0, 0.092, 0); j.neck.add(j.head);
+    if (d.head === "cap") { rigBox(0.11, 0.032, 0.116, rigMat(d.hat), 0, 0.162, -0.002, j.neck); rigBox(0.1, 0.01, 0.06, rigMat(d.hat), 0, 0.15, 0.078, j.neck); }
+    if (d.head === "helmet") { rigBox(0.126, 0.055, 0.13, rigMat(d.hat), 0, 0.168, -0.004, j.neck); rigBox(0.136, 0.02, 0.142, rigMat(d.hat), 0, 0.142, -0.002, j.neck); }
+    for (const s of [-1, 1]) {
+      const side = s < 0 ? "R" : "L", sh = rigJoint(s * 0.148, 0.285, 0, j.spine), el = rigJoint(0, -0.17, 0, sh), hand = rigJoint(0, -0.165, 0, el);
+      rigBox(0.07, 0.18, 0.076, shirt, 0, -0.08, 0, sh); rigBox(0.062, 0.165, 0.066, d.coat ? shirt : shirt, 0, -0.078, 0, el);
+      rigBox(0.054, 0.062, 0.06, skin, 0, -0.022, 0, hand);
+      j["arm" + side] = sh; j["elbow" + side] = el; j["hand" + side] = hand;
+    }
+    // a gun in the right hand, its barrel running out along the forearm, sights up when it's raised
+    j.gun = rigJoint(0, 0, 0, j.handR);
+    const gm = rigMat(0x1c1d21); rigBox(0.034, 0.25, 0.052, gm, 0, -0.1, 0.026, j.gun); rigBox(0.02, 0.12, 0.02, rigMat(0x2b2c31), 0, -0.27, 0.036, j.gun);
+    rigBox(0.03, 0.045, 0.075, gm, 0, -0.03, -0.03, j.gun); rigBox(0.028, 0.03, 0.06, gm, 0, -0.16, -0.025, j.gun);
+    return { body, j };
+  }
+  const RIG_JOINTS = ["hips", "legL", "legR", "kneeL", "kneeR", "spine", "neck", "armL", "armR", "elbowL", "elbowR"];
+  function rigPose(inst, clip, time) {
+    const j = inst.j, c = String(clip || "idle").toLowerCase(), armed = inst.armed, t = num(time, 0);
+    for (const k of RIG_JOINTS) j[k].rotation.set(0, 0, 0);
+    j.hips.position.y = 0.52;
+    const walking = c === "walk" || c === "run", run = c === "run", amp = run ? 0.72 : 0.42, ph = t * (run ? 6.6 : 4.4), sw = Math.sin(ph);
+    if (walking) {
+      j.legL.rotation.x = -sw * amp; j.legR.rotation.x = sw * amp;
+      j.kneeL.rotation.x = Math.max(0, sw) * amp * 1.4; j.kneeR.rotation.x = Math.max(0, -sw) * amp * 1.4;
+      j.hips.position.y = 0.52 - Math.abs(Math.cos(ph)) * (run ? 0.02 : 0.01);
+      j.spine.rotation.x = run ? 0.2 : 0.04;
+      if (!armed) { j.armL.rotation.x = sw * amp * 0.9; j.armR.rotation.x = -sw * amp * 0.9; j.elbowL.rotation.x = j.elbowR.rotation.x = -0.35; }
+    } else j.spine.rotation.x = Math.sin(t * 1.7) * 0.015;
+    const aiming = c === "aim" || c === "shoot";
+    if (armed && !aiming && c !== "death" && c !== "hit") {
+      // carried at the ready, pointing forward and down across the body
+      j.armR.rotation.set(-0.55, 0, 0.1); j.elbowR.rotation.x = -0.95; j.armL.rotation.set(-0.7, 0, -0.4); j.elbowL.rotation.x = -1.05;
+    }
+    if (aiming) {
+      const kick = c === "shoot" ? Math.max(0, 1 - (t % 0.25) / 0.12) * 0.22 : 0;
+      j.armR.rotation.set(-1.5 - kick, 0, 0.06); j.elbowR.rotation.x = -0.04;
+      j.armL.rotation.set(-1.38 - kick, 0, -0.5); j.elbowL.rotation.x = -0.38; j.neck.rotation.x = 0.06;
+      if (!walking) { j.legL.rotation.x = -0.12; j.legR.rotation.x = 0.1; }
+    }
+    if (c === "hit") {
+      const k = Math.sin(Math.min(1, t / 0.35) * Math.PI);
+      j.spine.rotation.x = -0.38 * k; j.neck.rotation.x = -0.32 * k; j.armL.rotation.set(-0.5 * k, 0, 0.7 * k); j.armR.rotation.set(-0.5 * k, 0, -0.7 * k); j.legL.rotation.x = 0.18 * k;
+    }
+    if (c === "death") {
+      const p = Math.min(1, t / 0.75), e = p * p * (3 - 2 * p);
+      j.hips.rotation.x = -e * Math.PI / 2; j.hips.position.y = 0.52 - e * 0.46;
+      j.kneeL.rotation.x = Math.sin(e * Math.PI) * 0.8; j.kneeR.rotation.x = Math.sin(e * Math.PI) * 0.55;
+      j.armL.rotation.set(-0.3, 0, 1.25 * e); j.armR.rotation.set(-0.3, 0, -1.25 * e); j.neck.rotation.x = -0.25 * e;
+    }
+  }
   function instance(name, k, parent) {
+    if (name.startsWith("rig:")) {
+      let pool = pools.get(name); if (!pool) { pool = []; pools.set(name, pool); }
+      while (pool.length <= k) {
+        const root = new THREE.Group(), r = buildRig(name.slice(4)); root.add(r.body); parent.add(root);
+        const blob = new THREE.Mesh(blobGeometry, blobMaterial); blob.scale.setScalar(0.62); blob.position.y = 0.012; blob.renderOrder = 1; root.add(blob); root.userData.blob = blob;
+        pool.push({ root, mixer: null, actions: new Map(), current: null, rig: true, j: r.j, armed: false });
+      }
+      return pool[k];
+    }
     const a = asset(name); if (!a.ready) return null;
     let pool = pools.get(name + (parent === holdGroup ? "@hold" : ""));
     if (!pool) { pool = []; pools.set(name + (parent === holdGroup ? "@hold" : ""), pool); }
@@ -10859,6 +10968,7 @@ export function makeView(canvas, base, opts) {
     return (inst.hand = h);
   }
   function carry(inst, heldName, size) {
+    if (inst.rig) { inst.armed = !!heldName; inst.j.gun.visible = inst.armed; return; }
     if (!heldName) { if (inst.carried) inst.carried.pivot.visible = false; return; }
     const ha = asset(heldName), hand = handOf(inst); if (!ha.ready || !hand) return;
     if (!inst.carried || inst.carried.name !== heldName) {
@@ -10874,6 +10984,7 @@ export function makeView(canvas, base, opts) {
     inst.carried.pivot.visible = true;
   }
   function pose(inst, name, clipName, time) {
+    if (inst.rig) return rigPose(inst, clipName, time);
     const a = asset(name); if (!inst.mixer || !clipName) return;
     let action = inst.actions.get(clipName);
     if (!action) {
@@ -10917,6 +11028,7 @@ export function makeView(canvas, base, opts) {
         // the shadow stays on the floor when a model floats (pickups bob)
         if (inst.root.userData.blob) inst.root.userData.blob.position.y = (0.012 - num(a[2], 0)) / Math.max(0.01, num(a[5], 1));
         inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
+        if (inst.rig) inst.armed = !(a[8] === undefined || a[8] === false);
         pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
         carry(inst, a[8] === undefined || a[8] === false ? null : fmt(a[8]), num(a[5], 1));
       } else if (word === "hold") {
@@ -11367,12 +11479,13 @@ simulant-program : [it |
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
--- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
--- walk, so their run is played slowly for a patrol), and hooded elites with the bigger blaster. All CC0, by Quaternius.
+-- the guards' looks, by mission (guard-kinds): guards in fatigues and caps, soldiers in helmets and vests, and elites
+-- in black with masks. They're our own figures (rig: in the 3D words): a grown person's proportions, built from boxes,
+-- each carrying a gun, posed by code to walk, run, aim, shoot, flinch and fall.
 guard-looks : [
-  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_g"]
-  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", hit : "HitReact", death : "Death", size : 1.8, holds : false]
-  [body : "hooded_adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", hit : "HitRecieve", death : "Death", size : 1.8, holds : "blaster_e"]
+  [body : "rig:guard", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.8, holds : "gun"]
+  [body : "rig:soldier", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.82, holds : "gun"]
+  [body : "rig:elite", walk : "walk", pace : 1, run : "run", aim : "aim", shoot : "shoot", hit : "hit", death : "death", size : 1.84, holds : "gun"]
 ]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
@@ -11383,6 +11496,8 @@ looks : [
   [name : "TROOPER", body : "soldier", run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
   [name : "SCIENTIST", body : "worker", run : "Man_Run", aim : "Man_Idle", shoot : "Man_Idle", death : "Man_Death", size : 1.75, holds : false]
   [name : "GUNNER", body : "robot_gunner", run : "Run", aim : "Idle", shoot : "Shoot", death : "Death", size : 1.6, holds : false]
+  [name : "THE AGENT", body : "rig:agent", run : "run", aim : "aim", shoot : "shoot", death : "death", size : 1.82, holds : "gun"]
+  [name : "COMMANDO", body : "rig:soldier", run : "run", aim : "aim", shoot : "shoot", death : "death", size : 1.82, holds : "gun"]
 ]
 robot-look : looks @ 7
 -- simulants' codenames, by number (players are 1 and 2, so the first simulant is usually 2 or 3)
@@ -11877,8 +11992,8 @@ draw : [game |
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |
-    clip : cond [c health <= 0, "Man_Death", alarm, "Man_Idle", any, "Man_Walk"]
-    model ["worker", c x, 0, c y, c angle, 1.7, clip, cond [c health <= 0, now - (c fell else now), any, now]]
+    clip : cond [c health <= 0, "death", alarm, "idle", any, "walk"]
+    model ["rig:scientist", c x, 0, c y, c angle, 1.74, clip, cond [c health <= 0, now - (c fell else now), any, now], false]
   ]
   -- the other player
   rivals keep [r | gone (r down-at) not] each [r |

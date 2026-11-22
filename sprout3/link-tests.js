@@ -75,7 +75,7 @@ server.listen(0, async () => {
     const where = p => p.evaluate(() => { const a = game.state.field("agents"); return [1, 2].map(i => a.part(i).field("x").toFixed(3)).join(","); });
     const fc = await C.evaluate(() => NET.frame); await D.waitForFunction(f => NET.frame >= f, fc, { timeout: 10000 }).catch(() => {});
     await C.evaluate(() => showScreen("pause"));
-    ok("the menu says who you're linked with, by the look they chose", /^Linked with OPERATIVE$/.test(await C.textContent("#mDuel")) && /OPERATIVE/.test(await C.textContent("#board")), [await C.textContent("#mDuel"), await C.textContent("#board")]);
+    ok("the menu says who you're linked with, by the look they chose", /^Linked with THE AGENT$/.test(await C.textContent("#mDuel")) && /THE AGENT/.test(await C.textContent("#board")), [await C.textContent("#mDuel"), await C.textContent("#board")]);
     await C.evaluate(() => closeScreens());
     ok("and both phones see the same duel", await C.evaluate(() => NET.active) && (await D.evaluate(() => NET.active)) && C.errors.length === 0 && D.errors.length === 0, C.errors.concat(D.errors));
   } catch (e) { fail++; console.log("FAIL the link tests stopped:", e.message); }
