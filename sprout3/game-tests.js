@@ -939,5 +939,36 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Crate Cove: a pushing puzzle for SPROUT·8; each cove's shortest solution (found by a search) solves it
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/crate-cove.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const SOLUTIONS = ["RR", "RRRLU", "RUUURDLULUURDURRRD", "LUUULLDDUURRDLLULDD", "RDLLRDRUUULLDLDUURRUR", "RRUUUULDDULLULDDRDRR"];
+  const NAME = { R: "right", L: "left", U: "up", D: "down" };
+  const press = k => { g.tick(1 / 60, held([k])); for (let j = 0; j < 12; j++) g.tick(1 / 60, held([])); };
+  g.tick(1 / 60, held([])); press("one");
+  const solved = [];
+  SOLUTIONS.forEach((moves, i) => {
+    for (const m of moves) press(NAME[m]);
+    solved.push(f(g, "mode") === "solved" && f(g, "moves") === moves.length);
+    for (let j = 0; j < 160; j++) g.tick(1 / 60, held([]));
+  });
+  ok("crate cove: the shortest solution of each of the six coves solves it, move for move", solved.every(x => x), solved);
+  ok("crate cove: the fewest moves are kept for each cove", S.format(f(g, "bests")) === S.format(S.load("x : " + JSON.stringify(SOLUTIONS.map(m => m.length))).field("x")) && f(g, "mode") === "done", [S.format(f(g, "bests")), f(g, "mode")]);
+  // undo takes a move back, and the second button starts the cove again
+  const h = L.makeGame(fs.readFileSync(__dirname + "/examples/crate-cove.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const pressH = k => { h.tick(1 / 60, held([k])); for (let j = 0; j < 12; j++) h.tick(1 / 60, held([])); };
+  h.tick(1 / 60, held([])); pressH("one"); for (const m of "RR") pressH(NAME[m]); for (let j = 0; j < 160; j++) h.tick(1 / 60, held([]));
+  const at0 = S.format(h.state.field("crab")); pressH("right"); pressH("up"); const moved = h.state.field("moves"); pressH("one");
+  ok("crate cove: button 1 takes back a move", moved === 2 && h.state.field("moves") === 1, [moved, h.state.field("moves")]);
+  pressH("two");
+  ok("crate cove: button 2 starts the cove again", S.format(h.state.field("crab")) === at0 && h.state.field("moves") === 0, [S.format(h.state.field("crab")), at0]);
+  ok("crate cove: plays without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

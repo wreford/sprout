@@ -53,7 +53,7 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "csv", "json"]],
+  ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],

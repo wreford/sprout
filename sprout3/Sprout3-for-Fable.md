@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 600 pass, 345 for the language and 255 for the games.
+- **Tests:** 605 pass, 345 for the language and 260 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (345)
-node game-tests.js    # game tests (255)
+node game-tests.js    # game tests (260)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 600 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 605 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -848,6 +848,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 114. **Each game keeps its own Sprout (Claude, 22 Nov; host, from Troy's ask that every game have its own version of Sprout so that updates don't break it).** A published game no longer runs on `/sprout3/`. `node sprout3/freeze.js <game>` copies the runtime as it is that day (sprout3.js, words.js, parse.js, stdlib.js, libs.js, kernels.js, live3.js, eight.js), the pixel font, the wrapped libraries its program names and the program itself (as `game.sp`) into the game's own folder, `/<game>/sprout/`, with a `VERSION` naming the commit it came from, and writes the game's page and manifest with its base set to that folder. `sprout3/games.json` lists the published games with their titles and descriptions. Sprout can then change as it likes: a game changes only when it is frozen again, on purpose. `frozen-tests.js` loads each game in a Node of its own from its own folder and plays it for twenty seconds, and it runs before every push. Sprig was frozen first. Comet Lance (`examples/comet-lance.sp`, at `/comet-lance/`) is the second game on SPROUT·8: a vertical shooter in which the Lance flies up through the comet belt against waves of drones (which weave and fire), darters (which dive at you) and spinners (which circle down), with a boss every fifth wave that fires a spread, P capsules that widen the shot to two and then three, a scrolling starfield and a song each for the title, the waves and the boss. It uses waves (size, toughness, boss), seeded, particles, collide, music track and ZzFX, and `vec` gained `aim` (the velocity that heads from one point to another) and `fan` (copies of a velocity spread across an angle), which it uses for the shots aimed at you.
 
 115. **Lantern Keep (Claude, 22 Nov; a game and library, no change to the language).** The third SPROUT·8 game (`examples/lantern-keep.sp`, at `/lantern-keep/`, on its own frozen Sprout): Wick the lamplighter lights every lantern on three floors of a dark keep, where only what is near Wick or near a lit lantern can be seen, while shadow wisps hunt him; lighting the last one opens the gate to the floor above, and an oil flare turns the wisps blue for six seconds so he can banish them (each is gone for three seconds, then comes back from where it started). A wisp waits two seconds at the start of each life, and at each crossing it chases two times in three and wanders the other time, so a lamplighter can always slip away. `grid` gained `next-step` (the next cell on the shortest way to a cell, for a chaser) and `away-step` (the open neighbour farthest from a threat, for something fleeing). A walker that heads for the nearest unlit lantern and steers round the wisps clears the first floor in game-tests.js.
+
+116. **Crate Cove, and undo (Claude, 22 Nov; a game and a library module, no change to the language).** The fourth SPROUT·8 game (`examples/crate-cove.sp`, at `/crate-cove/`, on its own frozen Sprout) is a pushing puzzle: Pinch the hermit crab pushes driftwood onto the tide marks of six coves, never pulling, one piece at a time; button 1 takes a move back and button 2 starts the cove again, and the fewest moves for each cove are kept on the phone. Every cove was checked to be solvable by a breadth-first search over the crab and the driftwood, which also found the fewest moves (2, 5, 18, 19, 21 and 20), and game-tests.js plays each of those shortest solutions in the game itself and checks that it solves its cove, move for move. The library gained `undo`: `push` (a history with a state put on top, keeping at most so many), `peek`, `pop`, `can` and `back` (one step back from the state now, as [state, history], the state kept when there's nothing to go back to). Two traps met on the way, both in the language as it stands: a record's earlier fields are names for its later ones, so a field named rows hid the rows the record was made from; and else takes code, so `x else [0, 0, 0]` gives 0, the last value, and a list needs `else [[0, 0, 0]]`.
 ````
 
 ---
@@ -5100,6 +5102,37 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Crate Cove: a pushing puzzle for SPROUT·8; each cove's shortest solution (found by a search) solves it
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/crate-cove.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const SOLUTIONS = ["RR", "RRRLU", "RUUURDLULUURDURRRD", "LUUULLDDUURRDLLULDD", "RDLLRDRUUULLDLDUURRUR", "RRUUUULDDULLULDDRDRR"];
+  const NAME = { R: "right", L: "left", U: "up", D: "down" };
+  const press = k => { g.tick(1 / 60, held([k])); for (let j = 0; j < 12; j++) g.tick(1 / 60, held([])); };
+  g.tick(1 / 60, held([])); press("one");
+  const solved = [];
+  SOLUTIONS.forEach((moves, i) => {
+    for (const m of moves) press(NAME[m]);
+    solved.push(f(g, "mode") === "solved" && f(g, "moves") === moves.length);
+    for (let j = 0; j < 160; j++) g.tick(1 / 60, held([]));
+  });
+  ok("crate cove: the shortest solution of each of the six coves solves it, move for move", solved.every(x => x), solved);
+  ok("crate cove: the fewest moves are kept for each cove", S.format(f(g, "bests")) === S.format(S.load("x : " + JSON.stringify(SOLUTIONS.map(m => m.length))).field("x")) && f(g, "mode") === "done", [S.format(f(g, "bests")), f(g, "mode")]);
+  // undo takes a move back, and the second button starts the cove again
+  const h = L.makeGame(fs.readFileSync(__dirname + "/examples/crate-cove.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  const pressH = k => { h.tick(1 / 60, held([k])); for (let j = 0; j < 12; j++) h.tick(1 / 60, held([])); };
+  h.tick(1 / 60, held([])); pressH("one"); for (const m of "RR") pressH(NAME[m]); for (let j = 0; j < 160; j++) h.tick(1 / 60, held([]));
+  const at0 = S.format(h.state.field("crab")); pressH("right"); pressH("up"); const moved = h.state.field("moves"); pressH("one");
+  ok("crate cove: button 1 takes back a move", moved === 2 && h.state.field("moves") === 1, [moved, h.state.field("moves")]);
+  pressH("two");
+  ok("crate cove: button 2 starts the cove again", S.format(h.state.field("crab")) === at0 && h.state.field("moves") === 0, [S.format(h.state.field("crab")), at0]);
+  ok("crate cove: plays without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -7137,6 +7170,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/crate-cove/">Crate Cove</a><span>An 8-bit pushing puzzle on SPROUT·8: six coves of driftwood to push onto the tide marks, with undo and your fewest moves kept.</span></li>
 <li><a href="/lantern-keep/">Lantern Keep</a><span>An 8-bit maze game on SPROUT·8: light every lantern in a dark keep while shadow wisps hunt you down the corridors.</span></li>
 <li><a href="/comet-lance/">Comet Lance</a><span>An 8-bit vertical shooter on SPROUT·8: waves of drones, darters and spinners, a boss every fifth wave, and P capsules that widen your shot.</span></li>
 <li><a href="/sprig/">Sprig</a><span>An 8-bit platform game across three gardens, on SPROUT·8: the console page any Sprout game can use, with a 64-colour screen, pixel art, square-wave music and a D-pad.</span></li>
@@ -8848,7 +8882,7 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "csv", "json"]],
+  ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
