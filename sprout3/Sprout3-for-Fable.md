@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 646 pass, 362 for the language and 284 for the games.
+- **Tests:** 654 pass, 362 for the language and 292 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (362)
-node game-tests.js    # game tests (284)
+node game-tests.js    # game tests (292)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 646 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 654 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -878,6 +878,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 129. **Lily and Chester, and needs (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit horse-caring game with his characters Lily and Chester).** Lily and Chester (`examples/lily-and-chester.sp`, at `/lily-and-chester/`, on its own frozen Sprout) is a week at the stable. Chester, a chestnut horse with a white blaze, has five needs (food, water, clean, happy, rest) that fade each hour and overnight, shown as meters; his mood shows in a speech bubble and in how he holds his head. Each day Lily picks up to five jobs from a menu two columns wide: hay, an apple, water, a brush (a four-second rub with the arrows), mucking out the stall, or a ride, and then puts him to bed. The ride is a short side-scrolling lane, a different one each day, where 1 jumps fences, logs and puddles and collects horseshoes; good rides build his skill but tire him. On the seventh day comes the county show: his ribbon (yellow, red, blue, or best in show) comes from his care through the week and his skill, and the best one is kept. The sky goes from morning to night as the day passes, to a gentle country song. The library gained `needs` (fade, fill, lowest, under, care, mood: levels from 0 to 100 that fade by rates and are filled by care, for pet, farm and survival games). The handheld is pink gingham with a stitched leather pad, heart buttons and a lucky horseshoe, its logo in Pacifico (SIL Open Font License).
 
 130. **Blade Beach '90, and a kit for a 1990 sunset (Claude, 22 Nov; a game, the library and a kit, from Troy's ask for a 1990 rollerblade warrior game in the pink and aqua look of a photo he shared).** Blade Beach '90 (`examples/blade-beach.sp`, at `/blade-beach/`, on its own frozen Sprout) is a side-scrolling rollerblade game. The skater rolls along a boardwalk at sunset; the arrows change speed, 1 jumps (higher while held) and 2 kicks. Jump hydrants, benches and gaps, land on rails to grind them, kick masked gang skaters out of the way and grab cassette tapes through three stretches: the beach, the pier and the neon strip, each written a letter a piece of boardwalk. At the end the roller-derby giant THE BRICK charges wall to wall: jump him, and kick him while he reels. Three lives; each lap after him runs faster, and the best score is kept. The library gained `parallax` (offset, to-screen, on-screen, copies, piece-at, letter-at: layers that scroll at their own depths, the copies of a repeating layer that cover the screen, and a stretch written as letters) and a second kit, `retro` (bands, sun, palm, sea, grid-floor, neon: the sky in stacked bands, a sun cut by stripes, palm trees, a sea of drifting foam, a grid floor running to the horizon, and a flickering neon sign). Its handheld is white plastic slashed with pink, aqua and purple, with an Orbitron neon logo and tape-deck keys for buttons (`skins/blade-beach.css`). It takes only the colours and mood of the photo: no team, brand or person in it.
+
+131. **Basketball Legends 8, and arc (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit Basketball Legends).** Basketball Legends 8 (`examples/basketball-legends.sp`, at `/basketball-legends/`, on its own frozen Sprout) is the 8-bit side of Troy's Basketball Legend: one on one on a playground half court, first to 11 by twos and threes, against a legend of each decade from 1960 to forever (TANK, JET, VELVET, SPIDER, DAGGER, TORCH and BUCKETS, named from Basketball Legend's own nicknames, each with a style of play and a taunt typed out before the game). You build your player by spending points on SHOT, SPEED, HOPS and D (`menu spend`), and get one more after each win. Hold 1 to rise for a jump shot and let go at the top of the jump (`released`, decision 121): the meter turns green at the top, and a shot's chance comes from how far out it is, the timing, how closely it's guarded and SHOT. 1 running at the rim dunks, 2 crosses over and can shake your man, and on defence 1 jumps to block and 2 reaches for a steal. Landing with the ball still held is a travel, a shot clock runs, and after a miss or a steal the ball must be taken back past the arc. One set of rules moves both players from a record of buttons: yours come from the handheld, the legend's from a small mind that picks a spot by its style, jumps when you rise and runs to where a loose ball will land. It keeps how many decades you have beaten. Its handheld is the arcade cabinet of decision 123 in Basketball Legend's colours: hardwood with the three-point line painted on, a lit marquee, a joystick and basketball buttons. The library gained `arc` (point, progress, launch, landing): things thrown through the air, where one is along its flight, the speed to throw at to land on a spot, and where a flying thing comes down.
 ````
 
 ---
@@ -7356,6 +7358,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/basketball-legends/">Basketball Legends 8</a><span>The 8-bit side of Basketball Legend, in an arcade cabinet: one on one from 1960 to forever, jump shots let go at the top of the jump, dunks, crossovers and blocks, a legend for every decade.</span></li>
 <li><a href="/blade-beach/">Blade Beach '90</a><span>A 1990 rollerblade warrior on SPROUT·8: jump hydrants and gaps, grind rails and kick masked gang skaters along the beach, the pier and the neon strip, then take on the roller-derby giant.</span></li>
 <li><a href="/lily-and-chester/">Lily and Chester</a><span>An 8-bit horse-caring game: a week of hay, apples, brushing and rides down the lane with Chester, then the county show and his ribbon.</span></li>
 <li><a href="/brick-snap/">Brick Snap</a><span>An 8-bit block puzzle with toy bricks on SPROUT·8: snap them onto the baseplate, pop full rows and columns together, keep a streak going.</span></li>
@@ -9081,7 +9084,7 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
-  ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
+  ["Time and motion", ["ease", "motion", "arc", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
