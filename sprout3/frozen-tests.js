@@ -28,6 +28,7 @@ for (let t = 0; t < 1200; t++) {
 }
 console.log(JSON.stringify({ logs: logs.slice(0, 5), drawn }));
 `;
+const plays = [];
 for (const name of Object.keys(games)) {
   const dir = path.join(SITE, name, "sprout");
   ok(name + ": has its own copy of Sprout", fs.existsSync(path.join(dir, "VERSION")) && fs.existsSync(path.join(dir, "game.sp")));
@@ -39,9 +40,19 @@ for (const name of Object.keys(games)) {
   ok(name + ": keeps every file it needs for playing with no connection", kept.length > 10 && kept.every(onDisk) && kept.includes(`/${name}/sprout/game.sp?v=` + kept.find(u => u.includes("game.sp")).split("?v=")[1]), kept.filter(u => !onDisk(u)));
   const manifest = JSON.parse(fs.readFileSync(path.join(SITE, name, "manifest.webmanifest"), "utf8"));
   ok(name + ": installs as an app of its own", manifest.display === "standalone" && manifest.scope === `/${name}/` && fs.readFileSync(path.join(SITE, name, "index.html"), "utf8").includes(`register("/${name}/sw.js"`));
-  let res = null;
-  const screen = games[name].bits === 16 ? ["320", "224"] : ["256", "192"];
-  try { res = JSON.parse(execFileSync("node", ["-e", PLAY, dir, ...screen], { timeout: 120000 }).toString().trim().split("\n").pop()); } catch (e) { res = { error: String(e.message).slice(0, 300) }; }
-  ok(name + ": plays twenty seconds on its own copy, quietly", res && !res.error && res.logs.length === 0 && res.drawn > 100, res);
+  plays.push(name);
 }
-console.log(pass + " passed, " + fail + " failed");
+// each game plays in a Node of its own, four at a time
+(async () => {
+  const { execFile } = require("child_process"), queue = plays.slice();
+  const one = async () => { for (let name; (name = queue.shift());) {
+    const screen = games[name].bits === 16 ? ["320", "224"] : ["256", "192"];
+    const res = await new Promise(done => execFile("node", ["-e", PLAY, path.join(SITE, name, "sprout"), ...screen], { timeout: 120000 }, (e, out) => {
+      if (e) return done({ error: String(e.message).slice(0, 300) });
+      try { done(JSON.parse(String(out).trim().split("\n").pop())); } catch (err) { done({ error: String(out).slice(0, 300) }); } }));
+    ok(name + ": plays twenty seconds on its own copy, quietly", res && !res.error && res.logs.length === 0 && res.drawn > 100, res);
+  } };
+  await Promise.all([one(), one(), one(), one()]);
+  console.log(pass + " passed, " + fail + " failed");
+  process.exit(fail ? 1 : 0);
+})();

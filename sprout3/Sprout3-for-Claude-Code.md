@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (360)
+node test.js          # language tests (362)
 node game-tests.js    # game tests (264)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 624 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 626 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -795,6 +795,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 124. **Games made side by side (Claude, 22 Nov; the host, from Troy's ask for rapid iterations done in parallel).** A new game now lives in files of its own, so several can be made at once without two hands on one file: its program (`examples/<game>.sp`), its entry in the registry (`games.d/<game>.json`: title, file, about, a one-line `line` for Sprout's page, the skin, and `bits` for a 16-bit game), its tests (`tests8/<game>.js`, a function given the test helpers, run by game-tests.js), its icons, and, when the skin's options aren't enough, its own handheld (`skins/<game>.css`, laid over the shell's stylesheet and frozen with the game). `registry.js` reads games.json and games.d together for freeze.js and frozen-tests.js, and `node publish.js <game>` puts a game on the site in one go: frozen, with a row at the top of the home page and a line on Sprout's page.
 
 125. **SPROUT·16 (Claude, 22 Nov; the host, from Troy's asks for 16-bit games).** `Eight.start({ bits: 16 })`, or `"bits": 16` in a game's registry entry, makes the console a 16-bit one: a 320 by 224 screen, colours snapped to 512 (eight levels of red, green and blue, as on the 16-bit consoles), and songs played with a warmer voice: the lead and harmony a sawtooth through a filter, the bass the triangle as before, and a little echo on the music. The drawing words, sprites, sounds, keys and saving are the same, so a game moves up by changing one number, and the `ui` kit already takes the wider screen from W and H. Its own default handheld is black plastic with a red stripe on the wide body, and `examples/test-card-16.sp` is its test card. frozen-tests.js plays a 16-bit game on a 16-bit screen.
+
+126. **Keys that repeat (Claude, 22 Nov; the game layer, for the puzzles Troy asked for).** The frame's input now has `held-for` (how long each key has been held, in seconds) and `repeated`: a key is repeated on the tick it goes down, again once it has been held a quarter of a second, and then twelve times a second while it stays down, the way a menu cursor or a falling piece slides when you hold an arrow. `g input repeated "left"` reads like `pressed`. The time held is counted from the input the state already holds, and each repeat is found by comparing with the time stored the tick before (not by taking a tick away, which a sum of sixtieths can miss), so rewinds and replays repeat alike.
 ````
 
 ---
@@ -1972,11 +1974,23 @@ rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
 rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
 every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
-fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : []]
+fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : [], held-for : [], repeated : []]
 -- the keys true in now that weren't in was, as a record like held: [one : true] (decision 121)
 keys-new : [now was | now keys fold [[], [found name | (was get-in [name]) = true [found] else [found set-in [[name], true]]]]]
--- an input as it is this tick: what's held, and what went down or up since the tick before
-input-now : [input down-now | input with [held : down-now, pressed : keys-new [down-now, input held], released : keys-new [input held, down-now]]]
+-- how long each key held now has been held, in seconds: 0 on the tick it goes down (decision 126)
+held-times : [down-now was before dt | down-now keys fold [[], [found name | found set-in [[name], ((was get-in [name]) = true) [(before get-in [name] else 0) + dt] else [0]]]]]
+-- how many times a key held so long has repeated: once a quarter second in, then twelve times a second
+repeats-by : [t | (t < 0.25) [0] else [t - 0.25 / 0.08 floor + 1]]
+-- the keys that repeat this tick: each as it goes down, and again and again while it is held, as a menu or a falling
+-- piece wants
+repeating : [times before | times keys fold [[], [found name | t : times get-in [name], (t = 0) or (repeats-by t > (repeats-by (before get-in [name] else 0))) [found set-in [[name], true]] else [found]]]]
+-- an input as it is this tick: what's held and for how long, and what went down, came up or repeats since the tick before
+input-now : [input down-now dt |
+  was : input held
+  before : input held-for else [[]]
+  times : held-times [down-now, was, before, dt]
+  input with [held : down-now, pressed : keys-new [down-now, was], released : keys-new [was, down-now], held-for : times, repeated : repeating [times, before]]
+]
 -- frame update: events in, one update per tick (decision 34)
 -- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
 -- pressed and released (decision 121): the keys that went down or came up this tick, so a game needs no keys of its own
@@ -1994,11 +2008,11 @@ frame : [update |
       "move", put (current-input with [touch-x : event x, touch-y : event y])
       "up", put (current-input with [touching : false])
       "tick", pair [
-        one-now : input-now [first-input, event held]
-        two-now : input-now [second-input, event held2]
+        one-now : input-now [first-input, event held, event dt]
+        two-now : input-now [second-input, event held2, event dt]
         update (state with [dt : event dt, clock : event clock, input : one-now, input2 : two-now]) with [input : one-now with [tapped : false], input2 : two-now with [tapped : false]]
       ] else [
-        one-now : input-now [first-input, event held]
+        one-now : input-now [first-input, event held, event dt]
         update (state with [dt : event dt, clock : event clock, input : one-now]) with [input : one-now with [tapped : false]]
       ]
       any, state
@@ -4147,6 +4161,17 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
 }
 
+// ---------------- keys that repeat while held (decision 126)
+{
+  const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
+  const g = L.makeGame('start : [hits : 0, on : []]\nupdate : [g | g with [hits : g hits + ((g input repeated "left") [1] else [0]), on : g on .. [g input repeated "left"]]]');
+  for (let i = 0; i < 30; i++) g.tick(1 / 60, keysOf(["left"]));
+  const on = S.partsOf(g.state.field("on")).map((h, i) => h ? i : -1).filter(i => i >= 0);
+  ok("126 a held key repeats as it goes down, a quarter second in, then twelve times a second", JSON.stringify(on) === "[0,16,20,25]", on);
+  g.tick(1 / 60, keysOf([])); g.tick(1 / 60, keysOf(["left"]));
+  ok("126 let go and pressed again, it repeats at once", S.partsOf(g.state.field("on")).slice(-1)[0] === true && S.format(g.state.field("input").field("held-for")) === "[left : 0]");
+}
+
 // ---------------- kits: modules that draw (decision 122)
 {
   const kitDir = __dirname + "/kit", files = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).sort();
@@ -5209,7 +5234,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const quiet = (lib, words) => { const was = Object.getOwnPropertyDescriptor(S.globals, lib), word = w => new S.Native(w, () => S.effect(() => {}), true);
     Object.defineProperty(S.globals, lib, { value: S.valueCellOf([], new Map(words.map(w => [w, word(w)]))), configurable: true, writable: true, enumerable: true });
     return () => Object.defineProperty(S.globals, lib, was); };
-  for (const file of fs.readdirSync(__dirname + "/tests8").filter(n => n.endsWith(".js")).sort())
+  for (const file of (fs.existsSync(__dirname + "/tests8") ? fs.readdirSync(__dirname + "/tests8") : []).filter(n => n.endsWith(".js")).sort())
     require("./tests8/" + file)({ S, L, fs, ok, logs, game, held, f, putCell, quiet, dir: __dirname });
 }
 

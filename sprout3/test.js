@@ -464,6 +464,17 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
 }
 
+// ---------------- keys that repeat while held (decision 126)
+{
+  const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
+  const g = L.makeGame('start : [hits : 0, on : []]\nupdate : [g | g with [hits : g hits + ((g input repeated "left") [1] else [0]), on : g on .. [g input repeated "left"]]]');
+  for (let i = 0; i < 30; i++) g.tick(1 / 60, keysOf(["left"]));
+  const on = S.partsOf(g.state.field("on")).map((h, i) => h ? i : -1).filter(i => i >= 0);
+  ok("126 a held key repeats as it goes down, a quarter second in, then twelve times a second", JSON.stringify(on) === "[0,16,20,25]", on);
+  g.tick(1 / 60, keysOf([])); g.tick(1 / 60, keysOf(["left"]));
+  ok("126 let go and pressed again, it repeats at once", S.partsOf(g.state.field("on")).slice(-1)[0] === true && S.format(g.state.field("input").field("held-for")) === "[left : 0]");
+}
+
 // ---------------- kits: modules that draw (decision 122)
 {
   const kitDir = __dirname + "/kit", files = fs.readdirSync(kitDir).filter(f => f.endsWith(".sp")).sort();

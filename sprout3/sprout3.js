@@ -1164,11 +1164,23 @@ rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
 rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
 every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
-fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : []]
+fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : [], pressed : [], released : [], held-for : [], repeated : []]
 -- the keys true in now that weren't in was, as a record like held: [one : true] (decision 121)
 keys-new : [now was | now keys fold [[], [found name | (was get-in [name]) = true [found] else [found set-in [[name], true]]]]]
--- an input as it is this tick: what's held, and what went down or up since the tick before
-input-now : [input down-now | input with [held : down-now, pressed : keys-new [down-now, input held], released : keys-new [input held, down-now]]]
+-- how long each key held now has been held, in seconds: 0 on the tick it goes down (decision 126)
+held-times : [down-now was before dt | down-now keys fold [[], [found name | found set-in [[name], ((was get-in [name]) = true) [(before get-in [name] else 0) + dt] else [0]]]]]
+-- how many times a key held so long has repeated: once a quarter second in, then twelve times a second
+repeats-by : [t | (t < 0.25) [0] else [t - 0.25 / 0.08 floor + 1]]
+-- the keys that repeat this tick: each as it goes down, and again and again while it is held, as a menu or a falling
+-- piece wants
+repeating : [times before | times keys fold [[], [found name | t : times get-in [name], (t = 0) or (repeats-by t > (repeats-by (before get-in [name] else 0))) [found set-in [[name], true]] else [found]]]]
+-- an input as it is this tick: what's held and for how long, and what went down, came up or repeats since the tick before
+input-now : [input down-now dt |
+  was : input held
+  before : input held-for else [[]]
+  times : held-times [down-now, was, before, dt]
+  input with [held : down-now, pressed : keys-new [down-now, was], released : keys-new [was, down-now], held-for : times, repeated : repeating [times, before]]
+]
 -- frame update: events in, one update per tick (decision 34)
 -- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
 -- pressed and released (decision 121): the keys that went down or came up this tick, so a game needs no keys of its own
@@ -1186,11 +1198,11 @@ frame : [update |
       "move", put (current-input with [touch-x : event x, touch-y : event y])
       "up", put (current-input with [touching : false])
       "tick", pair [
-        one-now : input-now [first-input, event held]
-        two-now : input-now [second-input, event held2]
+        one-now : input-now [first-input, event held, event dt]
+        two-now : input-now [second-input, event held2, event dt]
         update (state with [dt : event dt, clock : event clock, input : one-now, input2 : two-now]) with [input : one-now with [tapped : false], input2 : two-now with [tapped : false]]
       ] else [
-        one-now : input-now [first-input, event held]
+        one-now : input-now [first-input, event held, event dt]
         update (state with [dt : event dt, clock : event clock, input : one-now]) with [input : one-now with [tapped : false]]
       ]
       any, state

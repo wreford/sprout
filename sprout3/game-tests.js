@@ -1004,7 +1004,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const quiet = (lib, words) => { const was = Object.getOwnPropertyDescriptor(S.globals, lib), word = w => new S.Native(w, () => S.effect(() => {}), true);
     Object.defineProperty(S.globals, lib, { value: S.valueCellOf([], new Map(words.map(w => [w, word(w)]))), configurable: true, writable: true, enumerable: true });
     return () => Object.defineProperty(S.globals, lib, was); };
-  for (const file of fs.readdirSync(__dirname + "/tests8").filter(n => n.endsWith(".js")).sort())
+  for (const file of (fs.existsSync(__dirname + "/tests8") ? fs.readdirSync(__dirname + "/tests8") : []).filter(n => n.endsWith(".js")).sort())
     require("./tests8/" + file)({ S, L, fs, ok, logs, game, held, f, putCell, quiet, dir: __dirname });
 }
 
