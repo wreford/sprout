@@ -31,6 +31,13 @@ for (const name of Object.keys(games)) {
   const dir = path.join(SITE, name, "sprout");
   ok(name + ": has its own copy of Sprout", fs.existsSync(path.join(dir, "VERSION")) && fs.existsSync(path.join(dir, "game.sp")));
   ok(name + ": its page loads its own copy", fs.existsSync(path.join(SITE, name, "index.html")) && fs.readFileSync(path.join(SITE, name, "index.html"), "utf8").includes(`<base href="/${name}/sprout/">`));
+  // a local web app (decision 118): its service worker keeps every file the page needs, and each one is there
+  const swPath = path.join(SITE, name, "sw.js");
+  const kept = fs.existsSync(swPath) ? JSON.parse(fs.readFileSync(swPath, "utf8").match(/const FILES = (\[[\s\S]*?\]);/)[1]) : [];
+  const onDisk = u => { const rel = u.split("?")[0]; return fs.existsSync(path.join(SITE, rel.endsWith("/") ? rel + "index.html" : rel)); };
+  ok(name + ": keeps every file it needs for playing with no connection", kept.length > 10 && kept.every(onDisk) && kept.includes(`/${name}/sprout/game.sp?v=` + kept.find(u => u.includes("game.sp")).split("?v=")[1]), kept.filter(u => !onDisk(u)));
+  const manifest = JSON.parse(fs.readFileSync(path.join(SITE, name, "manifest.webmanifest"), "utf8"));
+  ok(name + ": installs as an app of its own", manifest.display === "standalone" && manifest.scope === `/${name}/` && fs.readFileSync(path.join(SITE, name, "index.html"), "utf8").includes(`register("/${name}/sw.js"`));
   let res = null;
   try { res = JSON.parse(execFileSync("node", ["-e", PLAY, dir], { timeout: 120000 }).toString().trim().split("\n").pop()); } catch (e) { res = { error: String(e.message).slice(0, 300) }; }
   ok(name + ": plays twenty seconds on its own copy, quietly", res && !res.error && res.logs.length === 0 && res.drawn > 100, res);

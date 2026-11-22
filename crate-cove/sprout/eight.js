@@ -20,51 +20,68 @@ const CSS = `
 @font-face{font-family:"Press Start 2P";src:url("vendor/fonts/press-start-2p.woff2") format("woff2");font-display:block}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none}
 html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;font:13px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
-  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none}
-#e8{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-  padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom));
-  background:radial-gradient(120% 70% at 50% 0%,#1c1c24,#09090c 70%)}
-#e8 .shell{width:100%;max-width:980px;display:flex;flex-direction:column;align-items:center;gap:10px;height:100%}
-#e8 .top{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px}
-#e8 .logo{font:15px "Press Start 2P",monospace;color:#e83a3a;letter-spacing:1px;font-style:italic;text-shadow:0 2px 0 #0008;white-space:nowrap}
-#e8 .logo b{color:#ececf2;font-weight:400}
-#e8 .name{font:9px "Press Start 2P",monospace;color:#8b8b96;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#e8 .bezel{position:relative;flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(180deg,#26262d,#18181d);border-radius:14px;box-shadow:inset 0 2px 0 #ffffff12,inset 0 -3px 0 #0008,0 18px 50px #000a;padding:14px}
-#e8 .bezel:before{content:"";position:absolute;left:14px;right:14px;top:6px;height:3px;border-radius:2px;background:linear-gradient(90deg,#e83a3a,#e83a3a 40%,transparent 40%)}
-#e8 canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#000;border-radius:3px;box-shadow:0 0 0 2px #000,0 0 30px #0009}
-#e8 .led{position:absolute;right:16px;bottom:5px;font:7px "Press Start 2P",monospace;color:#77777f;display:flex;align-items:center;gap:5px}
-#e8 .led i{width:6px;height:6px;border-radius:50%;background:#ff3b30;box-shadow:0 0 6px #ff3b30}
-#e8 .pad{width:100%;display:none;align-items:center;justify-content:space-between;padding:4px 6px 0;flex:0 0 auto}
-#e8.touch .pad{display:flex;flex:1 1 auto;align-items:center}
-#e8.touch .bezel{flex:0 0 auto;padding:8px}#e8.touch .led{display:none}
-#e8 .dpad{position:relative;width:150px;height:150px;touch-action:none}
-#e8 .dpad i{position:absolute;background:#2b2b33;box-shadow:inset 0 2px 0 #ffffff14,0 3px 0 #000;border-radius:6px}
-#e8 .dpad .h{left:0;right:0;top:50px;height:50px}#e8 .dpad .v{top:0;bottom:0;left:50px;width:50px}
-#e8 .dpad .c{left:62px;top:62px;width:26px;height:26px;border-radius:50%;background:#222229;box-shadow:inset 0 2px 4px #0008}
-#e8 .dpad.on-left .h{box-shadow:inset 18px 0 0 #3c3c46}#e8 .dpad.on-right .h{box-shadow:inset -18px 0 0 #3c3c46}
-#e8 .dpad.on-up .v{box-shadow:inset 0 18px 0 #3c3c46}#e8 .dpad.on-down .v{box-shadow:inset 0 -18px 0 #3c3c46}
-#e8 .mid{display:flex;flex-direction:column;gap:12px;align-items:center}
-#e8 .pill{font:7px "Press Start 2P",monospace;color:#9a9aa5;background:#202027;border-radius:12px;padding:8px 12px;box-shadow:inset 0 1px 0 #ffffff10,0 2px 0 #000;touch-action:none}
-#e8 .btns{display:flex;gap:16px;align-items:flex-end;transform:rotate(-14deg)}
-#e8 .btn{width:68px;height:68px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#ff5a50,#c42222 70%);box-shadow:inset 0 -4px 0 #0005,0 4px 0 #000,0 0 0 4px #1a1a20;
-  display:flex;align-items:center;justify-content:center;font:12px "Press Start 2P",monospace;color:#ffd9d6;touch-action:none}
-#e8 .btn.down{transform:translateY(3px);box-shadow:inset 0 -1px 0 #0005,0 1px 0 #000,0 0 0 4px #1a1a20}
-#e8 .btn.two{margin-bottom:34px}
-#e8 .hint{font:8px "Press Start 2P",monospace;color:#6e6e78;text-align:center;line-height:1.9}
-#e8.touch .hint{display:none}
-#e8 .tools{display:flex;gap:8px}
-#e8 .tools button{font:8px "Press Start 2P",monospace;color:#a5a5b0;background:#1f1f26;border:0;border-radius:8px;padding:8px 10px;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff10}
-#e8 .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;z-index:5;transition:opacity .5s}
-#e8 .boot span{font:22px "Press Start 2P",monospace;color:#e83a3a;font-style:italic;animation:e8in 1.1s steps(8) both}
-#e8 .boot span b{color:#fff;font-weight:400}
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
+#e8{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  background:radial-gradient(110% 80% at 50% 10%,var(--page2),var(--page) 72%);padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom))}
+/* the handheld: a portrait body with the big rounded corner, the screen in its bezel, the maker's plate, the controls */
+#e8 .gb{position:relative;width:min(94vw,calc((100vh - 64px) * 0.62));aspect-ratio:62/100;display:grid;grid-template-columns:1fr 1fr;
+  grid-template-rows:auto auto auto 1fr auto;grid-template-areas:"top top" "bezel bezel" "brand brand" "dpad btns" "pills pills";
+  background:linear-gradient(165deg,var(--body) 0%,var(--body) 55%,var(--body2) 100%);border-radius:16px 16px 74px 16px;padding:0 0 30px;
+  box-shadow:inset 0 2px 0 #ffffff44,inset 0 -4px 0 #00000040,inset 4px 0 0 #ffffff18,inset -4px 0 0 #00000024,0 24px 60px #000a}
+#e8 .top{grid-area:top;display:flex;align-items:center;gap:8px;padding:10px 16px 8px;font:7px "Press Start 2P",monospace;color:var(--ink);letter-spacing:1px}
+#e8 .top i{flex:1;height:2px;border-radius:1px;background:#00000030;box-shadow:0 1px 0 #ffffff33}
+#e8 .bezel{grid-area:bezel;position:relative;margin:0 7%;padding:26px 5% 18px 13%;background:var(--bezel);border-radius:10px 10px 44px 10px;
+  box-shadow:inset 0 2px 7px #0009,0 1px 0 #ffffff33;display:flex;align-items:center;justify-content:center}
+#e8 .bezel .lines{position:absolute;left:12px;right:12px;top:10px;display:flex;align-items:center;gap:7px;font:6px "Press Start 2P",monospace;color:var(--bezel-ink);white-space:nowrap}
+#e8 .bezel .lines i{height:2px;flex:1;background:var(--s1);box-shadow:0 4px 0 var(--s2)}
+#e8 .screen{position:relative;line-height:0}
+#e8 .screen canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#000;border-radius:2px;box-shadow:0 0 0 2px #0009}
+#e8 .led{position:absolute;left:3.6%;top:44%;display:flex;flex-direction:column;align-items:center;gap:5px;font:5px "Press Start 2P",monospace;color:var(--bezel-ink)}
+#e8 .led i{width:7px;height:7px;border-radius:50%;background:#ff3b30;box-shadow:0 0 7px #ff3b30}
+#e8 .brand{grid-area:brand;display:flex;align-items:center;gap:10px;padding:12px 9% 0;min-width:0}
+#e8 .brand .logo{font:var(--logo-weight) var(--logo-size)/1 var(--brand),system-ui,sans-serif;font-style:var(--logo-style);letter-spacing:var(--logo-track);color:var(--logo);
+  text-shadow:0 1px 0 #ffffff44,0 -1px 0 #00000033;white-space:nowrap}
+#e8 .brand .sub{font:italic 800 11px/1 -apple-system,system-ui,sans-serif;color:var(--sub);letter-spacing:2px;align-self:flex-end;padding-bottom:3px;white-space:nowrap}
+#e8 .brand .mascot{margin-left:auto;width:48px;height:48px;image-rendering:pixelated;flex:0 0 auto}
+#e8 .dpad{grid-area:dpad;justify-self:center;align-self:center;position:relative;width:118px;height:118px}
+#e8 .dpad i{position:absolute;background:var(--dpad);box-shadow:inset 0 2px 0 #ffffff22,0 3px 0 #0008;border-radius:5px}
+#e8 .dpad .h{left:0;right:0;top:39px;height:40px}#e8 .dpad .v{top:0;bottom:0;left:39px;width:40px}
+#e8 .dpad .c{left:50px;top:50px;width:18px;height:18px;border-radius:50%;background:#0003;box-shadow:inset 0 2px 3px #0006}
+#e8 .dpad.on-left .h{box-shadow:inset 14px 0 0 #ffffff2a}#e8 .dpad.on-right .h{box-shadow:inset -14px 0 0 #ffffff2a}
+#e8 .dpad.on-up .v{box-shadow:inset 0 14px 0 #ffffff2a}#e8 .dpad.on-down .v{box-shadow:inset 0 -14px 0 #ffffff2a}
+#e8 .btns{grid-area:btns;justify-self:center;align-self:center;display:flex;gap:16px;align-items:flex-end;transform:rotate(-24deg)}
+#e8 .btn{width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 36% 30%,#ffffff55,transparent 46%),var(--btn);
+  box-shadow:inset 0 -4px 0 #0004,0 4px 0 #0007,0 0 0 4px #00000022;display:flex;align-items:center;justify-content:center;font:12px "Press Start 2P",monospace;color:var(--btn-ink)}
+#e8 .btn.down{transform:translateY(3px);box-shadow:inset 0 -1px 0 #0004,0 1px 0 #0007,0 0 0 4px #00000022}
+#e8 .btn.two{margin-bottom:30px}
+#e8 .pills{grid-area:pills;display:flex;gap:20px;justify-content:center;padding:4px 0 0}
+#e8 .pill{transform:rotate(-24deg);display:flex;flex-direction:column;align-items:center;gap:6px;font:6px "Press Start 2P",monospace;color:var(--ink)}
+#e8 .pill b{display:block;width:46px;height:12px;border-radius:7px;background:var(--pill);box-shadow:inset 0 -2px 0 #0005,0 1px 0 #ffffff33}
+#e8 .grille{position:absolute;right:24px;bottom:24px;display:flex;gap:7px;transform:rotate(-28deg);pointer-events:none}
+#e8 .grille i{width:5px;height:44px;border-radius:3px;background:#00000030;box-shadow:inset 0 2px 2px #0005,0 1px 0 #ffffff22}
+#e8 .below{display:flex;gap:12px;align-items:center;font:7px "Press Start 2P",monospace;color:var(--hint)}
+#e8 .below button{font:7px "Press Start 2P",monospace;color:var(--hint);background:#ffffff14;border:0;border-radius:8px;padding:7px 9px;cursor:pointer}
+#e8.touch .below{display:none}
+#e8 .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--body);z-index:5;transition:opacity .5s}
+#e8 .boot span{font:var(--logo-weight) calc(var(--logo-size) * 1.3)/1 var(--brand),system-ui,sans-serif;font-style:var(--logo-style);letter-spacing:var(--logo-track);color:var(--logo);animation:e8in 1.1s steps(8) both}
 @keyframes e8in{from{transform:translateY(-120px);opacity:0}to{transform:none;opacity:1}}
+/* a phone: the handheld fills the screen */
+#e8.touch{padding:0}
+#e8.touch .gb{width:100vw;height:100%;aspect-ratio:auto;border-radius:0 0 74px 0;padding:env(safe-area-inset-top) 0 max(30px,env(safe-area-inset-bottom))}
+#e8.touch .bezel{margin:0 4%;padding:24px 3% 14px 10%}
+/* a phone on its side: the screen in the middle, the D-pad on the left, the buttons on the right */
 @media (orientation:landscape) and (max-height:560px){
-  #e8{padding:6px max(10px,env(safe-area-inset-left))}#e8 .top{display:none}
-  #e8 .bezel{padding:6px;border-radius:10px}#e8 .bezel:before,#e8 .led{display:none}
-  #e8.touch .pad{position:fixed;inset:auto 0 max(8px,env(safe-area-inset-bottom)) 0;pointer-events:none;padding:0 max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left))}
-  #e8.touch .pad>*{pointer-events:auto;opacity:.6}
+  #e8 .gb,#e8.touch .gb{width:100vw;height:100%;aspect-ratio:auto;border-radius:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto;grid-template-areas:"dpad bezel btns" "dpad bezel pills"}
+  #e8 .top,#e8 .brand,#e8 .grille,#e8 .below{display:none}
+  #e8 .bezel,#e8.touch .bezel{margin:6px 0;padding:6px 6px 6px 22px;border-radius:8px}#e8 .bezel .lines{display:none}#e8 .led{left:7px;font-size:0}
+  #e8 .dpad{margin:0 16px}#e8 .btns{margin:0 16px}#e8 .pills{padding:0 0 12px;gap:10px}
 }`;
+// the look a game gets when it brings none: the SPROUT·8 console's own
+const PLAIN = { logo: "SPROUT·8", sub: "", badge: "SPROUT·8", tagline: "8-BIT COLOUR", page: "#09090c", page2: "#1c1c24", body: "#2e2e35", body2: "#202026",
+  ink: "#9a9aa5", bezel: "#17171c", bezelInk: "#77777f", stripe1: "#e83a3a", stripe2: "#2f5fd0", logoColour: "#e83a3a", subColour: "#9a9aa5",
+  font: "Press Start 2P", logoSize: "17px", logoWeight: "400", logoStyle: "italic", logoTrack: "1px", button: "#c42222", buttonInk: "#ffd9d6", dpad: "#1c1c22",
+  pill: "#3a3a44", hint: "#6e6e78" };
 
 // ---------------------------------------------------------------- colours: 64 of them
 const snapped = new Map();
@@ -175,18 +192,30 @@ function readSong(rec) {
 
 function start(opts) {
   opts = opts || {};
-  const style = document.createElement("style"); style.textContent = CSS; document.head.appendChild(style);
+  const skin = Object.assign({}, PLAIN, opts.skin || {});
+  const style = document.createElement("style");
+  style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "");
+  document.head.appendChild(style);
   const touch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in root;
   const box = document.createElement("div"); box.id = "e8"; if (touch) box.classList.add("touch");
-  box.innerHTML = `<div class="shell">
-  <div class="top"><div class="logo">SPROUT<b>·</b>8</div><div class="name"></div><div class="tools"><button class="mute">SOUND ON</button><button class="full">FULL</button></div></div>
-  <div class="bezel"><canvas width="${W}" height="${H}"></canvas><div class="led"><i></i>POWER</div></div>
-  <div class="pad"><div class="dpad"><i class="h"></i><i class="v"></i><i class="c"></i></div>
-    <div class="mid"><div class="pill pause">PAUSE</div><div class="pill mute2">SOUND</div></div>
-    <div class="btns"><div class="btn one">1</div><div class="btn two">2</div></div></div>
-  <div class="hint">ARROWS MOVE &nbsp; Z BUTTON 1 &nbsp; X BUTTON 2 &nbsp; ENTER PAUSE</div>
-</div><div class="boot"><span>SPROUT<b>·</b>8</span></div>`;
+  const vars = { page: skin.page, page2: skin.page2, body: skin.body, body2: skin.body2, ink: skin.ink, bezel: skin.bezel, "bezel-ink": skin.bezelInk, s1: skin.stripe1, s2: skin.stripe2,
+    logo: skin.logoColour, sub: skin.subColour, brand: `"${skin.font}"`, "logo-size": skin.logoSize, "logo-weight": skin.logoWeight, "logo-style": skin.logoStyle, "logo-track": skin.logoTrack,
+    btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint };
+  for (const k in vars) box.style.setProperty("--" + k, vars[k]);
+  const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  box.innerHTML = `<div class="gb">
+  <div class="top"><i></i><span>${esc(skin.badge)}</span><i></i></div>
+  <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
+  <div class="brand"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
+  <div class="dpad"><i class="h"></i><i class="v"></i><i class="c"></i></div>
+  <div class="btns"><div class="btn one">1</div><div class="btn two">2</div></div>
+  <div class="pills"><div class="pill mute2"><b></b><span>SOUND</span></div><div class="pill pause"><b></b><span>PAUSE</span></div></div>
+  <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</div>
+<div class="below"><span>ARROWS MOVE &nbsp; Z 1 &nbsp; X 2 &nbsp; ENTER PAUSE</span><button class="mute">SOUND ON</button><button class="full">FULL SCREEN</button></div>
+<div class="boot"><span>${esc(skin.logo)}</span></div>`;
   document.body.appendChild(box);
+  document.body.style.background = skin.page;
   // iOS Safari zooms in on a quick second tap, and on a pinch, whatever the viewport says (it ignores user-scalable=no):
   // a game wants neither, so the second tap of a double tap and every pinch are cancelled. Text boxes are left alone.
   let lastTap = 0;
@@ -194,23 +223,26 @@ function start(opts) {
   document.addEventListener("touchend", e => { const now = e.timeStamp; if (now - lastTap < 350 && !typing(e.target)) e.preventDefault(); lastTap = now; }, { passive: false });
   document.addEventListener("touchmove", e => { if (e.touches.length > 1 && !typing(e.target)) e.preventDefault(); }, { passive: false });
   for (const t of ["gesturestart", "gesturechange", "gestureend", "dblclick"]) document.addEventListener(t, e => e.preventDefault(), { passive: false });
-  const $ = sel => box.querySelector(sel), canvas = $("canvas"), g = canvas.getContext("2d");
+  const $ = sel => box.querySelector(sel), canvas = $(".screen canvas"), g = canvas.getContext("2d");
   g.imageSmoothingEnabled = false;
-  $(".name").textContent = (opts.title || "").toUpperCase();
   const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
   const saveKey = "eight." + (opts.key || "game");
   muted = store.get("eight.muted", false);
-  const showMute = () => { $(".mute").textContent = muted ? "SOUND OFF" : "SOUND ON"; $(".mute2").textContent = muted ? "MUTED" : "SOUND"; if (master) master.gain.value = muted ? 0 : 0.9; if (root.zzfxVolume) root.zzfxVolume(muted ? 0 : 0.3); };
+  const showMute = () => { $(".mute").textContent = muted ? "SOUND OFF" : "SOUND ON"; $(".mute2 span").textContent = muted ? "MUTED" : "SOUND"; if (master) master.gain.value = muted ? 0 : 0.9; if (root.zzfxVolume) root.zzfxVolume(muted ? 0 : 0.3); };
   const toggleMute = () => { muted = !muted; store.set("eight.muted", muted); audio(); showMute(); };
+  const toggleFull = () => { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); };
   $(".mute").onclick = toggleMute; $(".mute2").addEventListener("pointerdown", e => { e.preventDefault(); toggleMute(); });
-  $(".full").onclick = () => { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); };
+  $(".full").onclick = toggleFull;
   setTimeout(() => { const b = $(".boot"); if (b) { b.style.opacity = 0; setTimeout(() => b.remove(), 600); } }, 1500);
 
-  // the screen as big as it fits: whole pixels when there's room for two or more, else as big as it goes
+  // the screen as big as the bezel lets it be: whole pixels from three times up, else as big as it goes
   function fit() {
-    const r = $(".bezel").getBoundingClientRect(), wide = innerHeight < innerWidth && innerHeight < 560, pad = touch ? (wide ? 6 : 8) : 14;
-    const room = touch && !wide ? innerHeight * 0.56 : r.height - pad * 2;
-    let k = Math.min((r.width - pad * 2) / W, room / H); if (k >= 2) k = Math.floor(k);
+    const bz = $(".bezel"), r = bz.getBoundingClientRect(), cs = getComputedStyle(bz);
+    const roomW = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const wide = innerWidth > innerHeight && innerHeight < 560;
+    const gb = $(".gb").getBoundingClientRect();
+    const roomH = wide ? r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) : gb.height * 0.46;
+    let k = Math.min(roomW / W, roomH / H); if (k >= 3) k = Math.floor(k);
     canvas.style.width = Math.max(W / 2, W * k) + "px"; canvas.style.height = Math.max(H / 2, H * k) + "px";
   }
   addEventListener("resize", fit); setTimeout(fit, 0); setTimeout(fit, 300);
@@ -224,6 +256,7 @@ function start(opts) {
     audio();
     if (e.key === "Enter" || e.key === "Escape" || e.key === "p") { setPaused(!paused); e.preventDefault(); return; }
     if (e.key === "m") { toggleMute(); return; }
+    if (e.key === "f") { toggleFull(); return; }
     const k = KEYNAME[e.key] || KEYNAME[e.key.toLowerCase()]; if (k) { KEYS.add(k); e.preventDefault(); }
   });
   addEventListener("keyup", e => { const k = KEYNAME[e.key] || KEYNAME[e.key.toLowerCase()]; if (k) KEYS.delete(k); });
@@ -342,6 +375,9 @@ function start(opts) {
       const keep = store.get(saveKey, null);
       const host = { saved: keep ? S.libraries.fromJS(keep) : S.valueCellOf([], new Map()), console8: true };
       game = LIVE.makeGame(src, { W, H, onEffect, host });
+      // the maker's plate shows the game's own hero, drawn from its art
+      try { const art = skin.mascot ? game.file.field(skin.mascot) : S.UNSET, ink = game.file.field(skin.mascotInk || "ink");
+        if (art !== S.UNSET && S.isCell(art)) { const bm = bitmap(art, ink === S.UNSET ? null : ink), m = $(".mascot"); m.width = bm.width; m.height = bm.height; m.getContext("2d").drawImage(bm, 0, 0); } else $(".mascot").style.display = "none"; } catch (e) {}
       // one frame first: the state only has its clock, input and dt once update has run
       game.tick(STEP, heldCell());
       showMute();
