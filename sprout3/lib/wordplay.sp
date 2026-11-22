@@ -3,7 +3,7 @@
 
 -- the marks a guess earns against the answer, letter by letter: G in the right place, Y in the word but elsewhere,
 -- - not in it. Letters are counted, so two Es guessed against one E mark only one of them
--- e.g. wordplay marks ["SPEED", "ABIDE"]
+-- e.g. wordplay marks ["SPEED", "ABIDE"] → --Y-Y
 marks : [guess answer |
   g : guess upper chars
   a : answer upper chars
@@ -16,24 +16,24 @@ marks : [guess answer |
 ]
 
 -- are two words made of the same letters?
--- e.g. wordplay anagram ["listen", "silent"]
+-- e.g. wordplay anagram ["listen", "silent"] → true
 anagram : [a b | a lower chars sort = (b lower chars sort)]
 
 -- a word with its letters mixed up by seed (and not left as it was, if another try can help it)
--- e.g. wordplay scramble ["planet", 7]
+-- e.g. wordplay scramble ["planet", 7] → lnaetp
 scramble : [word seed |
   mixed : seeded shuffle [word chars, seed] join ""
   (mixed = word) and (word length > 1) [seeded shuffle [word chars, seed + 1] join ""] else [mixed]
 ]
 
 -- a word with the letters not yet guessed hidden
--- e.g. wordplay hide ["planet", "aep"]
+-- e.g. wordplay hide ["planet", "aep"] → p_a_e_
 hide : [word guessed | word chars collect [ch | (guessed lower chars has (ch lower)) [ch] else ["_"]] join ""]
 
 -- has every letter of the word been guessed?
--- e.g. wordplay solved ["planet", "planetx"]
+-- e.g. wordplay solved ["planet", "planetx"] → true
 solved : [word guessed | word lower chars all [ch | guessed lower chars has ch]]
 
 -- how many vowels a word has
--- e.g. wordplay vowels "sprout"
+-- e.g. wordplay vowels "sprout" → 2
 vowels : [word | word lower chars count [ch | "aeiou" chars has ch]]

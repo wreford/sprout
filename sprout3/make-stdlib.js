@@ -43,13 +43,26 @@ function wordsOf(src) {
 }
 const MODULES = names.map(name => ({ name, ...wordsOf(sources[name]) }));
 // the modules distilled from the TaskIAP games: those whose opening says so
-const GAME_MODULES = names.filter(name => /Distilled from/.test(sources[name].split("\n\n")[0]));
+const GAME_MODULES = names.filter(name => /Distilled from/.test(sources[name].split("\n\n")[0].replace(/\n-- /g, " ")));
 // json is written in JavaScript, in words.js; its entry is written here
 MODULES.push({ name: "json", intro: ["json: JSON text read into records and lists, and written back. null reads as false; dates, money and other kinds are written as their text."], words: [
-  { name: "read", inputs: "", about: ["records and lists from JSON text (put \\[ for a [ inside Sprout text)"], examples: ['json read "{\\"a\\": 1, \\"b\\": \\[true, null]}"'] },
-  { name: "write", inputs: "", about: ["a value as JSON text"], examples: ['json write [name : "Ada", due : 2026-11-20, tags : ["x"]]'] },
-  { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ["json pretty [a : 1]"] },
+  { name: "read", inputs: "", about: ["records and lists from JSON text (put \\[ for a [ inside Sprout text)"], examples: ['json read "{\\"a\\": 1, \\"b\\": \\[true, null]}" → [a : 1, b : [true, false]]'] },
+  { name: "write", inputs: "", about: ["a value as JSON text"], examples: ['json write [name : "Ada", due : 2026-11-20, tags : ["x"]] → {"name":"Ada","due":"2026-11-20","tags":["x"]}'] },
+  { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ['json pretty [a : 1] → {\\n  "a": 1\\n}'] },
 ] });
+// the modules by what you're making, each group in the order you'd reach for them
+const GROUPS = [
+  ["Words and numbers", ["format", "stats", "csv", "json"]],
+  ["Time and motion", ["ease", "motion", "daytime"]],
+  ["Space", ["vec", "shape", "collide", "grid", "hex", "camera"]],
+  ["Chance", ["seeded", "dice", "cards"]],
+  ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
+  ["Colour", ["palette"]],
+];
+const grouped = GROUPS.flatMap(([, ns]) => ns);
+const rest = MODULES.map(m => m.name).filter(n => !grouped.includes(n)).sort();
+if (rest.length) GROUPS.push(["More", rest]);
+const byName = Object.fromEntries(MODULES.map(m => [m.name, m]));
 MODULES.sort((a, b) => a.name < b.name ? -1 : 1);
 // the wrapped libraries (decision 106): their words, as libs.js describes them
 const LIBS = S.libraries.names.map(name => {
@@ -58,20 +71,30 @@ const LIBS = S.libraries.names.map(name => {
     words: Object.entries(words).map(([w, [about, example]]) => ({ name: w, inputs: "", about: [about], examples: example ? [example] : [] })) };
 });
 let failures = 0;
+// an example's answer as it reads on the page (a line break inside a text shows as \n, as it's written)
+const shown = out => String(out).replace(/\n/g, "\\n");
+let checked = 0;
 const run = src => { logs.length = 0; let out; try { out = S.format(S.load("result : " + src).field("result")); } catch (e) { out = "error: " + e.message; } const bad = logs.filter(l => !l.startsWith("lint")); if (bad.length || out.startsWith("error")) { failures++; console.log("EXAMPLE FAILS:", src, "=>", out, bad.join(" | ")); } return out; };
-const section = mod => {
+// an example is "expression" or "expression → answer"; the stated answer must be what it gives
+const example = (e, mustState) => {
+  const [src, stated] = e.split(" → "), out = run(src);
+  if (stated === undefined && mustState) { failures++; console.log("NO ANSWER STATED:", src); }
+  if (stated !== undefined) { checked++; if (shown(out) !== stated.trim()) { failures++; console.log("WRONG ANSWER:", src, "gives", shown(out), "not", stated.trim()); } }
+  return `<pre>${esc(src)}\n<span class="cm">-- ${esc(out).replace(/\n/g, "\n-- ")}</span></pre>`;
+};
+const section = (mod, mustState) => {
   const plain = mod.intro.join(" ").replace(/^[\w-]+: /, ""), intro = plain.charAt(0).toUpperCase() + plain.slice(1);
   return `<section id="${mod.name}">
 <h2>${mod.name}</h2>
 <p>${esc(intro)}</p>
 <dl>
 ${mod.words.map(w => `<dt><code><b>${mod.name} ${w.name}</b>${w.inputs ? " [" + esc(w.inputs.split(/\s+/).join(", ")) + "]" : ""}</code></dt>
-<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => `<pre>${esc(e)}\n<span class="cm">-- ${esc(run(e)).replace(/\n/g, "\n-- ")}</span></pre>`).join("")}</dd>`).join("\n")}
+<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => example(e, mustState)).join("")}</dd>`).join("\n")}
 </dl>
 </section>`;
 };
 const style = fs.readFileSync(path.join(__dirname, "index.html"), "utf8").match(/<style>[\s\S]*?<\/style>/)[0]
-  .replace("</style>", "dl{margin:0}dt{margin:22px 0 4px}dt b{font-weight:600}dd{margin:0}dd p{color:var(--fg2);margin:0 0 8px}pre{margin:0 0 6px}\n.toc{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}\nsection h2{font-size:15px;text-transform:none;letter-spacing:0;color:var(--fg);margin:56px 0 6px}\n</style>");
+  .replace("</style>", "main{font-feature-settings:'calt' 0}dl{margin:0}dt{margin:22px 0 4px}dt b{font-weight:600}dd{margin:0}dd p{color:var(--fg2);margin:0 0 8px}pre{margin:0 0 6px}\n.toc{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}\nsection h2{font-size:15px;text-transform:none;letter-spacing:0;color:var(--fg);margin:56px 0 6px}\n</style>");
 const page = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -81,19 +104,20 @@ ${style}</head><body>
 <main>
 <h1><a href="./">Sprout</a></h1>
 <p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
-<p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, start, goal, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines. Every example below was run, and the comment under it is what it gave.</p>
-<p class="toc">${MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
-<p>Sixteen of them were distilled from the 319 TaskIAP games and apps: what they kept writing again and again, written once, small and well, in Sprout: ${GAME_MODULES.map(n => `<a href="#${n}">${n}</a>`).join(", ")}. A count in each one's opening says how many games needed it.</p>
+<p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, from, to, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines.</p>
+<p>One way of working runs through all of them. A point, a size, a cell of a grid and a hex are pairs, like <code>3x4</code>, read with <code>p x</code> and <code>p y</code>, and added and scaled like numbers. A word's inputs come in the same order: what it works on, then how, then the time or the seed. Randomness only ever comes from a seed, through <code>seeded</code>, so a game that rewinds, and a second phone playing along, get the same luck. And every example below shows its answer, which is worked out, and checked, each time the library is built.</p>
+${GROUPS.map(([title, ns]) => `<p class="toc"><b>${title}</b> ${ns.filter(n => byName[n]).map(n => `<a href="#${n}">${n}</a>`).join(" ")}</p>`).join("\n")}
+<p>Of these, ${GAME_MODULES.length} were distilled from the 319 TaskIAP games and apps: what they kept writing again and again, written once, small and well, in Sprout: ${GAME_MODULES.map(n => `<a href="#${n}">${n}</a>`).join(", ")}. A count in each one's opening says how many games needed it.</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
-${MODULES.map(section).join("\n")}
+${GROUPS.map(([title, ns]) => `<h2 class="group">${title}</h2>\n` + ns.filter(n => byName[n]).map(n => section(byName[n], true)).join("\n")).join("\n")}
 <h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>
 <p>Popular JavaScript libraries, each a module like the ones above. A library is loaded only when a program names it, from this site, so nothing is fetched unless it is used.</p>
 <p class="toc">${LIBS.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
 ${LIBS.map(m => section(m).replace(`<h2>${m.name}</h2>`, `<h2>${m.name} <span style="font-weight:400;color:var(--fg3)">· ${m.title}, ${m.licence} licence${m.browserOnly ? " · in the browser only" : ""}</span></h2>`)).join("\n")}
-<footer>Sprout 3 &middot; the standard library (decision 105) &middot; <a href="./">home</a></footer>
+<footer>Sprout 3 &middot; the standard library (decisions 105, 111 and 112) &middot; <a href="./">home</a></footer>
 </main>
 </body></html>
 `;
 fs.writeFileSync(path.join(__dirname, "library.html"), page);
-console.log("library.html:", LIBS.length, "libraries,", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
+console.log("library.html:", LIBS.length, "libraries,", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", checked, "answers checked,", failures, "failing examples");
 if (failures) process.exitCode = 1;

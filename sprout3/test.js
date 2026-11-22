@@ -380,67 +380,60 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("the editor's literal matcher is the lexer's", S.lexLiteral("9:30 x", 0).length === 4 && S.lexLiteral("don't", 0) === null);
 }
 
-// ---------------- the standard library (decision 105)
+// ---------------- the standard library (decisions 105, 111 and 112)
 {
   const libDir = __dirname + "/lib", files = fs.readdirSync(libDir).filter(f => f.endsWith(".sp")).sort();
   ok("105 stdlib.js holds exactly what lib/ holds (run node make-stdlib.js)", JSON.stringify(Object.keys(S.stdlib.SOURCES).sort()) === JSON.stringify(files.map(f => f.slice(0, -3))) && files.every(f => S.stdlib.SOURCES[f.slice(0, -3)] === fs.readFileSync(libDir + "/" + f, "utf8")));
   S.setLog(m => logs.push(m));
-  let examples = 0, quiet = true;
-  for (const name of S.stdlib.names) for (const m of S.stdlib.SOURCES[name].matchAll(/^-- e\.g\. (.*)$/gm)) { logs.length = 0; S.load("result : " + m[1]).field("result"); examples++; if (logs.some(l => !l.startsWith("lint"))) { quiet = false; console.log("   example logs:", m[1], logs); } }
-  ok("105 every example in lib/ runs without a message (" + examples + " of them)", quiet && examples > 80);
+  // every example states its answer (decision 112): each one is run, quietly, and must give what it says
+  let examples = 0, answers = 0, quiet = true, right = true;
+  for (const name of S.stdlib.names) for (const m of S.stdlib.SOURCES[name].matchAll(/^-- e\.g\. (.*)$/gm)) {
+    const [src, stated] = m[1].split(" → ");
+    logs.length = 0; const got = val(src).replace(/\n/g, "\\n"); examples++;
+    if (logs.length) { quiet = false; console.log("   example logs:", src, logs); }
+    if (stated === undefined) { right = false; console.log("   example states no answer:", src); }
+    else { answers++; if (got !== stated.trim()) { right = false; console.log("   example", src, "gives", got, "not", stated.trim()); } }
+  }
+  ok("105 every example in lib/ runs without a message (" + examples + " of them)", quiet && examples > 150);
+  ok("112 every example in lib/ states its answer, and gives it (" + answers + " of them)", right && answers === examples);
+  // one way of working (decision 112): the time or the seed comes last, and chance comes only from a seed
+  const late = ["dt", "now", "elapsed", "today", "seed"], misplaced = [];
+  for (const f of files) for (const m of fs.readFileSync(libDir + "/" + f, "utf8").matchAll(/^([a-z][\w-]*) : \[([^|\[\]]*)\|/gm)) {
+    const inputs = m[2].trim().split(/\s+/), first = inputs.findIndex(i => late.includes(i));
+    if ((first >= 0 && !inputs.slice(first).every(i => late.includes(i))) || (inputs.includes("seed") && inputs[inputs.length - 1] !== "seed")) misplaced.push(f.slice(0, -3) + " " + m[1]);
+  }
+  ok("112 a word's time or seed is its last input" + (misplaced.length ? " (not in " + misplaced.join(", ") + ")" : ""), misplaced.length === 0);
+  ok("112 nothing in lib/ calls rand: chance comes from seeded", files.every(f => !/\brand\b/.test(fs.readFileSync(libDir + "/" + f, "utf8").replace(/^--.*$/gm, ""))));
+  // more than the examples show: edges, ties, empty cases and points where numbers go
   const W = [
-    ["ease out-cubic 0.5", "0.875"], ["ease between [ease out-cubic, 0, 300, 0.5]", "262.5"], ["vec size 3x4", "5"], ["vec rotate [1x0, 1.5707963267948966]", "0x1"],
-    ["stats median [7, 1, 3, 9]", "5"], ["stats spread [2, 4, 4, 4, 5, 5, 7, 9]", "2"], ["stats percentile [[15, 20, 35, 40, 50], 0.4]", "29"],
-    ["grid path [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], [1, 1], [1, 3], [v | v = 0]] length", "7"], ["grid path [[[0, 1], [1, 0]], [1, 1], [2, 2], [v | v = 0]]", "false"],
-    ["grid fill [[[1, 1, 0], [0, 1, 0]], 1, 1, 7]", "[[7, 7, 0], [0, 7, 0]]"], ["seeded whole [1, 6, 42] = (seeded whole [1, 6, 42])", "true"],
-    ["format commas -1234567", "-1,234,567"], ["format ordinal 13", "13th"], ["format clock 65", "1:05"], ["shape area (shape box [0x0, 4x2])", "8"],
+    ["motion tween [0, 300, 0, 1, ease out-cubic, 0.5]", "262.5"], ["motion progress [2, 3]", "1"], ["motion progress [2, -1]", "0"],
+    ["vec toward [0x0, 3x0, 4]", "3x0"], ["grid at [[[1, 2], [3, 4]], 3x1]", "false"], ["grid path [[[0, 1], [1, 0]], 1x1, 2x2, [v | v = 0]]", "false"],
+    ["grid slide [2, 2, 2, 2]", "[row : [4, 4, false, false], points : 8]"], ["grid sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1x1, 3x1, 1]", "true"],
+    ["seeded whole [1, 6, 42] = (seeded whole [1, 6, 42])", "true"], ["seeded shuffle [[1, 2, 3, 4, 5], 7] sort", "[1, 2, 3, 4, 5]"],
+    ["format commas -1234567", "-1,234,567"], ["format ordinal 13", "13th"], ["format clock 65", "1:05"], ["format short 950", "950"], ["format short 3400000000", "3.4B"],
     ["shape holds [shape box [0x0, 4x2], 5x1]", "false"], ["palette hsl [0, 1, 0.5]", "#ff0000"], ["csv read \"a,b\\n1,x\" @ 1 b", "x"],
     ["json read (json write [a : [1, 2], b : \"t\"])", "[a : [1, 2], b : t]"],
-  ];
-  for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
-  // the library distilled from the TaskIAP games (motion to wordplay): each word's answer, checked
-  const G = [
-    ["motion tween [0, 100, 1, 2, 1.5, ease out-quad]", "43.75"], ["motion approach [0, 10, 4, 0.5]", "2"], ["motion glide [0, 100, 0.9, 0.1] round", "21"],
-    ["motion calm [0.8, 1.5, 0.2]", "0.5"], ["motion bob [0.1, 1, 0.25]", "0.1"], ["motion pulse [1, 0.25]", "1"],
-    ["motion fall [[x : 0, y : 0, vx : 2, vy : 0], 10, 0.5]", "[x : 1, y : 2.5, vx : 2, vy : 5]"], ["motion bounce [[x : 12, y : 5, vx : 3, vy : 0], 10, 10, 0.8]", "[x : 10, y : 5, vx : -2.4, vy : 0]"],
-    ["motion drag [10, 0.5, 1]", "5"], ["motion jump-speed [2, 9.8] round", "6"],
-    ["collide boxes [[0, 0, 10, 10], [5, 5, 10, 10]]", "true"], ["collide boxes [[0, 0, 10, 10], [10, 0, 5, 5]]", "false"], ["collide circles [[0, 0, 5], [8, 0, 5]]", "true"],
-    ["collide in-box [3, 4, [0, 0, 10, 10]]", "true"], ["collide in-circle [3, 4, [0, 0, 5]]", "false"], ["collide circle-box [[12, 5, 3], [0, 0, 10, 10]]", "true"], ["collide wrap-around [105, -3, 100, 100]", "5x97"],
-    ["cards deck length", "52"], ["cards shuffled 7 length", "52"], ["cards shuffled 7 distinct length", "52"], ["cards name [rank : 12, suit : \"♥\"]", "Q♥"], ["cards red [rank : 1, suit : \"♦\"]", "true"],
-    ["cards deal [cards deck, 2] pile length", "50"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 13, suit : \"♥\"]]", "21"], ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 1, suit : \"♥\"], [rank : 10, suit : \"♥\"]]", "12"],
-    ["cards poker [[rank : 3, suit : \"♠\"], [rank : 3, suit : \"♥\"], [rank : 9, suit : \"♦\"], [rank : 9, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "full house"],
+    ["collide boxes [[at : 0x0, size : 10x10], [at : 10x0, size : 5x5]]", "false"],
+    ["cards shuffled 7 length", "52"], ["cards shuffled 7 distinct length", "52"], ["cards deal [cards deck, 2] pile length", "50"],
+    ["cards blackjack [[rank : 1, suit : \"♠\"], [rank : 1, suit : \"♥\"], [rank : 10, suit : \"♥\"]]", "12"],
     ["cards poker [[rank : 10, suit : \"♠\"], [rank : 11, suit : \"♠\"], [rank : 12, suit : \"♠\"], [rank : 13, suit : \"♠\"], [rank : 1, suit : \"♠\"]]", "straight flush"],
     ["cards poker [[rank : 2, suit : \"♠\"], [rank : 2, suit : \"♥\"], [rank : 5, suit : \"♦\"], [rank : 5, suit : \"♣\"], [rank : 9, suit : \"♠\"]]", "two pair"],
-    ["dice odds [2, 6] @ 6", "[7, 0.1666666667]"], ["dice odds [3, 6] length", "16"], ["dice at-least [2, 6, 10]", "0.1666666667"], ["dice rolls [3, 6, 7] all [f | (f >= 1) and (f <= 6)]", "true"],
-    ["dice roll [\"d20\", 3] between [1, 20]", "true"], ["dice roll [\"3d1-2\", 3]", "1"],
-    ["combat damage [40, 100]", "20"], ["combat health [40, -55, 100]", "0"], ["combat hits-to-down [100, 30]", "4"], ["combat xp-for 5", "800"], ["combat level-of 800", "5"], ["combat level-of 799", "4"],
-    ["combat level-progress 900", "0.3144654088"], ["combat ready [2, 3.1, 1]", "true"], ["combat cooling [2, 2.5, 1]", "0.5"], ["combat over-time [5, 3, 10, 11.5]", "7.5"],
-    ["idle price [10, 1.15, 5] round", "20"], ["idle price-of-many [10, 1.15, 5, 10] round", "408"], ["idle how-many [500, 10, 1.15, 5]", "11"], ["idle away [2.5, 7200, 1]", "9000"],
-    ["idle prestige 4000000", "2"], ["idle short 1234567", "1.2M"], ["idle short 950", "950"], ["idle short 3400000000", "3.4B"],
-    ["league rounds [\"A\", \"B\", \"C\", \"D\"] collect-flat [r | r] length", "6"], ["league rounds [\"A\", \"B\", \"C\"] collect-flat [r | r] length", "3"],
-    ["league table [[\"A\", \"B\", 2, 1], [\"B\", \"C\", 0, 0], [\"C\", \"A\", 1, 3]] collect [t | t team]", "[A, B, C]"], ["league chance [1600, 1400]", "0.7597469266"],
-    ["league rate [1500, 1500, 1, 32]", "[1516, 1484]"], ["league bracket 8", "[[1, 8], [4, 5], [2, 7], [3, 6]]"],
-    ["wordplay marks [\"SPEED\", \"ABIDE\"]", "--Y-Y"], ["wordplay marks [\"crane\", \"crane\"]", "GGGGG"], ["wordplay marks [\"LLAMA\", \"HELLO\"]", "YY---"], ["wordplay anagram [\"listen\", \"silent\"]", "true"],
-    ["wordplay scramble [\"planet\", 7] chars sort = (\"planet\" chars sort)", "true"], ["wordplay hide [\"planet\", \"aep\"]", "p_a_e_"], ["wordplay solved [\"planet\", \"plan\"]", "false"], ["wordplay vowels \"sprout\"", "2"],
-    ["rewards streak-points [100, 4]", "130"], ["rewards streak-points [100, 30]", "200"], ["rewards day-streak [41, 42, 6]", "7"], ["rewards day-streak [41, 41, 6]", "6"], ["rewards day-streak [38, 42, 6]", "1"],
-    ["rewards stars [720, [300, 600, 900]]", "2"], ["rewards grade 0.83", "B"], ["rewards top [[900, 500, 200], 600, 3]", "[900, 600, 500]"],
+    ["dice odds [3, 6] length", "16"], ["dice rolls [3, 6, 7] all [f | (f >= 1) and (f <= 6)]", "true"], ["dice roll [\"d20\", 3] between [1, 20]", "true"], ["dice roll [\"3d1-2\", 3]", "1"],
+    ["combat level-of 800", "5"], ["combat level-of 799", "4"], ["combat ready [2, 1, 2.5]", "false"],
+    ["league rounds [\"A\", \"B\", \"C\"] collect-flat [r | r] length", "3"], ["league rate [1500, 1500, 1, 32]", "[1516, 1484]"],
+    ["league table [[\"A\", \"B\", 2, 1], [\"B\", \"C\", 0, 0], [\"C\", \"A\", 1, 3]] collect [t | t team]", "[A, B, C]"],
+    ["wordplay marks [\"crane\", \"crane\"]", "GGGGG"], ["wordplay marks [\"LLAMA\", \"HELLO\"]", "YY---"],
+    ["wordplay scramble [\"planet\", 7] chars sort = (\"planet\" chars sort)", "true"], ["wordplay solved [\"planet\", \"plan\"]", "false"],
+    ["rewards streak-points [100, 30]", "200"], ["rewards day-streak [6, 41, 41]", "6"], ["rewards day-streak [6, 38, 42]", "1"],
     ["rewards earned [[[\"First steps\", [s | s steps >= 1]], [\"Marathon\", [s | s steps >= 1000]]], [steps : 12], [\"First steps\"]]", "[]"],
-    ["rewards restore [[sound : true, speed : 1, level : 1], [speed : 2, colour : \"red\"]]", "[sound : true, speed : 2, level : 1]"],
     ["story open [[start : [text : \"A door.\", choices : [[\"Open it\", \"hall\"], [\"Pick the lock\", \"vault\", \"lockpick\"]]]], \"start\", [\"lockpick\"]] length", "2"],
-    ["story go [[[\"Open it\", \"hall\"]], 1]", "hall"], ["story flag [[\"has-key\"], \"has-key\"]", "[has-key]"], ["story typed [\"Hello there\", 0.5, 10]", "Hello"], ["story typed-all [\"Hello\", 0.5, 10]", "true"],
-    ["daytime hour [90, 120, 6]", "0"], ["daytime part 18.5", "dusk"], ["daytime part 3", "night"], ["daytime light 6", "0.5"], ["daytime light 19", "0.5"], ["daytime season [40, 28]", "summer"], ["daytime season [113, 28]", "spring"],
-    ["daytime weekday 10", "Wed"], ["daytime stage [0, 25, [10, 10, 10]]", "3"], ["daytime stage [0, 31, [10, 10, 10]]", "4"], ["daytime ripe [0, 30, [10, 10, 10]]", "true"],
-    ["hex steps [[0, 0], [2, -1]]", "2"], ["hex within [[0, 0], 2] length", "19"], ["hex around [3, 3] all [h | hex steps [[3, 3], h] = 1]", "true"], ["hex from-screen [26, 15, 10]", "[1, 1]"], ["hex snap [0.6, 0.7]", "[0, 1]"],
-    ["particles burst [100, 100, 3, 80, 1.5, 12, 7, [#ffd166, #ff7ab2]] length", "3"], ["particles step [particles burst [0, 0, 4, 50, 1, 0, 7, [#ffd166]], 0.1, 200, 2] length", "0"], ["particles fade [[born : 1, life : 2], 2]", "0.5"],
-    ["camera follow [[x : 0, y : 0], [x : 100, y : 0], 0.9, 10, 0.1] x round", "19"], ["camera follow [[x : 0, y : 0], [x : 5, y : 0], 0.9, 10, 0.1] x", "0"],
-    ["camera keep-in [[x : 5, y : 300], 100, 80, 400, 320]", "[x : 50, y : 280]"], ["camera on-screen [[x : 100, y : 100], 130, 90, 320, 240]", "190x110"],
-    ["waves size [5, 4, 1.3]", "11"], ["waves toughness 10", "2.08"], ["waves gap [20, 2, 0.4]", "0.4"], ["waves boss [10, 5]", "true"], ["waves boss [11, 5]", "false"],
-    ["tiles runs [[1, 1, 1, 2], [3, 2, 3, 2], [3, 2, 1, 2]] length", "6"], ["tiles fall [[1, 2], [false, 3], [4, false]]", "[[false, false], [1, 2], [4, 3]]"],
-    ["tiles slide [2, 2, 4, false]", "[row : [4, 4, false, false], points : 4]"], ["tiles slide [2, 2, 2, 2]", "[row : [4, 4, false, false], points : 8]"], ["tiles turn [[1, 2], [3, 4]]", "[[3, 1], [4, 2]]"],
-    ["tiles ray [1, 1, 4, 2]", "[[1, 1], [2, 1], [3, 2], [4, 2]]"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 2, 3, 2, 1]", "false"], ["tiles sees [[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 1, 1, 3, 1, 1]", "true"],
-    ["tiles seen [grid make [5, 5, 0], 3, 3, 1, 1] length", "5"],
+    ["story flag [[\"has-key\"], \"has-key\"]", "[has-key]"], ["story typed-all [\"Hello\", 10, 0.5]", "true"],
+    ["daytime part 3", "night"], ["daytime light 19", "0.5"], ["daytime season [113, 28]", "spring"], ["daytime stage [0, [10, 10, 10], 31]", "4"], ["daytime grown [0, [10, 10, 10], 30]", "true"],
+    ["hex around 3x3 all [h | hex steps [3x3, h] = 1]", "true"], ["hex from-screen [hex to-screen [pair [2, -1], 10], 10]", "2x-1"],
+    ["particles step [particles burst [0x0, 4, 50, 1, [#ffd166], 0, 7], 200, 0.1, 2] length", "0"],
+    ["camera follow [0x0, 5x0, 0.9, 10, 0.1]", "0x0"], ["camera to-world [100x100, camera on-screen [100x100, 7x9, 320x240], 320x240]", "7x9"], ["waves boss [11, 5]", "false"],
   ];
-  for (const [src, want] of G) { const got = val(src); ok("105 the games' library: " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  for (const [src, want] of W) { const got = val(src); ok("112 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
 // ---------------- wrapped libraries (decision 106)
