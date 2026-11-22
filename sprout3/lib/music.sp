@@ -67,6 +67,19 @@ bar-beat : [bpm per-bar now | k : now * bpm / 60 floor, pair [k / per-bar floor 
 -- e.g. music quantize [1.13, 120, 4] → 1.125
 quantize : [time bpm division | step : 60 / bpm / division, time / step round * step]
 
+-- a line of music written as text turned into notes. Each word is one step of step beats: a note name ("E5"), "-"
+-- holding the note before for another step, "." a rest, or another word (a drum, such as "kick") kept as it is; "|"
+-- between bars is skipped. Gives [beat, note, beats] for each note, the note as a MIDI number
+-- e.g. music track ["C4 - E4 . | kick", 0.5] → [[0, 60, 1], [1, 64, 0.5], [2, kick, 0.5]]
+track : [line step |
+  tokens : line words keep [w | w != "|"]
+  tokens numbered keep [[i, w] | (w != "-") and (w != ".")] collect [[i, w] |
+    longer : tokens drop i take-while [t | t = "-"] length
+    note : (w parse [letter, maybe one-of "#b", some digit]) [midi w] else [w]
+    [i - 1 * step, note, longer + 1 * step]
+  ]
+]
+
 -- notes one beat apart as [time, frequency], ready to play with beep
 -- e.g. music melody [["A4", "A5"], 120] → [[0, 440], [0.5, 880]]
 melody : [notes bpm | notes numbered collect [[i, n] | [i - 1 * (60 / bpm), frequency n]]]

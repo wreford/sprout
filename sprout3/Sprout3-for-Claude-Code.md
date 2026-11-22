@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (345)
-node game-tests.js    # game tests (243)
+node game-tests.js    # game tests (250)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 588 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 595 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -769,6 +769,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 111. **A library distilled from the games (Claude, 22 Nov; library, decisions 80 and 105, from Troy's ask to look at all the TaskIAP games and distil a library of beautiful Sprout cells).** A survey of the 319 TaskIAP apps (the 27 in this repository's folders and the 292 in 2026experiments) counted what they keep writing again: progress saved (118), things eased about (112), tiles and grids (96), cards (96), dice (66), days and nights (59), hit points (57), gravity (57), screen shake (55), matching and merging (53), leagues and schedules (48), idle earnings (45), streaks (42) and more. Sixteen new standard-library modules write those once, in Sprout, each word small, with a comment, an example whose answer the library page shows, and a checked answer in test.js: `motion` (tween, approach, glide, shake, calm, bob, pulse, fall, bounce, drag, jump-speed), `collide` (boxes, circles, in-box, in-circle, circle-box, wrap-around), `cards` (suits, deck, shuffled, deal, faces, name, red, blackjack, poker), `dice` (rolls, roll "2d6+3", odds, at-least, advantage), `combat` (damage through armour, strike, health, hits-to-down, xp-for, level-of, level-progress, ready, cooling, over-time, turn-order), `idle` (price, price-of-many, how-many, away, prestige, wander, short), `league` (rounds by the circle method, table, chance, rate, bracket), `wordplay` (marks, as DECAWORDLE marks a guess, anagram, scramble, hide, solved, vowels), `rewards` (streak-points, day-streak, stars, grade, top, earned, restore), `story` (open, go, flag, typed, typed-all), `daytime` (hour, part, light, sky, season, weekday, stage, ripe), `hex` (around, steps, within, to-screen, snap, from-screen), `particles` (burst, step, fade), `camera` (follow, keep-in, on-screen), `waves` (size, toughness, gap, boss, spawn-point) and `tiles` (runs, fall, slide, turn, ray, sees, seen). Two names were changed on the way: `days` and `progress` are common field names, and a global module of either name kept a loop that reads such a field (ace-schedule's) off the SIMD path, so they are `daytime` and `rewards`. Randomness always comes from a seed, through `seeded`, so a replay and a second phone get the same luck.
 
 112. **One library, one way of working (Claude, 22 Nov; library, decisions 105 and 111, from Troy's ask to redo the Sprout standard library; no change to the language).** The nine modules of decision 105 and the sixteen of decision 111 were written at different times and read like it: a point was `[x, y]` in one, `x, y` as two inputs in another and `[x : 0, y : 0]` in a third, and the time came first in some words and last in others. They are one library now, 24 modules in Sprout and `json`, 201 words, held to one way of working. A point, a size, a cell of a grid and a hex are pairs, like `3x4`: `grid make [3x2, 0]`, `grid at [g, 2x1]`, `grid cells g` gives `[cell, value]` pairs, `hex from-screen [26x15, 10]`, a box is `[at, size]` and a circle `[at, r]` in `collide`, a camera is the pair at the middle of the screen (`camera keep-in [cam, screen, world]`, `on-screen`, and a new `to-world`), a body in `motion` is `[at, speed]`, and `waves spawn-point` gives a pair; `motion tween` and `motion glide` take numbers or points alike. A word's inputs come in one order: what it works on, then how, then the time or the seed, last: `combat ready [last, every, now]`, `daytime hour [day-length, start-hour, now]`, `story typed [text, per-second, elapsed]`, `economy away [per-second, cap-hours, seconds]`, `rewards day-streak [streak, last-day, today]`, `motion progress [length, elapsed]`, `particles burst [from, n, speed, life, colours, now, seed]`. Chance comes only from a seed, through `seeded`. Modules that overlapped were merged: `tiles` into `grid` (runs, fall, slide, turn, ray, sees and seen take cells as pairs), `idle` into `economy`, its `short` into `format`, and `ease progress` and `ease between` into `motion` (`motion progress`, `motion tween`), so `ease` is only curves. `daytime ripe` is `grown`; `vec` gained `round` and `toward`. Every example states its answer, `-- e.g. grid size [[1, 2, 3], [4, 5, 6]] → 3x2` (a line break in a text shows as `\n`): `make-stdlib.js` runs each one and fails if the answer differs or is missing, and test.js checks the same, along with the order of inputs over every word (an input named `dt`, `now`, `elapsed`, `today` or `seed` comes after the rest, and a seed is last) and that nothing in `lib/` calls `rand`. The library page is grouped by what you're making (words and numbers, time and motion, space, chance, play, colour), with the conventions set out at the top. Nothing outside `lib/` used the changed words, so no program needed changing.
+
+113. **SPROUT·8, an 8-bit console page, and Sprig (Claude, 22 Nov; host, library and a game, from Troy's ask for a loop of new games in the style of the Sega Master System, using outside libraries and the code already made; no change to the language).** `eight.js` is a console any Sprout game can run on: `Eight.start({ game: "examples/x.sp" })` gives a 256x192 screen whose colours are snapped to 64 (red, green and blue each at one of four levels), an 8x8 pixel font (Press Start 2P, by CodeMan38, under the SIL Open Font License, in `vendor/fonts`), square waves, a triangle bass and hiss for noise, and a D-pad with buttons 1 and 2 from the keys (arrows or WASD, Z and X), the touch screen or a controller, with pause, sound and a full screen. The game layer gained two drawing words and a sound: `sprite [art, x, y, ink, flip]` draws pixel art written as rows of letters, each letter coloured by an ink record (`.` is clear), and `tiles [map, set, ink, x, y]` draws a whole level written as rows of characters from a set of [character, art] pairs; the page draws each picture once and keeps it, so a scrolling level costs one image a frame. `hiss [length, pitch]` is the noise channel beside `beep` (it couldn't be `noise`, which is the smooth random function, and host words share the globals). A state may name a `song`, which the page plays from the program's `songs` record (bpm, beats, lead, harmony, bass and drums, and once for a jingle), and a `keep` record, which the page saves on the phone and hands back as `saved` when the game next loads. The page runs one frame before drawing the first, since the state has its clock only once update has run. ZzFX (the Zuper Zmall Zound Zynth, by Frank Force, MIT) is the ninth wrapped library: `zzfx preset "jump"` plays one of ten ready-made sounds (coin, jump, hit, hurt, explode, power, laser, blip, select, step), `[name, pitch]` plays it higher or lower, and `zzfx play` takes ZzFX's own numbers; its micro build is in `vendor/zzfx`, with two lines that hand its names to the window. The library gained `tilemap` (char-at, to-cell, to-pixel, size-of, find, clear, solid, touches, `move`, which carries a body through a map without passing into walls and onto one-way platforms only from above, and drop-ahead) and `music track`, which reads a line of notes written as text (`"C4 - E4 . | kick"`, a word a step) into [beat, note, beats]. Sprig (`examples/sprig.sp`, on its own page at `/sprig/`) is the first game: a seedling crossing three gardens (a meadow, root caves, a thorn garden at dusk) to the flower at the end of each, stomping grubs, spitting seeds at bees and hopping caps, gathering dew (a hundred is a life) and three sun seeds hidden in each garden, with a checkpoint flag, hearts and lives; its art, levels and four songs and two jingles are all written in the program, and it uses tilemap, music, motion, flipbook, camera, collide, particles and ease. A bot that reads the map clears the first garden in game-tests.js, and clears all three when left to play.
 ````
 
 ---
@@ -3036,8 +3038,11 @@ const { ValueCell, Native, isCell, equal, UNSET } = S;
 const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
 // the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7 };
-const SOUND = { beep: 2, shake: 1, sound: 1 };
+// sprite and tiles (decision 113) are pixel art for 8-bit pages: [art, x, y, ink, flip] and [map, tile-set, ink, x, y]
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7, sprite: 5, tiles: 5 };
+// hiss [length, pitch] is the noise channel of an 8-bit sound chip, beside beep's square wave (noise is taken: it's
+// the smooth random function)
+const SOUND = { beep: 2, shake: 1, sound: 1, hiss: 2 };
 
 function makeGame(src, opts) {
   opts = opts || {};
@@ -4923,6 +4928,47 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const idle = L.makeGame(src.replace("fire : (t far < reach) and (t cool <= 0) and (off abs < 0.06)", "fire : false"), {});
   for (let t = 0; t < 60 * 8; t++) idle.tick(1 / 60);
   ok("swarm: change turret-program and the turrets change", f(idle, "kills") === 0);
+}
+
+
+// ---------------- Sprig (decision 113): an 8-bit platform game for the SPROUT·8 console
+{
+  require("./words.js"); require("./parse.js"); require("./stdlib.js"); require("./libs.js");
+  const sounds = [], quietWord = name => new S.Native(name, a => S.effect(() => sounds.push(S.format(a))), true);
+  // ZzFX makes sound only in a browser: here its words are stand-ins that note what was asked for
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx");
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const fx = [], g = L.makeGame(fs.readFileSync(__dirname + "/examples/sprig.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map([["best", 1234]])) }, onEffect: e => fx.push(e[0]) });
+  g.tick(1 / 60, held([]));
+  ok("sprig: starts on the title with the best score the console saved", f(g, "mode") === "title" && f(g, "best") === 1234 && f(g, "song") === "title", [f(g, "mode"), f(g, "best")]);
+  // a bot that reads the map: runs right, jumping at the edge of a gap, at a wall, at thorns and at a foe
+  const worlds = S.partsOf(g.file.field("worlds")).map(w => S.partsOf(w).map(String));
+  const tileAt = (rows, x, y) => { const r = Math.floor(y / 16), c = Math.floor(x / 16); return r < 0 || r >= rows.length ? " " : (rows[r][c] || " "); };
+  let jump = 0, cleared = false, sawSong = "", t = 0;
+  for (; t < 60 * 60 && !cleared; t++) {
+    const mode = f(g, "mode"); let keys = [];
+    if (mode === "title") keys = t % 30 < 2 ? ["two"] : [];
+    else if (mode === "play") {
+      const rows = worlds[f(g, "stage") - 1], p = f(g, "sprig"), x = p.field("at").x, y = p.field("at").y, feet = y + 15, ahead = x + 10;
+      const floorAt = d => "GDB=".includes(tileAt(rows, ahead + d, feet + 2)), solidAt = (d, h) => "GDB".includes(tileAt(rows, ahead + d, y + h));
+      const foes = S.partsOf(f(g, "foes")).filter(o => o.field("alive") && o.field("at").x > x - 4 && o.field("at").x - x < 34 && Math.abs(o.field("at").y - y) < 40);
+      if (p.field("ground") && (!floorAt(3) || solidAt(5, 4) || solidAt(5, 12) || [3, 10].some(d => tileAt(rows, ahead + d, feet - 4) === "^") || foes.length)) jump = 20;
+      keys = ["right"]; if (jump > 0) { keys.push("two"); jump--; }
+      if (foes.length && t % 20 === 0) keys.push("one");
+      sawSong = f(g, "song");
+    }
+    g.tick(1 / 60, held(keys));
+    if (f(g, "mode") === "clear") cleared = true;
+  }
+  ok("sprig: a bot that reads the map clears the first garden", cleared && f(g, "stage") === 1, [f(g, "mode"), (t / 60).toFixed(1) + "s", S.format(f(g, "sprig").field("at"))]);
+  ok("sprig: dew gives points; jumping, dew and spitting make their sounds", f(g, "score") >= 100 && ["jump", "coin", "laser"].every(k => sounds.some(x => x.includes(k))), [f(g, "score"), [...new Set(sounds)]]);
+  ok("sprig: the meadow plays its song, and the clear jingle at the flower", sawSong === "meadow" && f(g, "song") === "clear", [sawSong, f(g, "song")]);
+  ok("sprig: keep holds the best score for the console to save", f(g, "keep").field("best") >= 1234);
+  const d = g.draw();
+  ok("sprig: draws its tiles, sprites and words", d.some(x => x[0] === "tiles") && d.filter(x => x[0] === "sprite").length > 5 && d.some(x => x[0] === "text"), [...new Set(d.map(x => x[0]))]);
+  ok("sprig: plays without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6962,6 +7008,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/sprig/">Sprig</a><span>An 8-bit platform game across three gardens, on SPROUT·8: the console page any Sprout game can use, with a 64-colour screen, pixel art, square-wave music and a D-pad.</span></li>
 <li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on the POCKET64 handheld: missions with objectives and medals, a combat sim against simulants, duel or co-op for two phones with no server, two maps. Turrets and simulants you program in Sprout as you play.</span></li>
 <li><a href="play.html#ex=volley">Volley</a><span>Two phones, one game, no server. The invite goes by text.</span></li>
 <li><a href="play.html#ex=gears">Gears</a><span>A parametric tool: two gears from a few numbers.</span></li>
@@ -6976,7 +7023,7 @@ p with [x : 5] print
 <h2>Read</h2>
 <ul class="list">
 <li><a href="silvereye-guide.html">How SilverEye is made</a><span>A 3D shooter in one Sprout program, explained part by part.</span></li>
-<li><a href="library.html">The library</a><span>Twenty-five modules of our own, from ease to json, grouped by what you're making, sixteen of them distilled from the TaskIAP games (cards, dice, combat, economy, league, wordplay and more). Every example states its answer, and the build checks it. And eight wrapped libraries.</span></li>
+<li><a href="library.html">The library</a><span>Forty-seven modules of our own, from calendars to tile maps, grouped by what you're making, and nine wrapped libraries. Every example states its answer, and the build checks it.</span></li>
 <li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
 <li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
@@ -8673,7 +8720,7 @@ const GROUPS = [
   ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "hex", "iso", "camera", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
   ["Colour", ["palette"]],
@@ -10095,6 +10142,34 @@ const LIBRARIES = {
         chord: ["several notes at once: [notes, length]", null, effectWord("chord", a => { const [ns, d] = args(a, 2); poly.triggerAttackRelease(ns, d || "4n"); })],
         drum: ["a drum: kick, snare or hat", null, effectWord("drum", a => { const k = toJS(a); if (k === "kick") kick.triggerAttackRelease("C1", "8n"); else if (k === "snare") snare.triggerAttackRelease("16n"); else hat.triggerAttackRelease("C6", "32n"); })],
         frequency: ["a note's frequency in hertz", null, word("frequency", a => +lib.Frequency(toJS(a)).toFrequency().toFixed(3))],
+      };
+    },
+  },
+  zzfx: {
+    title: "ZzFX", file: "vendor/zzfx/zzfx.js", global: "zzfx", licence: "MIT", browserOnly: true,
+    about: "Tiny 8-bit sound effects made on the spot from a list of numbers (the Zuper Zmall Zound Zynth, by Frank Force), with ready-made ones for games. These are effects, like beep: in update they happen after the frame, and never again on rewind.",
+    words: lib => {
+      // ready-made sounds: [volume, randomness, frequency, attack, sustain, release, shape, shape curve, slide, delta slide,
+      // pitch jump, pitch jump time, repeat time, noise, modulation, bit crush, delay, sustain volume, decay, tremolo];
+      // shape 0 with a curve of 0 is a square wave, as an 8-bit sound chip makes
+      const PRESETS = {
+        coin: [0.9, 0.02, 1046, 0, 0.03, 0.12, 0, 0, 0, 0, 523, 0.05],
+        jump: [0.7, 0.03, 260, 0.005, 0.05, 0.1, 0, 0, 9],
+        hit: [1, 0.05, 140, 0, 0.02, 0.1, 4, 1.5, -6],
+        hurt: [1, 0.05, 340, 0, 0.06, 0.22, 2, 1.4, -9, 0, 0, 0, 0, 0.5],
+        explode: [1.4, 0.2, 80, 0.01, 0.18, 0.5, 4, 0.6, 0, 0, 0, 0, 0, 1.1, 0, 0.4, 0, 0.5, 0.2],
+        power: [0.8, 0, 392, 0.02, 0.18, 0.2, 0, 0, 0, 0, 196, 0.06, 0.06],
+        laser: [0.6, 0.05, 1100, 0, 0.03, 0.08, 0, 0, -30],
+        blip: [0.5, 0, 880, 0, 0.02, 0.04, 0, 0],
+        select: [0.6, 0, 660, 0, 0.03, 0.06, 0, 0, 0, 0, 330, 0.03],
+        step: [0.25, 0.1, 110, 0, 0.01, 0.03, 4],
+      };
+      const fx = (name, f) => word(name, a => S.effect(() => { try { if (root.zzfxX && root.zzfxX.state !== "running") root.zzfxX.resume(); f(a); } catch (e) { I.logMiss("zzfx " + name + ": " + e.message); } }), true);
+      return {
+        play: ["a sound from ZzFX's own numbers: [volume, randomness, frequency, attack, sustain, release, shape, ...]", null, fx("play", a => lib(...toJS(a).map(v => v === null ? undefined : v)))],
+        preset: ["a ready-made sound by name: coin, jump, hit, hurt, explode, power, laser, blip, select or step; or [name, pitch] to play it higher (2) or lower (0.5)", null,
+          fx("preset", a => { const v = toJS(a), [name, pitch] = Array.isArray(v) ? v : [v, 1], p = PRESETS[name]; if (!p) throw new Error("there's no sound called " + name); const q = p.slice(); q[2] *= pitch || 1; lib(...q); })],
+        names: ["the names of the ready-made sounds", null, word("names", () => list(Object.keys(PRESETS)))],
       };
     },
   },

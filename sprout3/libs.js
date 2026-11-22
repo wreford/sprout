@@ -157,6 +157,34 @@ const LIBRARIES = {
       };
     },
   },
+  zzfx: {
+    title: "ZzFX", file: "vendor/zzfx/zzfx.js", global: "zzfx", licence: "MIT", browserOnly: true,
+    about: "Tiny 8-bit sound effects made on the spot from a list of numbers (the Zuper Zmall Zound Zynth, by Frank Force), with ready-made ones for games. These are effects, like beep: in update they happen after the frame, and never again on rewind.",
+    words: lib => {
+      // ready-made sounds: [volume, randomness, frequency, attack, sustain, release, shape, shape curve, slide, delta slide,
+      // pitch jump, pitch jump time, repeat time, noise, modulation, bit crush, delay, sustain volume, decay, tremolo];
+      // shape 0 with a curve of 0 is a square wave, as an 8-bit sound chip makes
+      const PRESETS = {
+        coin: [0.9, 0.02, 1046, 0, 0.03, 0.12, 0, 0, 0, 0, 523, 0.05],
+        jump: [0.7, 0.03, 260, 0.005, 0.05, 0.1, 0, 0, 9],
+        hit: [1, 0.05, 140, 0, 0.02, 0.1, 4, 1.5, -6],
+        hurt: [1, 0.05, 340, 0, 0.06, 0.22, 2, 1.4, -9, 0, 0, 0, 0, 0.5],
+        explode: [1.4, 0.2, 80, 0.01, 0.18, 0.5, 4, 0.6, 0, 0, 0, 0, 0, 1.1, 0, 0.4, 0, 0.5, 0.2],
+        power: [0.8, 0, 392, 0.02, 0.18, 0.2, 0, 0, 0, 0, 196, 0.06, 0.06],
+        laser: [0.6, 0.05, 1100, 0, 0.03, 0.08, 0, 0, -30],
+        blip: [0.5, 0, 880, 0, 0.02, 0.04, 0, 0],
+        select: [0.6, 0, 660, 0, 0.03, 0.06, 0, 0, 0, 0, 330, 0.03],
+        step: [0.25, 0.1, 110, 0, 0.01, 0.03, 4],
+      };
+      const fx = (name, f) => word(name, a => S.effect(() => { try { if (root.zzfxX && root.zzfxX.state !== "running") root.zzfxX.resume(); f(a); } catch (e) { I.logMiss("zzfx " + name + ": " + e.message); } }), true);
+      return {
+        play: ["a sound from ZzFX's own numbers: [volume, randomness, frequency, attack, sustain, release, shape, ...]", null, fx("play", a => lib(...toJS(a).map(v => v === null ? undefined : v)))],
+        preset: ["a ready-made sound by name: coin, jump, hit, hurt, explode, power, laser, blip, select or step; or [name, pitch] to play it higher (2) or lower (0.5)", null,
+          fx("preset", a => { const v = toJS(a), [name, pitch] = Array.isArray(v) ? v : [v, 1], p = PRESETS[name]; if (!p) throw new Error("there's no sound called " + name); const q = p.slice(); q[2] *= pitch || 1; lib(...q); })],
+        names: ["the names of the ready-made sounds", null, word("names", () => list(Object.keys(PRESETS)))],
+      };
+    },
+  },
   turf: {
     title: "Turf", file: "vendor/turf/turf.min.js", global: "turf", licence: "MIT",
     about: "Geography on a round Earth: distances, bearings, areas and points along a route. A point is [longitude, latitude]; a line or a polygon is a list of points.",

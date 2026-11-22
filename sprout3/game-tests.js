@@ -846,5 +846,46 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("swarm: change turret-program and the turrets change", f(idle, "kills") === 0);
 }
 
+
+// ---------------- Sprig (decision 113): an 8-bit platform game for the SPROUT·8 console
+{
+  require("./words.js"); require("./parse.js"); require("./stdlib.js"); require("./libs.js");
+  const sounds = [], quietWord = name => new S.Native(name, a => S.effect(() => sounds.push(S.format(a))), true);
+  // ZzFX makes sound only in a browser: here its words are stand-ins that note what was asked for
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx");
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const fx = [], g = L.makeGame(fs.readFileSync(__dirname + "/examples/sprig.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map([["best", 1234]])) }, onEffect: e => fx.push(e[0]) });
+  g.tick(1 / 60, held([]));
+  ok("sprig: starts on the title with the best score the console saved", f(g, "mode") === "title" && f(g, "best") === 1234 && f(g, "song") === "title", [f(g, "mode"), f(g, "best")]);
+  // a bot that reads the map: runs right, jumping at the edge of a gap, at a wall, at thorns and at a foe
+  const worlds = S.partsOf(g.file.field("worlds")).map(w => S.partsOf(w).map(String));
+  const tileAt = (rows, x, y) => { const r = Math.floor(y / 16), c = Math.floor(x / 16); return r < 0 || r >= rows.length ? " " : (rows[r][c] || " "); };
+  let jump = 0, cleared = false, sawSong = "", t = 0;
+  for (; t < 60 * 60 && !cleared; t++) {
+    const mode = f(g, "mode"); let keys = [];
+    if (mode === "title") keys = t % 30 < 2 ? ["two"] : [];
+    else if (mode === "play") {
+      const rows = worlds[f(g, "stage") - 1], p = f(g, "sprig"), x = p.field("at").x, y = p.field("at").y, feet = y + 15, ahead = x + 10;
+      const floorAt = d => "GDB=".includes(tileAt(rows, ahead + d, feet + 2)), solidAt = (d, h) => "GDB".includes(tileAt(rows, ahead + d, y + h));
+      const foes = S.partsOf(f(g, "foes")).filter(o => o.field("alive") && o.field("at").x > x - 4 && o.field("at").x - x < 34 && Math.abs(o.field("at").y - y) < 40);
+      if (p.field("ground") && (!floorAt(3) || solidAt(5, 4) || solidAt(5, 12) || [3, 10].some(d => tileAt(rows, ahead + d, feet - 4) === "^") || foes.length)) jump = 20;
+      keys = ["right"]; if (jump > 0) { keys.push("two"); jump--; }
+      if (foes.length && t % 20 === 0) keys.push("one");
+      sawSong = f(g, "song");
+    }
+    g.tick(1 / 60, held(keys));
+    if (f(g, "mode") === "clear") cleared = true;
+  }
+  ok("sprig: a bot that reads the map clears the first garden", cleared && f(g, "stage") === 1, [f(g, "mode"), (t / 60).toFixed(1) + "s", S.format(f(g, "sprig").field("at"))]);
+  ok("sprig: dew gives points; jumping, dew and spitting make their sounds", f(g, "score") >= 100 && ["jump", "coin", "laser"].every(k => sounds.some(x => x.includes(k))), [f(g, "score"), [...new Set(sounds)]]);
+  ok("sprig: the meadow plays its song, and the clear jingle at the flower", sawSong === "meadow" && f(g, "song") === "clear", [sawSong, f(g, "song")]);
+  ok("sprig: keep holds the best score for the console to save", f(g, "keep").field("best") >= 1234);
+  const d = g.draw();
+  ok("sprig: draws its tiles, sprites and words", d.some(x => x[0] === "tiles") && d.filter(x => x[0] === "sprite").length > 5 && d.some(x => x[0] === "text"), [...new Set(d.map(x => x[0]))]);
+  ok("sprig: plays without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
