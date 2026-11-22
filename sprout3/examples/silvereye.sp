@@ -893,10 +893,13 @@ draw : [game |
     (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live
+  -- mines on the floor, blinking once they're live: your own green, anyone else's red
   game mines each [m |
     model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
-    (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
+    (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, cond [m owner = you-id, "#3ddc84", any, "#ff3b30"]]]
   ]
+  -- your mine going live says so
+  (game mines any [m | (m owner = you-id) and (now >= (m armed)) and (now - (m armed) < 1)]) [text ["MINE ARMED", W / 2, H / 2 + 46, 8, "#3ddc84"]]
   -- a wrecked generator sparks
   game machines keep [m | (m health <= 0) and (now * 5 + (m id) % 1 < 0.35)] each [m | flash [m x, 1.0, m y, 0.12, "#ffb347"]]
   -- pickups, turning slowly and glowing
@@ -998,6 +1001,8 @@ draw : [game |
     best : rivals fold [0, [m r | m max (r kills)]]
     rest : cond [rivals length = 1, "RIVAL", any, "TOP"]
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
+    -- a match opens by saying what wins it
+    (now - (game match-start) < 3) and (game over = "") [text ["FIRST TO [frag-limit] TAKEDOWNS", W / 2, H / 2 - 60, 13, gold]]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), sim-name (you last-by), any, "THE RIVAL"]

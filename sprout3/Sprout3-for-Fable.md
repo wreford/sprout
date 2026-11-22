@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 536 pass, 303 for the language and 233 for the games.
+- **Tests:** 538 pass, 303 for the language and 235 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (233)
+node game-tests.js    # game tests (235)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 536 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 538 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4521,6 +4521,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const g3 = () => S.partsOf(f(sd, "guards")).find(g => g.field("id") === 3);
     const ys = []; for (let k = 0; k < 90; k++) { sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, health: 100 }); if (g3().field("alert")) ys.push(g3().field("y")); }
     ok("silvereye: an alert guard at range steps from side to side", ys.length > 30 && Math.max(...ys) - Math.min(...ys) > 0.15, [ys.length, Math.min(...ys), Math.max(...ys)]); }
+  { const mn = L.makeGame(src, {}); mn.tick(1 / 60, pad({})); put(mn, 0, { x: 2.5, y: 2.5, angle: 0 });
+    for (let k = 0; k < 2; k++) mn.tick(1 / 60, pad({ mine: true }));
+    let armed = false, green = false; for (let k = 0; k < 120; k++) { mn.tick(1 / 60, pad({})); const d = mn.draw(); armed = armed || d.some(x => x[0] === "text" && x[1][0] === "MINE ARMED"); green = green || d.some(x => x[0] === "flash" && x[1][4] === "#3ddc84" && x[1][1] === 0.3); }
+    ok("silvereye: your mine says when it's armed, and blinks green", f(mn, "mines").count() === 1 && armed && green); }
+  { const ft = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}); ft.tick(1 / 60, pad({}));
+    ok("silvereye: a match opens with what wins it", ft.draw().some(x => x[0] === "text" && x[1][0] === "FIRST TO 5 TAKEDOWNS")); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -11921,10 +11927,13 @@ draw : [game |
     (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live
+  -- mines on the floor, blinking once they're live: your own green, anyone else's red
   game mines each [m |
     model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
-    (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
+    (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, cond [m owner = you-id, "#3ddc84", any, "#ff3b30"]]]
   ]
+  -- your mine going live says so
+  (game mines any [m | (m owner = you-id) and (now >= (m armed)) and (now - (m armed) < 1)]) [text ["MINE ARMED", W / 2, H / 2 + 46, 8, "#3ddc84"]]
   -- a wrecked generator sparks
   game machines keep [m | (m health <= 0) and (now * 5 + (m id) % 1 < 0.35)] each [m | flash [m x, 1.0, m y, 0.12, "#ffb347"]]
   -- pickups, turning slowly and glowing
@@ -12026,6 +12035,8 @@ draw : [game |
     best : rivals fold [0, [m r | m max (r kills)]]
     rest : cond [rivals length = 1, "RIVAL", any, "TOP"]
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
+    -- a match opens by saying what wins it
+    (now - (game match-start) < 3) and (game over = "") [text ["FIRST TO [frag-limit] TAKEDOWNS", W / 2, H / 2 - 60, 13, gold]]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), sim-name (you last-by), any, "THE RIVAL"]

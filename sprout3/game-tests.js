@@ -411,6 +411,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const g3 = () => S.partsOf(f(sd, "guards")).find(g => g.field("id") === 3);
     const ys = []; for (let k = 0; k < 90; k++) { sd.tick(1 / 60, pad({})); put(sd, 0, { x: 8.0, y: 7.5, health: 100 }); if (g3().field("alert")) ys.push(g3().field("y")); }
     ok("silvereye: an alert guard at range steps from side to side", ys.length > 30 && Math.max(...ys) - Math.min(...ys) > 0.15, [ys.length, Math.min(...ys), Math.max(...ys)]); }
+  { const mn = L.makeGame(src, {}); mn.tick(1 / 60, pad({})); put(mn, 0, { x: 2.5, y: 2.5, angle: 0 });
+    for (let k = 0; k < 2; k++) mn.tick(1 / 60, pad({ mine: true }));
+    let armed = false, green = false; for (let k = 0; k < 120; k++) { mn.tick(1 / 60, pad({})); const d = mn.draw(); armed = armed || d.some(x => x[0] === "text" && x[1][0] === "MINE ARMED"); green = green || d.some(x => x[0] === "flash" && x[1][4] === "#3ddc84" && x[1][1] === 0.3); }
+    ok("silvereye: your mine says when it's armed, and blinks green", f(mn, "mines").count() === 1 && armed && green); }
+  { const ft = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}); ft.tick(1 / 60, pad({}));
+    ok("silvereye: a match opens with what wins it", ft.draw().some(x => x[0] === "text" && x[1][0] === "FIRST TO 5 TAKEDOWNS")); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
