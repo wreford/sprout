@@ -10836,6 +10836,7 @@ export function makeView(canvas, base, opts) {
     return a;
   }
   const textures = new Map(), materials = new Map(), skies = new Map();
+  let soft = !!opts.soft;
   // the sky dome: a big ball round the camera, drawn first, never fogged
   const dome = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }));
   dome.renderOrder = -1; dome.visible = false; scene.add(dome);
@@ -10864,18 +10865,25 @@ export function makeView(canvas, base, opts) {
     if (/^glow:/.test(name)) { m = new THREE.MeshBasicMaterial({ color: new THREE.Color(name.slice(5, 12)), toneMapped: false }); materials.set(key, m); return m; }
     if (isColour) m = new THREE.MeshStandardMaterial({ color: new THREE.Color(name.slice(0, 7)), roughness: 0.9 });
     else {
-      // a texture repeats once a metre; each size needs its own copy, made once the image has arrived
+      // a texture repeats once a metre; each size needs its own copy, made once the image has arrived. Two kinds:
+      // sharp (the full image, each texel a hard square) and soft (cut down to 64 by 64 and filtered smoothly, the
+      // slightly blurred look of the late-90s consoles' small textures); setSoft switches every material between them
       m = new THREE.MeshStandardMaterial({ color: 0x8a8a86, roughness: 0.95 });
+      m.userData.tex = name; m.userData.rep = [Math.max(sx, sz), sy];
       let t = textures.get(name);
       if (!t) {
-        t = { image: null, waiting: [] }; textures.set(name, t);
+        t = { image: null, soft: null, waiting: [] }; textures.set(name, t);
         textureLoader.load(base + "vendor/textures/" + name + ".png", tex => {
           tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          t.image = tex; for (const f of t.waiting.splice(0)) f(tex);
+          const c = document.createElement("canvas"); c.width = c.height = 64; c.getContext("2d").drawImage(tex.image, 0, 0, 64, 64);
+          const s = new THREE.CanvasTexture(c); s.colorSpace = THREE.SRGBColorSpace; s.wrapS = s.wrapT = THREE.RepeatWrapping;
+          s.magFilter = THREE.LinearFilter; s.minFilter = THREE.LinearMipmapLinearFilter;
+          t.image = tex; t.soft = s; for (const f of t.waiting.splice(0)) f(t);
         });
       }
-      const give = tex => { const r = tex.clone(); r.repeat.set(Math.max(sx, sz), sy); m.map = r; m.color.set(0xffffff); m.needsUpdate = true; };
-      if (t.image) give(t.image); else t.waiting.push(give);
+      const give = tt => { const r = (soft ? tt.soft : tt.image).clone(); r.repeat.set(m.userData.rep[0], m.userData.rep[1]); m.map = r; m.color.set(0xffffff); m.needsUpdate = true; };
+      m.userData.give = give;
+      if (t.image) give(t); else t.waiting.push(give);
     }
     materials.set(key, m); return m;
   }
@@ -11024,7 +11032,12 @@ export function makeView(canvas, base, opts) {
       renderer.clearDepth(); renderer.render(holdScene, holdCamera);
     }
   }
-  return { render, setLowRes: n => { opts.lowRes = n; }, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
+  // soft textures on or off: every textured material takes the other kind of its texture
+  function setSoft(on) {
+    on = !!on; if (on === soft) return; soft = on;
+    for (const m of materials.values()) { const t = m.userData && m.userData.tex && textures.get(m.userData.tex); if (t && t.image && m.userData.give) m.userData.give(t); }
+  }
+  return { render, setSoft, setLowRes: n => { opts.lowRes = n; }, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
 }
 export { WORDS };
 ````

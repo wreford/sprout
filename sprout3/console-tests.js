@@ -41,6 +41,7 @@ server.listen(0, async () => {
     await page.click("#agentMenu button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
     const fov = await page.textContent("#vFov"); await page.click("#settingsMenu button[data-do=fov]");
     ok("Settings change the view", (await page.textContent("#vFov")) !== fov);
+    ok("the picture starts in the n64 style: soft textures and soft video", (await page.textContent("#vDisplay")) === "n64" && await page.evaluate(() => document.body.classList.contains("soft")));
     // gyro aim: on, turning the phone right (clockwise from above) turns you right
     await page.click("#settingsMenu button[data-do=gyro]"); await page.click("#settingsMenu button[data-do=gyro]");
     ok("Gyro aim can be turned on", (await page.textContent("#vGyro")) === "always");
