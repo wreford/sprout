@@ -417,6 +417,14 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: your mine says when it's armed, and blinks green", f(mn, "mines").count() === 1 && armed && green); }
   { const ft = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"'), {}); ft.tick(1 / 60, pad({}));
     ok("silvereye: a match opens with what wins it", ft.draw().some(x => x[0] === "text" && x[1][0] === "FIRST TO 5 TAKEDOWNS")); }
+  // the scenery: a barrel explodes at its first hit, a crate splinters at its second, and both stop shots
+  { const br = L.makeGame(src, {}); br.tick(1 / 60, pad({})); put(br, 0, { x: 11.0, y: 1.7, angle: 0 }); br.tick(1 / 60, pad({}));
+    const label = br.draw().some(x => x[0] === "text" && x[1][0] === "BARRELS · EXPLOSIVE");
+    for (let k = 0; k < 20 && !S.partsOf(f(br, "broken")).includes(2); k++) br.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: barrels in your sight say they'll explode, and a shot blows them up", label && S.partsOf(f(br, "broken")).includes(2) && S.partsOf(f(br, "blasts")).some(b => Math.abs(b.field("x") - 14.2) < 0.01) && !br.draw().some(x => x[0] === "model" && x[1][0] === "barrels" && x[1][1] === 14.2));
+    const cr = L.makeGame(src, {}); cr.tick(1 / 60, pad({})); put(cr, 0, { x: 3.0, y: 1.6, angle: 0 });
+    let hits = []; for (let k = 0; k < 60 && !S.partsOf(f(cr, "broken")).includes(1); k++) { cr.tick(1 / 60, pad({ fire: true })); hits.push(S.partsOf(f(cr, "dents")).length); }
+    ok("silvereye: a crate takes two shots, then splinters", S.partsOf(f(cr, "broken")).includes(1) && Math.max(...hits) === 2 && S.partsOf(f(cr, "blasts")).some(b => (b.field("kind") === "wood"))); }
   // the feel of a fight: guards flinch when hit, and shots leave tracers (yours, and the guards')
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); put(fl, 0, { x: 9.5, y: 7.5, angle: 0 });
     let flinch = false, mine = false, theirs = false;

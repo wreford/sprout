@@ -424,6 +424,8 @@ start :
   scientists : mode != "mission" [[]] else [mission scientists collect [[k, sx, sy, tx, ty] | scientist [k, sx, sy, tx, ty]]]
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
+  dents : []
+  broken : []
   holes : []
   match-start : 0
   began : 0
@@ -515,7 +517,11 @@ play : [game |
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, skin : w skin, tag : w tag, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up (but not your partner in a two-phone mission)
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up keep [a | game versus] collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]])
+  -- the scenery can be shot: crates and barrels stand in the way of shots (cover), a crate splinters at its second
+  -- hit, and a barrel explodes at its first, its blast hurting like a mine's
+  breakable : [p | (p @ 1 = "crate") or (p @ 1 = "barrels")]
+  standing-props : props numbered keep [[k, p] | (breakable p) and (((game broken else []) has k) not)]
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up keep [a | game versus] collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]] .. (standing-props collect [[k, p] | [who : "prop", id : k, owner : 0, x : p @ 2, y : p @ 3]]))
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
@@ -634,10 +640,18 @@ play : [game |
     ]
   ]
   goes-off : all-mines keep [m | ((now >= (m armed)) and (bodies any [b | distance [m x, m y, b x, b y] < mine-reach])) or (shot-mines has m)]
+  -- hits on the scenery this frame, kept as a list of which ones were hit; what's had enough is smashed
+  dents : (game dents else []) .. (standing-props collect-flat [[k, p] | range (struck "prop [k]") collect [n | k]])
+  smashed : standing-props keep [[k, p] | dents count [d | d = k] >= (cond [p @ 1 = "barrels", 1, any, 2])]
+  pops : smashed keep [[k, p] | p @ 1 = "barrels"] collect [[k, p] | [x : p @ 2, y : p @ 3, owner : 0]]
+  splinters : smashed keep [[k, p] | p @ 1 = "crate"] collect [[k, p] | [x : p @ 2, y : p @ 3, at : now, kind : "wood"]]
+  -- everything that explodes this frame: mines going off and barrels blowing up
+  bursts : goes-off .. pops
   still : all-mines keep [m | (goes-off has m) not]
-  (goes-off length > 0) [shake 10, sound "impact"]
-  caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
-  caught-by : [px py | goes-off keep [m | distance [m x, m y, px, py] < blast]]
+  (bursts length > 0) [shake 10, sound "impact"]
+  (splinters length > 0) [sound "impact"]
+  caught : [px py | bursts collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
+  caught-by : [px py | bursts keep [m | distance [m x, m y, px, py] < blast]]
   blown : called collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
   fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
@@ -764,7 +778,8 @@ play : [game |
   game with [
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
-    blasts : game blasts keep [b | now - (b at) < 2.5] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
+    blasts : game blasts keep [b | now - (b at) < 2.5] .. (bursts collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]]) .. splinters
+    dents : dents, broken : (game broken else []) .. (smashed collect [[k, p] | k])
     holes : cond [holes length > 24, holes drop (holes length - 24), any, holes]
     over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
@@ -865,7 +880,7 @@ draw : [game |
     model [m model, m x, cond [wrecked, -0.1, any, 0], m y, cond [wrecked, 0.4, any, 0], m size * (cond [wrecked, 0.9, any, 1]), false, 0]
     wrecked [range 3 each [k | rise : now * 0.5 + (k / 3) % 1, flash [rise * 0.25 + (m x), rise * 1.8 + (m size * 0.8), m y, rise * 0.26 + 0.14, "smoke:#3f3f44"]]]
   ]
-  props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
+  props numbered keep [[k, p] | ((game broken else []) has k) not] each [[k, p] | model [p @ 1, p @ 2, 0, p @ 3, p @ 4, p @ 5, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   -- the fallen blink and then are gone, after five seconds, as on the old consoles
   gone : [t | (t != false) and (now - t > 5) and ((now - t > 6.2) or (now * 10 % 1 < 0.5))]
@@ -915,8 +930,11 @@ draw : [game |
   -- a blast: a fireball for a moment, then smoke that rises and spreads as it thins
   game blasts each [b |
     age : now - (b at)
-    (age < 0.6) [flash [b x, 0.9, b y, age / 0.6 * 1.4 + 0.5, "#ffb347"]]
-    (age > 0.2) [range 3 each [k | flash [k - 2 * 0.3 + (b x), age * 0.7 + 0.6 + (k * 0.15), k - 2 * 0.2 + (b y), age * 0.18 + 0.25, "smoke:#4d4d52"]]]
+    wood : (b kind else "fire") = "wood"
+    (age < 0.6) and (wood not) [flash [b x, 0.9, b y, age / 0.6 * 1.4 + 0.5, "#ffb347"]]
+    (age > 0.2) and (wood not) [range 3 each [k | flash [k - 2 * 0.3 + (b x), age * 0.7 + 0.6 + (k * 0.15), k - 2 * 0.2 + (b y), age * 0.18 + 0.25, "smoke:#4d4d52"]]]
+    -- splinters: chips thrown out and falling, in a cloud of dust
+    wood and (age < 0.8) [range 5 each [k | flash [k * 1.3 cos * age * 1.6 + (b x), 0.5 + (age * 2.2) - (age * age * 4.5) max 0.05, k * 1.3 sin * age * 1.6 + (b y), 0.04, "#a87a4a"]], flash [b x, 0.4 + (age * 0.5), b y, age * 0.5 + 0.2, "smoke:#8a7a66"]]
   ]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
@@ -1108,11 +1126,14 @@ draw : [game |
     post : game turrets keep [t | t id = (sighted id)] @ 1 else false
     -- (cond works out every item, so a field of something that may be false is read behind a guard: x [..] else [..])
     warden : (foe != false) [foe boss else false] else [false]
+    -- (a prop's name is worked out first: cond works out every item, and only a prop's number finds a prop)
+    prop-named : (sighted who = "prop") [cond [(props @ (sighted id)) @ 1 = "barrels", "BARRELS · EXPLOSIVE", any, "CRATE"]] else [""]
     named : cond [
       sighted who = "guard", cond [warden, "THE WARDEN", any, "GUARD"]
       sighted who = "machine", mission target-one else "TARGET"
       sighted who = "scientist", "SCIENTIST · HOLD FIRE"
       sighted who = "turret", "TURRET"
+      sighted who = "prop", prop-named
       any, call (sighted id)
     ]
     foe-left : (foe != false) [foe health / (guard-health * (cond [warden, 4, any, 1]))] else [-1]

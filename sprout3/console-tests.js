@@ -111,7 +111,8 @@ server.listen(0, async () => {
     ok("A after a won mission starts the next one", await page.evaluate(() => game.state.field("on-stage") === 2 && game.state.field("guards").count() === 7 && game.state.field("over") === ""));
     // beat it again, faster: the console says it's a new best
     await page.evaluate(() => { localStorage.setItem("silvereye.campaign", JSON.stringify({ 1: { best: 9999, medals: 0 } })); stageNum = 1; lastOver = ""; const S = Sprout3, m = new Map(S.fieldsOf(game.state)); m.set("over", "won"); m.set("over-at", game.clock); m.set("began", game.clock - 100); game.setState(S.valueCellOf([], m), game.clock); });
-    await page.waitForFunction(() => /NEW BEST TIME/.test(document.getElementById("toast").textContent), null, { timeout: 3000 }).catch(() => {});
+    // (messages wait their turn now, so it may follow one already showing)
+    await page.waitForFunction(() => /NEW BEST TIME/.test(document.getElementById("toast").textContent), null, { timeout: 12000 }).catch(() => {});
     ok("a faster win says NEW BEST TIME, with the old one", /NEW BEST TIME · 1:40 \(was 166:39\)/.test(await page.textContent("#toast")), await page.textContent("#toast"));
     ok("the campaign remembers the mission you beat", await page.evaluate(() => !!JSON.parse(localStorage.getItem("silvereye.campaign") || "{}")[1]));
     ok("no errors on the page", errors.length === 0, errors);
