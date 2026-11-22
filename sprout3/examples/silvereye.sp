@@ -903,8 +903,8 @@ draw : [game |
     guards-down : game guards count [g | g health <= 0]
     wrecked : game machines count [m | m health <= 0]
     tick : [ok | cond [ok, "■", any, "□"]]
-    -- text is drawn centred, so a line starts at the left edge when its middle is half its width in
-    from-left : [line y | text [line, line length * 2.05 + 7, y, 7, cream]]
+    -- each line pinned at the left edge ("left" as text's sixth value), so the column lines up whatever the letters
+    from-left : [line y | text [line, 7, y, 7, cream, "left"]]
     from-left ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 64]
     from-left ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 74]
     from-left ["[tick (game intel)] [mission intel-name]", 84]
