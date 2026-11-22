@@ -72,7 +72,11 @@ server.listen(0, async () => {
     await page.click("#pClose");
     await page.click("#bStart"); await page.waitForTimeout(100);
     ok("Start pauses", await page.isVisible("#pause"));
-    await page.click("#pause button[data-do=resume]");
+    ok("the pause board names the mission's own objectives", /GENERATORS/.test(await page.textContent("#board")) && /INTEL CASE/.test(await page.textContent("#board")));
+    const clockBefore = await page.evaluate(() => game.clock);
+    await page.click("#pause button[data-do=again]");
+    ok("Start again begins the mission from the top", !(await page.isVisible("#pause")) && await page.evaluate(c => game.clock < c && game.state.field("agents").part(1).field("shots-fired") === 0, clockBefore));
+    await page.waitForFunction(() => game.state.field("on-stage") === 1, null, { timeout: 5000 }).catch(() => {});
     // win the mission, press A, and the campaign moves on to mission 2 (the page swaps in the next stage)
     await page.evaluate(() => { const S = Sprout3, m = new Map(S.fieldsOf(game.state)); m.set("over", "won"); m.set("over-at", game.clock - 3); game.setState(S.valueCellOf([], m), game.clock); });
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down();
