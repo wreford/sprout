@@ -887,6 +887,14 @@ draw : [game |
   game mines each [m | circle [m x * mm + 3 + mm, m y * mm + 3 + mm, 1.1, gold]]
   game scientists keep [c | c health > 0] each [c | circle [c x * mm + 3 + mm, c y * mm + 3 + mm, 1.2, "#bfe3ff"]]
   game turrets each [t | rect [t x * mm + 3 + (mm / 2), t y * mm + 3 + (mm / 2), mm, mm, cyan]]
+  -- the mission's objectives on the map too: targets left, the intel, and the way out once it's all done
+  (mode = "mission") and (game versus not) [
+    game machines keep [m | m health > 0] each [m | rect [m x * mm + 3 + mm - 1.5, m y * mm + 3 + mm - 1.5, 3, 3, gold]]
+    (game intel not) [rect [mission intel @ 1 * mm + 3 + mm - 1.5, mission intel @ 2 * mm + 3 + mm - 1.5, 3, 3, "#ff7ab2"]]
+    ((game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)) [rect [mission exit @ 1 * mm + 3 + mm - 2, mission exit @ 2 * mm + 3 + mm - 2, 4, 4, "#7bd389"]]
+  ]
+  -- you, with a short line for the way you face
+  line [you x * mm + 3 + mm, you y * mm + 3 + mm, you angle cos * 4.5 + (you x * mm + 3 + mm), you angle sin * 4.5 + (you y * mm + 3 + mm), "#ffffff"]
   circle [you x * mm + 3 + mm, you y * mm + 3 + mm, 1.7, "#ffffff"]
   -- health and armour show when you're hurt (and stay while you're low), then get out of the way
   (you hurt > -3) or (you health <= 35) or (game clock < 4) [
@@ -953,8 +961,9 @@ draw : [game |
     depth : gd * (rel cos) max 0.5
     sx : cond [on, rel tan / (half-across tan) * (W / 2) + (W / 2), rel > 0, W - 10, any, 10]
     sy : cond [on, H / 2 - (2.1 - eye / depth / (half-tall tan) * (H / 2)) max 30 min (H - 60), any, slot * 26 + (H / 2 - 52)]
-    text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour]
-    text ["[gd round]m", sx, sy + 9, 7, colour]
+    -- right under the sight, a marker would hide what you're aiming at, so it steps aside
+    clear : (on not) or ((sx - (W / 2)) abs > 16) or ((sy - (H / 2)) abs > 16)
+    clear [text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour], text ["[gd round]m", sx, sy + 9, 7, colour]]
   ]
   (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
     game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc", m id]]

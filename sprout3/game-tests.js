@@ -395,6 +395,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: indoors, the walls have a painted band in the place's colour; out in the compound, none", lab.length > 50 && lab.every(x => String(x[1][6]).toLowerCase() === "#2a9d8f") && yard.length === 0); }
   { const dr = L.makeGame(src, {}); dr.tick(1 / 60, pad({}));
     ok("silvereye: a green light glows over every door", dr.draw().filter(x => x[0] === "block" && x[1][6] === "glow:#3ddc84").length === dr.draw().filter(x => x[0] === "block" && x[1][6] === "#d6a531").length); }
+  { const mp = L.makeGame(src, {}); mp.tick(1 / 60, pad({})); const d = mp.draw();
+    ok("silvereye: the mini-map shows the targets and the intel, and which way you face", d.filter(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ffd166").length === 2 && d.some(x => x[0] === "rect" && x[1][2] === 3 && x[1][4] === "#ff7ab2") && d.some(x => x[0] === "line" && x[1][4] === "#ffffff")); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -409,10 +411,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a target in your sight is named as one of the mission's", texts(mi2).some(t => t[0] === "GENERATOR"));
     const pk = L.makeGame(src, {}); pk.tick(1 / 60, pad({})); put(pk, 0, { x: 5.5, y: 1.5, angle: 0 }); pk.tick(1 / 60, pad({}));
     ok("silvereye: walking over ammo says so", texts(pk).some(t => t[0] === "+16 SHOTS"));
-    const mk = L.makeGame(src, {}); for (let k = 0; k < 300; k++) { mk.tick(1 / 60, pad({})); put(mk, 0, { x: 2.5, y: 2.5, angle: 0.6, health: 100 }); }
+    const mk = L.makeGame(src, {}); for (let k = 0; k < 300; k++) { mk.tick(1 / 60, pad({})); put(mk, 0, { x: 2.5, y: 2.5, angle: 0.3, health: 100 }); }
     const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
     ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
-    put(mk, 0, { angle: 0.6 + Math.PI }); mk.tick(1 / 60, pad({}));
+    put(mk, 0, { angle: 0.3 + Math.PI }); mk.tick(1 / 60, pad({}));
     ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3);
     const edge = texts(mk).filter(t => t[0] === "▶" || t[0] === "◀");
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
