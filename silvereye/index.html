@@ -1085,6 +1085,52 @@ function heartbeat(now) {
     if (a && a.field("down-at") === false && a.field("health") <= 35) { beatAt = now; beep(62, 0.09); setTimeout(() => beep(55, 0.08), 160); buzz(20); }
   } catch (e) {}
 }
+// a soft tick when your shot lands (on this phone only: it's yours)
+let lastHitAt = null;
+function hitTick() {
+  try {
+    const me = window.NET && NET.active ? NET.me : 1, a = S.partsOf(game.state.field("agents")).find(x => x.field("id") === me);
+    const h = a ? a.field("hit-at") : null;
+    if (lastHitAt !== null && typeof h === "number" && h > lastHitAt && !screen) beep(1500, 0.025);
+    lastHitAt = h;
+  } catch (e) {}
+}
+// under the game: a low hum indoors, wind out under the sky, and a two-tone siren while the alarm is up.
+// All made live with Web Audio, quiet, and only while you play (not on the title or in the menus).
+const AMBIENCE = (() => {
+  let nodes = null, kind = "", siren = null;
+  function brown() { const b = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate), d = b.getChannelData(0); let w = 0; for (let i = 0; i < d.length; i++) { w = (w + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = w * 3.5; } return b; }
+  const halt = list => (list || []).forEach(n => { try { n.stop(); } catch (e) {} });
+  function start(k) {
+    halt(nodes); nodes = null; kind = k; if (!k || !AC) return;
+    const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); src.buffer = brown(); src.loop = true;
+    f.type = "lowpass"; f.frequency.value = k === "wind" ? 520 : 170; g.gain.value = k === "wind" ? 0.05 : 0.03;
+    src.connect(f).connect(g).connect(AC.destination); src.start(); nodes = [src];
+    if (k === "wind") { const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 0.13; lg.gain.value = 0.028; lfo.connect(lg).connect(g.gain); lfo.start(); nodes.push(lfo); }
+    else { const hum = AC.createOscillator(), hg = AC.createGain(); hum.frequency.value = 55; hg.gain.value = 0.01; hum.connect(hg).connect(AC.destination); hum.start(); nodes.push(hum); }
+  }
+  function alarm(on) {
+    if (on === !!siren) return;
+    if (!on) { halt(siren); siren = null; return; }
+    if (!AC) return;
+    const o = AC.createOscillator(), lfo = AC.createOscillator(), lg = AC.createGain(), f = AC.createBiquadFilter(), g = AC.createGain();
+    o.type = "sawtooth"; o.frequency.value = 760; lfo.type = "square"; lfo.frequency.value = 1; lg.gain.value = 140; lfo.connect(lg).connect(o.frequency);
+    f.type = "lowpass"; f.frequency.value = 1500; g.gain.value = 0.016; o.connect(f).connect(g).connect(AC.destination); o.start(); lfo.start(); siren = [o, lfo];
+  }
+  return {
+    update() {
+      let want = "", up = false;
+      try {
+        if (!muted && AC && (!screen || screen === "pause") && !document.hidden) {
+          want = game.file.field("has-sky") === true ? "wind" : "hum";
+          up = S.partsOf(game.state.field("guards")).some(g => g.field("alert") === true && g.field("health") > 0) && game.state.field("over") === "";
+        }
+      } catch (e) {}
+      if (want !== kind) start(want);
+      alarm(up);
+    },
+  };
+})();
 let wasLinked = false;
 function linkUI() { const on = !!(window.NET && NET.active);
   // the moment two phones link up, the duel starts: menus and the program sheet get out of the way
@@ -1109,6 +1155,8 @@ function frame(now) {
   heartbeat(now);
   footsteps(now);
   reloadSound();
+  hitTick();
+  AMBIENCE.update();
   // the character creator shows your look on a pedestal, turning, instead of the game
   const creating = screen === "agent" || screen === "letters";
   let list;
