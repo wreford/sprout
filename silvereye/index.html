@@ -1123,17 +1123,41 @@ function reloadSound() {
   } catch (e) {}
 }
 let stepAt = 0, stepSide = 0;
+// a footstep: a short burst of noise through a filter; soft and low out on grass and gravel, harder indoors;
+// pan (-1 left to 1 right) and loudness place it
+let stepBuf = null;
+function step(tone, gain, pan) {
+  if (!stepBuf) { const len = 0.05; stepBuf = AC.createBuffer(1, Math.ceil(AC.sampleRate * len), AC.sampleRate); const d = stepBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3); }
+  const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); src.buffer = stepBuf;
+  f.type = "lowpass"; f.frequency.value = tone; g.gain.value = gain;
+  let out = src.connect(f).connect(g);
+  if (pan && AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); out = out.connect(p); }
+  out.connect(AC.destination); src.start();
+}
+let guardStepAt = 0; const guardWas = new Map();
 function footsteps(now) {
   try {
     if (screen || muted || !AC) return;
     const me = window.NET && NET.active ? NET.me : 1, a = S.partsOf(game.state.field("agents")).find(x => x.field("id") === me);
-    if (!a || a.field("moving") !== true) return;
-    const running = (pad.walk || GP.walk) > 1.05, gap = running ? 290 : 420;
-    if (now - stepAt < gap) return; stepAt = now; stepSide ^= 1;
-    const len = 0.05, b = AC.createBuffer(1, Math.ceil(AC.sampleRate * len), AC.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
-    const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
-    f.type = "lowpass"; f.frequency.value = stepSide ? 900 : 760; g.gain.value = 0.22; src.buffer = b; src.connect(f).connect(g).connect(AC.destination); src.start();
+    if (!a) return;
+    const outside = game.file.field("has-sky") === true;
+    if (a.field("moving") === true) {
+      const running = (pad.walk || GP.walk) > 1.05, gap = running ? 290 : 420;
+      if (now - stepAt >= gap) { stepAt = now; stepSide ^= 1; step(outside ? (stepSide ? 520 : 430) : (stepSide ? 900 : 760), outside ? 0.16 : 0.22, 0); }
+    }
+    // the nearest guard on the move within eight metres: you hear their steps, from their side, louder as they come
+    if (now - guardStepAt < 470) return;
+    const x = a.field("x"), y = a.field("y"), ang = a.field("angle");
+    let best = null, bd = 8;
+    for (const gd of S.partsOf(game.state.field("guards"))) {
+      const id = gd.field("id"), gx = gd.field("x"), gy = gd.field("y"), was = guardWas.get(id); guardWas.set(id, [gx, gy]);
+      if (gd.field("health") <= 0 || !was || Math.hypot(gx - was[0], gy - was[1]) < 0.01) continue;   // only one on the move
+      const d = Math.hypot(gx - x, gy - y); if (d < bd) { bd = d; best = gd; }
+    }
+    if (!best) return;
+    guardStepAt = now;
+    const rel = Math.atan2(best.field("y") - y, best.field("x") - x) - ang;
+    step(outside ? 480 : 700, 0.13 * (1 - bd / 8) + 0.015, Math.sin(rel));
   } catch (e) {}
 }
 let beatAt = 0;
