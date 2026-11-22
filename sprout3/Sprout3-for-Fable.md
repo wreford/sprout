@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 638 pass, 362 for the language and 276 for the games.
+- **Tests:** 642 pass, 362 for the language and 280 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (362)
-node game-tests.js    # game tests (276)
+node game-tests.js    # game tests (280)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 638 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 642 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -874,6 +874,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 127. **Fizz Jar, a falling-pair puzzle, and runs (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit falling-pair colour-matching puzzle).** Fizz Jar (`examples/fizz-jar.sp`, at `/fizz-jar/`, on its own frozen Sprout) is an original falling-pair puzzle: pairs of fizzy drops (cherry, lime, berry) fall into a soda jar where grumpy sour candies sit. Four or more of a colour in a row or column, drops and sours together, pop, and what they held up falls, so one pop can set off another, each worth double. Pop every sour to clear the jar; each jar holds two more sours and drops a little faster. The arrows move the pair, down drops it faster, and buttons 1 and 2 turn it, nudging it aside or up when something is in the way. It keeps your best score. It was the first game built on the new pieces: presses from `input pressed` (decision 121), turning with `menu wrap`, moving with `pad across`, and its panels, title, rising scores and prompts drawn with the `ui` kit (decision 122). The library gained `runs` (cell-at, put, open, find, clear, settle, fall, count): a well of cells kept as rows of text, one letter a cell, for falling-block and matching games, which finds the runs of one letter long enough to pop, empties them, and lets what is loose fall while fixed letters stay put. Its handheld is mint soda plastic with bubbles rising through it, a cherry soda label for the brand and a crimped bottle cap for the D-pad (`skins/fizz-jar.css`). It was made by one of several builders working side by side (decision 124).
 
 128. **Brick Snap, a block puzzle with toy bricks, and piece (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit block-placement puzzle).** Brick Snap (`examples/brick-snap.sp`, at `/brick-snap/`, on its own frozen Sprout) is an 8-bit block puzzle of its own: three toy bricks wait in a tray, the arrows move the shadow of the one you hold over an 8 by 8 green baseplate, 1 snaps it down and 2 takes another. Full rows and columns pop off together, scoring 10 × lines² × the streak of snaps in a row that popped, plus 300 for emptying the whole plate. The shadow flashes the lines it would pop, and popped bricks burst into sparks. The game ends when no brick left fits, and it keeps your best. Bricks come by `seeded` from the run's seed, in thirteen forms and four turns. It reads `pressed` (decision 121) and draws with the `ui` kit. The library gained `piece` (cells, size, fits, put, spots, anywhere, full-lines, full-count, clear, cleared, turn, filled): a piece is its cells written as rows of text, on a `grid` board. Its handheld is a red toy brick with studs standing along the top, a yellow name plate in Lilita One, yellow stud buttons in a row and a blue brick cross for the pad (`skins/brick-snap.css`).
+
+129. **Lily and Chester, and needs (Claude, 22 Nov; a game and the library, from Troy's ask for an 8-bit horse-caring game with his characters Lily and Chester).** Lily and Chester (`examples/lily-and-chester.sp`, at `/lily-and-chester/`, on its own frozen Sprout) is a week at the stable. Chester, a chestnut horse with a white blaze, has five needs (food, water, clean, happy, rest) that fade each hour and overnight, shown as meters; his mood shows in a speech bubble and in how he holds his head. Each day Lily picks up to five jobs from a menu two columns wide: hay, an apple, water, a brush (a four-second rub with the arrows), mucking out the stall, or a ride, and then puts him to bed. The ride is a short side-scrolling lane, a different one each day, where 1 jumps fences, logs and puddles and collects horseshoes; good rides build his skill but tire him. On the seventh day comes the county show: his ribbon (yellow, red, blue, or best in show) comes from his care through the week and his skill, and the best one is kept. The sky goes from morning to night as the day passes, to a gentle country song. The library gained `needs` (fade, fill, lowest, under, care, mood: levels from 0 to 100 that fade by rates and are filled by care, for pet, farm and survival games). The handheld is pink gingham with a stitched leather pad, heart buttons and a lucky horseshoe, its logo in Pacifico (SIL Open Font License).
 ````
 
 ---
@@ -7352,6 +7354,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/lily-and-chester/">Lily and Chester</a><span>An 8-bit horse-caring game: a week of hay, apples, brushing and rides down the lane with Chester, then the county show and his ribbon.</span></li>
 <li><a href="/brick-snap/">Brick Snap</a><span>An 8-bit block puzzle with toy bricks on SPROUT·8: snap them onto the baseplate, pop full rows and columns together, keep a streak going.</span></li>
 <li><a href="/fizz-jar/">Fizz Jar</a><span>An 8-bit falling-pair puzzle: drop fizzy pairs into a soda jar and pop the grumpy sours four of a colour at a time; chains score double.</span></li>
 <li><a href="/blended-zebra/">Blended Zebra 8</a><span>The endless black, white and red deckbuilder, small and 8-bit: fight with five cards and three energy, blend two cards into one at the oasis, climb as far as you can.</span></li>
@@ -9079,7 +9082,7 @@ const GROUPS = [
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
-  ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
+  ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],
 ];
 const grouped = GROUPS.flatMap(([, ns]) => ns);

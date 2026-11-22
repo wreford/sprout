@@ -65,7 +65,7 @@ const GROUPS = [
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles"]],
-  ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
+  ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],
 ];
 const grouped = GROUPS.flatMap(([, ns]) => ns);

@@ -4,3 +4,4 @@ Brand fonts for the games' handhelds, each under the SIL Open Font License 1.1, 
 Fontsource (5.3.0): Fredoka 600 (FREDOKA-LICENSE), Orbitron 900 (ORBITRON-LICENSE), Cinzel 700 (CINZEL-LICENSE) and
 Lilita One 400 (LILITA-ONE-LICENSE).
 Sora 800 (SORA-LICENSE), Blended Zebra's own display font, under the same licence and packaging.
+Pacifico 400 (PACIFICO-LICENSE), Lily and Chester's logo font, under the same licence, the Latin subset as packaged by Fontsource (@fontsource/pacifico 5.0.8).
