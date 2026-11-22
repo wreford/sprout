@@ -6852,9 +6852,9 @@ p with [x : 5] print
 <li>Values never change in place, so a running game can be rewound, saved or compared at any moment.</li>
 <li>A game is three cells: <code>start</code>, <code>update</code> and <code>draw</code>.</li>
 <li>Pure loops are compiled ahead. Loops over records of numbers are fused into one pass over columns, <code>spork</code> runs a million Monte Carlo trials on WebAssembly SIMD or the GPU, and WebGPU draws thousands of shapes in one call.</li>
-<li>Games can be 3D: <code>view</code>, <code>block</code>, <code>model</code> and <code>hold</code> draw a scene with three.js and real CC0 models, from the same draw cell.</li>
+<li>Games can be 3D: <code>view</code>, <code>block</code>, <code>model</code> and <code>hold</code> draw a scene with three.js and real CC0 models, from the same draw cell, and <code>light</code> and <code>sky</code> set the light and put a sky with clouds overhead.</li>
 <li>Two players, no server: send an invite by text, and two phones play in lockstep, peer to peer.</li>
-<li>Game logic you can rewrite mid-game: the turrets in Swarm and SilverEye run a <code>turret-program</code> cell you edit while they fire, and SilverEye's simulants run a <code>simulant-program</code>.</li>
+<li>Game logic you can rewrite mid-game: the turrets in Swarm and SilverEye run a <code>turret-program</code> cell you edit while they fire, and SilverEye's simulants run a <code>simulant-program</code>. SilverEye's read plain words (<code>it sees-someone</code>, <code>it off-target</code>, <code>it how-far</code>), shows what each one knows as it plays, and puts every number in the game on a slider.</li>
 <li>Dates, times, money, sizes and colours are written as they are: <code>2026-11-20 + 30</code>, <code>$19.99 * 3</code>, <code>640x480 / 2</code>.</li>
 <li><code>parse</code> reads text and code with rules that are ordinary values, and a grammar is one cell.</li>
 <li>Code is data: <code>quote</code> it, change it, <code>eval</code> it.</li>
