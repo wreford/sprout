@@ -80,6 +80,10 @@ server.listen(0, async () => {
     ok("fixing it clears the mark", (await page.$$("#srcHL .bad")).length === 0);
     await page.click("#examples button:text-is('Sprayer')"); await page.click("#pUndo");
     ok("and undoes an example, back to the program you had", /it off-target \* 4/.test(await page.inputValue("#src")) && !/Sprayer/.test(await page.inputValue("#src")));
+    await page.evaluate(() => { navigator.share = undefined; });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+    await page.click("#pShare"); await page.waitForTimeout(200);
+    ok("Share copies the program, ready for a friend", /^-- from SilverEye's turret program\nturret-program : \[it \|/.test(await page.evaluate(() => navigator.clipboard.readText().catch(() => ""))) || /Copied/.test(await page.textContent("#status")));
     await page.click("#pReset");
     // TUNE: every number the game is built on, on a slider, taken at once
     await page.click("#tabs button[data-p=tune]");
