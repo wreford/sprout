@@ -27,7 +27,7 @@ fs.writeFileSync(path.join(out, "VERSION"), `Sprout as it was at commit ${commit
 const esc = t => String(t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="description" content="${esc(meta.about)}">
 <meta name="theme-color" content="#09090c">
 <meta name="apple-mobile-web-app-capable" content="yes">

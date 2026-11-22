@@ -18,7 +18,7 @@ const W = 256, H = 192, STEP = 1 / 60;
 // ---------------------------------------------------------------- the console's look
 const CSS = `
 @font-face{font-family:"Press Start 2P";src:url("vendor/fonts/press-start-2p.woff2") format("woff2");font-display:block}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none}
 html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;font:13px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none}
 #e8{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
@@ -187,6 +187,13 @@ function start(opts) {
   <div class="hint">ARROWS MOVE &nbsp; Z BUTTON 1 &nbsp; X BUTTON 2 &nbsp; ENTER PAUSE</div>
 </div><div class="boot"><span>SPROUT<b>·</b>8</span></div>`;
   document.body.appendChild(box);
+  // iOS Safari zooms in on a quick second tap, and on a pinch, whatever the viewport says (it ignores user-scalable=no):
+  // a game wants neither, so the second tap of a double tap and every pinch are cancelled. Text boxes are left alone.
+  let lastTap = 0;
+  const typing = t => t && t.closest && t.closest("input, textarea, select, [contenteditable]");
+  document.addEventListener("touchend", e => { const now = e.timeStamp; if (now - lastTap < 350 && !typing(e.target)) e.preventDefault(); lastTap = now; }, { passive: false });
+  document.addEventListener("touchmove", e => { if (e.touches.length > 1 && !typing(e.target)) e.preventDefault(); }, { passive: false });
+  for (const t of ["gesturestart", "gesturechange", "gestureend", "dblclick"]) document.addEventListener(t, e => e.preventDefault(), { passive: false });
   const $ = sel => box.querySelector(sel), canvas = $("canvas"), g = canvas.getContext("2d");
   g.imageSmoothingEnabled = false;
   $(".name").textContent = (opts.title || "").toUpperCase();
