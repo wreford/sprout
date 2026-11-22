@@ -432,6 +432,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
+  { const gd = L.makeGame(src, {}); gd.tick(1 / 60, pad({})); put(gd, 0, { x: 9.5, y: 7.5, angle: 0 });
+    let said = false; for (let k = 0; k < 150 && !said; k++) { gd.tick(1 / 60, pad({ fire: true })); said = gd.draw().some(x => x[0] === "text" && x[1][0] === "GUARD DOWN · 1/6"); }
+    ok("silvereye: a guard going down says so, with the count", said); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 10 && f(g, "pickups").part(10).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {

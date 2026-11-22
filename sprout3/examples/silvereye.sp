@@ -943,6 +943,11 @@ draw : [game |
   -- your streak, for a moment
   (you streak >= 2) and (now - (you streak-at) < 1.6) [text [cond [you streak = 2, "DOUBLE TAKEDOWN", you streak = 3, "TRIPLE TAKEDOWN", any, "RAMPAGE"], W / 2, H / 2 - 82, 14, gold]]
   (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
+  -- a guard going down says so, with how many are down now (the Warden by name)
+  just-fell : game guards keep [g | now - (g fell else -10) < 1.2]
+  (game versus not) and (just-fell length > 0) and (game over = "") [
+    text [cond [just-fell any [g | g boss else false], "THE WARDEN IS DOWN", any, "GUARD DOWN · [game guards count [g | g health <= 0]]/[game guards length]"], W / 2, H / 2 - 48, 10, cream]
+  ]
   -- the Warden's health, across the top, once he's on alert
   game guards keep [g | (g boss else false) and (g alert) and (g health > 0)] each [g |
     text ["THE WARDEN", W / 2, 44, 9, red]

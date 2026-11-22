@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (225)
+node game-tests.js    # game tests (226)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 528 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 529 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4469,6 +4469,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
+  { const gd = L.makeGame(src, {}); gd.tick(1 / 60, pad({})); put(gd, 0, { x: 9.5, y: 7.5, angle: 0 });
+    let said = false; for (let k = 0; k < 150 && !said; k++) { gd.tick(1 / 60, pad({ fire: true })); said = gd.draw().some(x => x[0] === "text" && x[1][0] === "GUARD DOWN · 1/6"); }
+    ok("silvereye: a guard going down says so, with the count", said); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 10 && f(g, "pickups").part(10).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
@@ -11847,6 +11850,11 @@ draw : [game |
   -- your streak, for a moment
   (you streak >= 2) and (now - (you streak-at) < 1.6) [text [cond [you streak = 2, "DOUBLE TAKEDOWN", you streak = 3, "TRIPLE TAKEDOWN", any, "RAMPAGE"], W / 2, H / 2 - 82, 14, gold]]
   (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
+  -- a guard going down says so, with how many are down now (the Warden by name)
+  just-fell : game guards keep [g | now - (g fell else -10) < 1.2]
+  (game versus not) and (just-fell length > 0) and (game over = "") [
+    text [cond [just-fell any [g | g boss else false], "THE WARDEN IS DOWN", any, "GUARD DOWN · [game guards count [g | g health <= 0]]/[game guards length]"], W / 2, H / 2 - 48, 10, cream]
+  ]
   -- the Warden's health, across the top, once he's on alert
   game guards keep [g | (g boss else false) and (g alert) and (g health > 0)] each [g |
     text ["THE WARDEN", W / 2, 44, 9, red]
