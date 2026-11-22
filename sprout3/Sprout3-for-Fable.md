@@ -10811,6 +10811,26 @@ export function makeView(canvas, base, opts) {
     return a;
   }
   const textures = new Map(), materials = new Map(), skies = new Map();
+  // the sky dome: a big ball round the camera, drawn first, never fogged
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }));
+  dome.renderOrder = -1; dome.visible = false; scene.add(dome);
+  let domeMap = null;
+  function skyPainting(top, low) {
+    const W = 512, H = 256, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, top); gr.addColorStop(0.3, top); gr.addColorStop(0.5, low); gr.addColorStop(1, low); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    // soft clouds in a band above the horizon, wrapping round so there's no seam (the same every time)
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 30; i++) {
+      const x = rnd() * W, y = H * (0.33 + rnd() * 0.13), rx = 16 + rnd() * 40, ry = 3 + rnd() * 6, a = 0.14 + rnd() * 0.26;
+      for (const dx of [-W, 0, W]) {
+        const rg = g.createRadialGradient(x + dx, y, 0, x + dx, y, rx);
+        rg.addColorStop(0, "rgba(255,255,255," + a + ")"); rg.addColorStop(1, "rgba(255,255,255,0)");
+        g.save(); g.translate(x + dx, y); g.scale(1, ry / rx); g.translate(-(x + dx), -y); g.fillStyle = rg; g.beginPath(); g.arc(x + dx, y, rx, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.userData.low = new THREE.Color(low); return t;
+  }
   function material(spec, sx, sy, sz) {
     const name = fmt(spec), isColour = /^#|^rgb/.test(name), key = isColour ? name : name + " " + sx + " " + sy + " " + sz;
     let m = materials.get(key);
@@ -10942,9 +10962,10 @@ export function makeView(canvas, base, opts) {
         if (f.light.position.distanceTo(camera.position) < 1.2) nearFlash = { c, r };
         flashCount++;
       } else if (word === "sky") {
-        // sky [top colour, horizon colour]: a gradient behind everything, made once per pair of colours
+        // sky [top colour, horizon colour]: a dome round the camera, the gradient painted on it with soft clouds above
+        // the horizon, so the clouds stay put as you turn; made once per pair of colours
         const top = fmt(a[0]).slice(0, 7), low = fmt(a[1]).slice(0, 7), k = top + low;
-        if (!skies.has(k)) { const c = document.createElement("canvas"); c.width = 4; c.height = 128; const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, top); gr.addColorStop(0.62, low); gr.addColorStop(1, low); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; skies.set(k, t); }
+        if (!skies.has(k)) skies.set(k, skyPainting(top, low));
         skyTexture = skies.get(k);
       } else if (word === "light") {
         const k = num(a[3], 1); lightSet = true;
@@ -10964,7 +10985,8 @@ export function makeView(canvas, base, opts) {
     }
     flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
-    if (skyTexture) scene.background = skyTexture;
+    if (skyTexture) { dome.material.map = skyTexture; dome.material.needsUpdate = dome.material.map !== domeMap; domeMap = skyTexture; dome.visible = true; dome.position.copy(camera.position); scene.background = skyTexture.userData.low; }
+    else dome.visible = false;
     if (!lightSet) { hemi.color.setHex(LIGHT_DEFAULT[0]); hemi.groundColor.setHex(LIGHT_DEFAULT[1]); sun.color.setHex(LIGHT_DEFAULT[2]); hemi.intensity = 1.25; sun.intensity = 1.35; }
     renderer.clear(); renderer.render(scene, camera);
     if (holdGroup.children.some(c => c.visible)) {
