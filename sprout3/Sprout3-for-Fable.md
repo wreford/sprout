@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 595 pass, 345 for the language and 250 for the games.
+- **Tests:** 598 pass, 345 for the language and 253 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (345)
-node game-tests.js    # game tests (250)
+node game-tests.js    # game tests (253)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 595 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 598 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -844,6 +844,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 112. **One library, one way of working (Claude, 22 Nov; library, decisions 105 and 111, from Troy's ask to redo the Sprout standard library; no change to the language).** The nine modules of decision 105 and the sixteen of decision 111 were written at different times and read like it: a point was `[x, y]` in one, `x, y` as two inputs in another and `[x : 0, y : 0]` in a third, and the time came first in some words and last in others. They are one library now, 24 modules in Sprout and `json`, 201 words, held to one way of working. A point, a size, a cell of a grid and a hex are pairs, like `3x4`: `grid make [3x2, 0]`, `grid at [g, 2x1]`, `grid cells g` gives `[cell, value]` pairs, `hex from-screen [26x15, 10]`, a box is `[at, size]` and a circle `[at, r]` in `collide`, a camera is the pair at the middle of the screen (`camera keep-in [cam, screen, world]`, `on-screen`, and a new `to-world`), a body in `motion` is `[at, speed]`, and `waves spawn-point` gives a pair; `motion tween` and `motion glide` take numbers or points alike. A word's inputs come in one order: what it works on, then how, then the time or the seed, last: `combat ready [last, every, now]`, `daytime hour [day-length, start-hour, now]`, `story typed [text, per-second, elapsed]`, `economy away [per-second, cap-hours, seconds]`, `rewards day-streak [streak, last-day, today]`, `motion progress [length, elapsed]`, `particles burst [from, n, speed, life, colours, now, seed]`. Chance comes only from a seed, through `seeded`. Modules that overlapped were merged: `tiles` into `grid` (runs, fall, slide, turn, ray, sees and seen take cells as pairs), `idle` into `economy`, its `short` into `format`, and `ease progress` and `ease between` into `motion` (`motion progress`, `motion tween`), so `ease` is only curves. `daytime ripe` is `grown`; `vec` gained `round` and `toward`. Every example states its answer, `-- e.g. grid size [[1, 2, 3], [4, 5, 6]] → 3x2` (a line break in a text shows as `\n`): `make-stdlib.js` runs each one and fails if the answer differs or is missing, and test.js checks the same, along with the order of inputs over every word (an input named `dt`, `now`, `elapsed`, `today` or `seed` comes after the rest, and a seed is last) and that nothing in `lib/` calls `rand`. The library page is grouped by what you're making (words and numbers, time and motion, space, chance, play, colour), with the conventions set out at the top. Nothing outside `lib/` used the changed words, so no program needed changing.
 
 113. **SPROUT·8, an 8-bit console page, and Sprig (Claude, 22 Nov; host, library and a game, from Troy's ask for a loop of new games in the style of the Sega Master System, using outside libraries and the code already made; no change to the language).** `eight.js` is a console any Sprout game can run on: `Eight.start({ game: "examples/x.sp" })` gives a 256x192 screen whose colours are snapped to 64 (red, green and blue each at one of four levels), an 8x8 pixel font (Press Start 2P, by CodeMan38, under the SIL Open Font License, in `vendor/fonts`), square waves, a triangle bass and hiss for noise, and a D-pad with buttons 1 and 2 from the keys (arrows or WASD, Z and X), the touch screen or a controller, with pause, sound and a full screen. The game layer gained two drawing words and a sound: `sprite [art, x, y, ink, flip]` draws pixel art written as rows of letters, each letter coloured by an ink record (`.` is clear), and `tiles [map, set, ink, x, y]` draws a whole level written as rows of characters from a set of [character, art] pairs; the page draws each picture once and keeps it, so a scrolling level costs one image a frame. `hiss [length, pitch]` is the noise channel beside `beep` (it couldn't be `noise`, which is the smooth random function, and host words share the globals). A state may name a `song`, which the page plays from the program's `songs` record (bpm, beats, lead, harmony, bass and drums, and once for a jingle), and a `keep` record, which the page saves on the phone and hands back as `saved` when the game next loads. The page runs one frame before drawing the first, since the state has its clock only once update has run. ZzFX (the Zuper Zmall Zound Zynth, by Frank Force, MIT) is the ninth wrapped library: `zzfx preset "jump"` plays one of ten ready-made sounds (coin, jump, hit, hurt, explode, power, laser, blip, select, step), `[name, pitch]` plays it higher or lower, and `zzfx play` takes ZzFX's own numbers; its micro build is in `vendor/zzfx`, with two lines that hand its names to the window. The library gained `tilemap` (char-at, to-cell, to-pixel, size-of, find, clear, solid, touches, `move`, which carries a body through a map without passing into walls and onto one-way platforms only from above, and drop-ahead) and `music track`, which reads a line of notes written as text (`"C4 - E4 . | kick"`, a word a step) into [beat, note, beats]. Sprig (`examples/sprig.sp`, on its own page at `/sprig/`) is the first game: a seedling crossing three gardens (a meadow, root caves, a thorn garden at dusk) to the flower at the end of each, stomping grubs, spitting seeds at bees and hopping caps, gathering dew (a hundred is a life) and three sun seeds hidden in each garden, with a checkpoint flag, hearts and lives; its art, levels and four songs and two jingles are all written in the program, and it uses tilemap, music, motion, flipbook, camera, collide, particles and ease. A bot that reads the map clears the first garden in game-tests.js, and clears all three when left to play.
+
+114. **Each game keeps its own Sprout (Claude, 22 Nov; host, from Troy's ask that every game have its own version of Sprout so that updates don't break it).** A published game no longer runs on `/sprout3/`. `node sprout3/freeze.js <game>` copies the runtime as it is that day (sprout3.js, words.js, parse.js, stdlib.js, libs.js, kernels.js, live3.js, eight.js), the pixel font, the wrapped libraries its program names and the program itself (as `game.sp`) into the game's own folder, `/<game>/sprout/`, with a `VERSION` naming the commit it came from, and writes the game's page and manifest with its base set to that folder. `sprout3/games.json` lists the published games with their titles and descriptions. Sprout can then change as it likes: a game changes only when it is frozen again, on purpose. `frozen-tests.js` loads each game in a Node of its own from its own folder and plays it for twenty seconds, and it runs before every push. Sprig was frozen first. Comet Lance (`examples/comet-lance.sp`, at `/comet-lance/`) is the second game on SPROUT·8: a vertical shooter in which the Lance flies up through the comet belt against waves of drones (which weave and fire), darters (which dive at you) and spinners (which circle down), with a boss every fifth wave that fires a spread, P capsules that widen the shot to two and then three, a scrolling starfield and a song each for the title, the waves and the boss. It uses waves (size, toughness, boss), seeded, particles, collide, music track and ZzFX, and `vec` gained `aim` (the velocity that heads from one point to another) and `fan` (copies of a velocity spread across an angle), which it uses for the shots aimed at you.
 ````
 
 ---
@@ -5044,6 +5046,26 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Comet Lance: a vertical shooter for SPROUT·8; a pilot that follows the foes beats the first boss
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/comet-lance.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  let bossSeen = false, t = 0;
+  for (; t < 60 * 45 && !(f(g, "mode") === "play" && f(g, "wave") >= 6); t++) {
+    const st = g.state; let keys = ["one"];
+    if (st.field("mode") === "play") { const s = st.field("ship").field("at"), foes = S.partsOf(st.field("foes")); if (foes.some(x => x.field("kind") === "boss")) bossSeen = true; const tx = foes.length ? foes.reduce((a, b) => Math.abs(b.field("at").x - s.x) < Math.abs(a.field("at").x - s.x) ? b : a).field("at").x : 120; if (tx > s.x + 4) keys.push("right"); if (tx < s.x - 4) keys.push("left"); }
+    else keys = t % 30 < 2 ? ["one"] : [];
+    g.tick(1 / 60, held(keys));
+  }
+  ok("comet lance: a pilot that follows the foes meets the boss on wave 5 and gets past it", bossSeen && f(g, "wave") >= 6, [f(g, "mode"), f(g, "wave"), (t / 60).toFixed(1) + "s"]);
+  ok("comet lance: the boss has its own song", JSON.stringify(S.partsOf(g.file.field("songs").fieldNames ? S.valueCellOf([], new Map()) : 0)) !== undefined && g.file.field("songs").fieldNames().includes("boss"));
+  ok("comet lance: flies without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -7081,6 +7103,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/comet-lance/">Comet Lance</a><span>An 8-bit vertical shooter on SPROUT·8: waves of drones, darters and spinners, a boss every fifth wave, and P capsules that widen your shot.</span></li>
 <li><a href="/sprig/">Sprig</a><span>An 8-bit platform game across three gardens, on SPROUT·8: the console page any Sprout game can use, with a 64-colour screen, pixel art, square-wave music and a D-pad.</span></li>
 <li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on the POCKET64 handheld: missions with objectives and medals, a combat sim against simulants, duel or co-op for two phones with no server, two maps. Turrets and simulants you program in Sprout as you play.</span></li>
 <li><a href="play.html#ex=volley">Volley</a><span>Two phones, one game, no server. The invite goes by text.</span></li>
@@ -9507,6 +9530,14 @@ round : [v | pair [v x round, v y round]]
 -- a point moved toward another by at most step, never past it
 -- e.g. vec toward [0x0, 10x0, 4] → 4x0
 toward : [from to step | gap : to - from, far : size gap, (far <= step) [to] else [gap / far * step + from]]
+
+-- the velocity that heads from one point to another at speed (a shot aimed at a player)
+-- e.g. vec aim [0x0, 3x4, 10] → 6x8
+aim : [from to speed | gap : to - from, far : size gap, (far = 0) [0x0] else [gap / far * speed]]
+
+-- n copies of a velocity fanned out across an angle (radians), for a spread of shots
+-- e.g. vec fan [10x0, 3, pi] collect [v | vec round v] → [0x-10, 10x0, 0x10]
+fan : [v n spread | (n = 1) [[v]] else [range n collect [k | rotate [v, k - 1 / (n - 1) - 0.5 * spread]]]]
 ````
 
 ## editor-tools.js

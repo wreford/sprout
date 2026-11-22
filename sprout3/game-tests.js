@@ -887,5 +887,25 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Comet Lance: a vertical shooter for SPROUT·8; a pilot that follows the foes beats the first boss
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/comet-lance.sp", "utf8"), { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  let bossSeen = false, t = 0;
+  for (; t < 60 * 45 && !(f(g, "mode") === "play" && f(g, "wave") >= 6); t++) {
+    const st = g.state; let keys = ["one"];
+    if (st.field("mode") === "play") { const s = st.field("ship").field("at"), foes = S.partsOf(st.field("foes")); if (foes.some(x => x.field("kind") === "boss")) bossSeen = true; const tx = foes.length ? foes.reduce((a, b) => Math.abs(b.field("at").x - s.x) < Math.abs(a.field("at").x - s.x) ? b : a).field("at").x : 120; if (tx > s.x + 4) keys.push("right"); if (tx < s.x - 4) keys.push("left"); }
+    else keys = t % 30 < 2 ? ["one"] : [];
+    g.tick(1 / 60, held(keys));
+  }
+  ok("comet lance: a pilot that follows the foes meets the boss on wave 5 and gets past it", bossSeen && f(g, "wave") >= 6, [f(g, "mode"), f(g, "wave"), (t / 60).toFixed(1) + "s"]);
+  ok("comet lance: the boss has its own song", JSON.stringify(S.partsOf(g.file.field("songs").fieldNames ? S.valueCellOf([], new Map()) : 0)) !== undefined && g.file.field("songs").fieldNames().includes("boss"));
+  ok("comet lance: flies without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

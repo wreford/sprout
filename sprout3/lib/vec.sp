@@ -56,3 +56,11 @@ round : [v | pair [v x round, v y round]]
 -- a point moved toward another by at most step, never past it
 -- e.g. vec toward [0x0, 10x0, 4] → 4x0
 toward : [from to step | gap : to - from, far : size gap, (far <= step) [to] else [gap / far * step + from]]
+
+-- the velocity that heads from one point to another at speed (a shot aimed at a player)
+-- e.g. vec aim [0x0, 3x4, 10] → 6x8
+aim : [from to speed | gap : to - from, far : size gap, (far = 0) [0x0] else [gap / far * speed]]
+
+-- n copies of a velocity fanned out across an angle (radians), for a spread of shots
+-- e.g. vec fan [10x0, 3, pi] collect [v | vec round v] → [0x-10, 10x0, 0x10]
+fan : [v n spread | (n = 1) [[v]] else [range n collect [k | rotate [v, k - 1 / (n - 1) - 0.5 * spread]]]]
