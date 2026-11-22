@@ -735,6 +735,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and it's drawn out under the sky", yd.draw().some(x => x[0] === "sky") && yd.draw().some(x => x[0] === "model" && x[1][0] === "tree_pine"));
     for (let t = 0; t < 300; t++) yd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
     ok("silvereye: and the simulants play there", S.partsOf(f(yd, "agents")).filter(a => a.field("bot")).every(a => onOpen(a.field("x"), a.field("y")))); }
+  { const qSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^arena : "lab"/m, 'arena : "quarry"').replace(/^simulants : 3/m, "simulants : 7");
+    const qd = L.makeGame(qSrc, {}); qd.tick(1 / 60, pad({}));
+    const rows = (src.match(/^quarry : \[\n([\s\S]*?)\n\]/m)[1]).split("\n").map(l => l.trim().replace(/"/g, ""));
+    const onOpen = (x, y) => ".,".includes(rows[Math.floor(y)][Math.floor(x)]);
+    ok("silvereye: the quarry is an arena too: everyone starts on open ground, apart, with its pickups, under the sky", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y"))) && new Set(S.partsOf(f(qd, "agents")).map(a => a.field("x") + "," + a.field("y"))).size === 8 && S.partsOf(f(qd, "pickups")).every(p => onOpen(p.field("x"), p.field("y"))) && qd.draw().some(x => x[0] === "sky"));
+    for (let t = 0; t < 200; t++) qd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
+    ok("silvereye: and the simulants play there", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y")))); }
   { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 20.5 && agent(dy, 2).field("y") === 1.5); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (226)
+node game-tests.js    # game tests (228)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 529 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 531 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4772,6 +4772,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: and it's drawn out under the sky", yd.draw().some(x => x[0] === "sky") && yd.draw().some(x => x[0] === "model" && x[1][0] === "tree_pine"));
     for (let t = 0; t < 300; t++) yd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
     ok("silvereye: and the simulants play there", S.partsOf(f(yd, "agents")).filter(a => a.field("bot")).every(a => onOpen(a.field("x"), a.field("y")))); }
+  { const qSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^arena : "lab"/m, 'arena : "quarry"').replace(/^simulants : 3/m, "simulants : 7");
+    const qd = L.makeGame(qSrc, {}); qd.tick(1 / 60, pad({}));
+    const rows = (src.match(/^quarry : \[\n([\s\S]*?)\n\]/m)[1]).split("\n").map(l => l.trim().replace(/"/g, ""));
+    const onOpen = (x, y) => ".,".includes(rows[Math.floor(y)][Math.floor(x)]);
+    ok("silvereye: the quarry is an arena too: everyone starts on open ground, apart, with its pickups, under the sky", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y"))) && new Set(S.partsOf(f(qd, "agents")).map(a => a.field("x") + "," + a.field("y"))).size === 8 && S.partsOf(f(qd, "pickups")).every(p => onOpen(p.field("x"), p.field("y"))) && qd.draw().some(x => x[0] === "sky"));
+    for (let t = 0; t < 200; t++) qd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
+    ok("silvereye: and the simulants play there", S.partsOf(f(qd, "agents")).every(a => onOpen(a.field("x"), a.field("y")))); }
   { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 20.5 && agent(dy, 2).field("y") === 1.5); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
@@ -10918,7 +10925,7 @@ Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (
 -- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
 
 -- two maps of our own: the lab (missions and matches) and the depot (matches): rows of shelving round a loading bay
-arena : "lab"              -- "lab", "depot" or "compound" (out in the open), for a combat sim or a duel
+arena : "lab"              -- "lab", "depot", "compound" or "quarry" (both out in the open), for a combat sim or a duel
 two-phones : "duel"        -- what two phones play: "duel" (against each other) or "coop" (the mission, together)
 depot : [
   "################"
@@ -11150,12 +11157,23 @@ missions : [
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
-in-depot : (arena = "depot") and (mode != "mission")
-in-yard : (arena = "compound") and (mode != "mission")
-level : cond [mode = "mission", mission map, in-depot, depot, in-yard, compound, any, lab]
-props : cond [mode = "mission", mission props, in-depot, depot-props, in-yard, compound-props, any, lab-props]
+-- where players start and come back in a match: indoors, out in the compound's yard, and in the quarry
+room-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
+yard-spawns : [[2.5, 21.5, -0.8], [20.5, 1.5, 2.4], [20.5, 21.5, -2.4], [3.5, 1.5, 0.8], [12.5, 12.5, 0], [16.5, 8.5, 3.1], [6.5, 9.5, 0], [10.5, 19.5, -1.6], [12.5, 1.5, 1.6], [1.5, 15.5, 0], [22.5, 12.5, 3.1], [6.5, 5.5, 0], [17.5, 16.5, 3.1], [12.5, 5.5, 1.6], [19.5, 3.5, 1.6]]
+quarry-spawns : [[2.5, 1.5, 0.8], [22.5, 21.5, -2.4], [21.5, 1.5, 2.4], [1.5, 21.5, -0.8], [12.5, 12.5, 0], [6.5, 6.5, 0], [19.5, 4.5, 3.1], [4.5, 15.5, 0], [18.5, 12.5, 3.1], [10.5, 19.5, -1.6], [13.5, 9.5, 1.6], [8.5, 3.5, 1.6], [22.5, 9.5, 3.1], [2.5, 10.5, 0], [16.5, 16.5, -1.6]]
+-- the arenas for a combat sim or a duel: each a map with its props, where players start, its pickups, and which
+-- mission's look it borrows. A new arena is a new row (and a name for arena, at the top).
+arenas : [
+  [name : "lab", map : lab, props : lab-props, spawns : room-spawns, spots : pickup-spots, heavy : heavy-spot, look : 1]
+  [name : "depot", map : depot, props : depot-props, spawns : room-spawns, spots : pickup-spots, heavy : heavy-spot, look : 2]
+  [name : "compound", map : compound, props : compound-props, spawns : yard-spawns, spots : compound-spots, heavy : compound-heavy, look : 4]
+  [name : "quarry", map : quarry, props : quarry-props, spawns : quarry-spawns, spots : quarry-spots, heavy : quarry-heavy, look : 5]
+]
+arena-here : arenas keep [a | a name = arena] @ 1 else (arenas @ 1)
+level : cond [mode = "mission", mission map, any, arena-here map]
+props : cond [mode = "mission", mission props, any, arena-here props]
 -- how a place looks (walls, floor, light, air, sky): a match borrows the look of the mission played on the same map
-scene : cond [mode = "mission", mission, in-depot, missions @ 2, in-yard, missions @ 4, any, missions @ 1]
+scene : cond [mode = "mission", mission, any, missions @ (arena-here look)]
 solid : [cx cy |
   row : level @ (cy floor + 1)
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
@@ -11290,15 +11308,12 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 -- where players and simulants start and come back: open floor in both maps, far corners first
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
--- where players start and come back in a match: indoors, and out in the yard
-yard-spawns : [[2.5, 21.5, -0.8], [20.5, 1.5, 2.4], [20.5, 21.5, -2.4], [3.5, 1.5, 0.8], [12.5, 12.5, 0], [16.5, 8.5, 3.1], [6.5, 9.5, 0], [10.5, 19.5, -1.6], [12.5, 1.5, 1.6], [1.5, 15.5, 0], [22.5, 12.5, 3.1], [6.5, 5.5, 0], [17.5, 16.5, 3.1], [12.5, 5.5, 1.6], [19.5, 3.5, 1.6]]
-room-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
-spawns : cond [in-yard, yard-spawns, any, room-spawns]
+spawns : arena-here spawns
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | (ch = ".") or (ch = ",")] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0, streak : 0, streak-at : -10]]
-here-spots : cond [mode = "mission", mission spots else pickup-spots, in-yard, compound-spots, any, pickup-spots]
-here-heavy : cond [mode = "mission", mission heavy else heavy-spot, in-yard, compound-heavy, any, heavy-spot]
+here-spots : cond [mode = "mission", mission spots else pickup-spots, any, arena-here spots]
+here-heavy : cond [mode = "mission", mission heavy else heavy-spot, any, arena-here heavy]
 pickups-fresh : here-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : here-heavy @ 1, y : here-heavy @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
