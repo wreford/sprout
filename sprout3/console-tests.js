@@ -63,8 +63,10 @@ server.listen(0, async () => {
     // software 3D draws few frames a second here, and each frame is at most 0.05 s of game time, so hold A a while
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down(); await page.waitForFunction(() => game.state.field("agents").part(1).field("shots-fired") >= 2, null, { timeout: 8000 }).catch(() => {}); await page.mouse.up();
     ok("holding A fires", (await at()).shots >= 2, await at());
-    await page.click("#bSelect"); await page.waitForTimeout(200);
+    await page.keyboard.down("t"); await page.waitForFunction(() => game.state.field("turrets").count() > 0, null, { timeout: 5000 }).catch(() => {}); await page.keyboard.up("t");
+    await page.click("#bSelect"); await page.waitForTimeout(400);
     ok("Select opens the program, coloured as Sprout", await page.isVisible("#prog") && (await page.$$("#srcHL i")).length > 5);
+    ok("the strip says which turret it's watching", /^TURRET 1 OF 1/.test(await page.textContent("#knows .who")), await page.textContent("#knows .who"));
     ok("the sheet shows what a turret knows (blue) and answers (gold)", (await page.$$("#knows button[data-w]")).length === 5 && (await page.$$("#knows button.ans")).length === 2);
     await page.click("#knows button[data-w=how-far]");
     ok("tapping one puts it in the program", /it how-far/.test(await page.inputValue("#src")));

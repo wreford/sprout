@@ -118,6 +118,7 @@ body.soft #tv{image-rendering:auto;filter:blur(.45px) saturate(1.08)}
 #knows{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}
 #knows button{appearance:none;border:1px solid #8fd8ff38;background:#8fd8ff12;color:#8fd8ff;font:700 10.5px/1 var(--mono);padding:5px 7px;border-radius:6px;cursor:pointer}
 #knows button span{color:#ffd166;margin-left:5px;font-weight:600}
+#knows button.who{border-color:#ffffff30;background:#ffffff10;color:#eee;font-family:var(--sans);font-weight:800;font-size:9.5px;letter-spacing:.08em}
 #knows button.ans{border-color:#e9b90f50;background:#e9b90f14;color:#e9b90f}
 #knows button.ans span{color:#a99c7a}
 #knows .sep{flex-basis:100%;height:0}
@@ -651,24 +652,35 @@ function showTab(k) {
 }
 // the knows strip: each word the program can read, with its value right now; tap one to put it in the program
 const showVal = v => v === true ? "yes" : v === false ? "no" : typeof v === "number" ? (Number.isInteger(v) || Math.abs(v) >= 10 ? String(Math.round(v)) : v.toFixed(2)) : v === undefined ? "–" : String(v);
+// which one the strip watches: the turret you set down last, or the first simulant, until you tap to pick another
+let watching = -1, watchName = "";
+const SIM_NAMES = ["ASTER", "BRAM", "CINDER", "DUSK", "EMBER", "FLINT", "GALE", "HALE", "IVO"];
 function knowsNow() {
+  watchName = "";
   try {
     if (!game) return null;
-    if (tab === "turret") { const ts = S.partsOf(game.state.field("turrets")); const k = ts.length ? ts[ts.length - 1].field("knows") : S.UNSET; return k === S.UNSET ? null : k; }
-    const bot = S.partsOf(game.state.field("agents")).find(a => a.field("bot") === true); if (!bot) return null;
-    const k = bot.field("asks").field("knows"); return k === S.UNSET || !k ? null : k;
+    const pick = list => list[watching < 0 ? (tab === "turret" ? list.length - 1 : 0) : watching % list.length];
+    if (tab === "turret") {
+      const ts = S.partsOf(game.state.field("turrets")); if (!ts.length) return null;
+      const t = pick(ts), k = t.field("knows"); watchName = "TURRET " + (ts.indexOf(t) + 1) + " OF " + ts.length; return k === S.UNSET ? null : k;
+    }
+    const bots = S.partsOf(game.state.field("agents")).filter(a => a.field("bot") === true); if (!bots.length) return null;
+    const b = pick(bots), k = b.field("asks").field("knows"); watchName = SIM_NAMES[Math.max(0, b.field("id") - 2) % SIM_NAMES.length];
+    return k === S.UNSET || !k ? null : k;
   } catch (e) { return null; }
 }
 function knowsUI() {
   const box = $("knows"); if (!KNOWS[tab]) return;
   const k = knowsNow();
   if (!box.dataset.tab || box.dataset.tab !== tab) {
-    box.dataset.tab = tab; box.innerHTML = "";
+    box.dataset.tab = tab; box.innerHTML = ""; watching = -1;
+    const who = document.createElement("button"); who.className = "who"; who.onclick = () => { watching++; knowsUI(); say("Watching " + (watchName || "nothing yet") + ". Tap again for the next."); }; box.appendChild(who);
     for (const [w, about] of KNOWS[tab]) { const b = document.createElement("button"); b.dataset.w = w; b.innerHTML = w + "<span>–</span>"; b.onclick = () => putWord(w, about); box.appendChild(b); }
     const sep = document.createElement("i"); sep.className = "sep"; box.appendChild(sep);
     for (const [w, range, about] of ANSWERS[tab]) { const b = document.createElement("button"); b.className = "ans"; b.innerHTML = w + "<span>" + range + "</span>"; b.onclick = () => say(w + ": " + about + "."); box.appendChild(b); }
   }
   for (const b of box.querySelectorAll("button[data-w]")) b.lastChild.textContent = k ? showVal(k.field(b.dataset.w)) : "–";
+  box.querySelector(".who").textContent = (watchName || (tab === "turret" ? "NO TURRET YET" : "NO SIMULANT HERE")) + " ▸";
 }
 // a word from the strip goes in at the cursor, read from the program's own name for what it's asked about (it, t, s...)
 function putWord(w, about) {
