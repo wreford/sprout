@@ -58,6 +58,33 @@ compound : [
   "#,,,,,,,,,,,,,,,,,,,,,,#"
   "########################"
 ]
+-- the quarry: wide open ground in the hills, rock outcrops for cover, and the site office in one corner
+quarry : [
+  "########################"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,###,,,,,,,,,,,,,,,#"
+  "#,,,,###,,,,,,,,,##,,,,#"
+  "#,,,,,,,,,,,,,,,,##,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,####,,,,,,,,#"
+  "#,,,,,,,,,,####,,,,,,,,#"
+  "#,,##,,,,,,,,,,,,,,,,,,#"
+  "#,,##,,,,,,,,,,,,,,###,#"
+  "#,,,,,,,,,,,,,,,,,,###,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,###,,,,,,,,,,,#"
+  "#,,,,,,,,###,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,#######,#"
+  "#,,##,,,,,,,,,,#.....#,#"
+  "#,,##,,,,,,,,,,#.....D,#"
+  "#,,,,,,,,,,,,,,#.....#,#"
+  "#,,,,,,,,,,,,,,#######,#"
+  "########################"
+]
 relay : [
   "################"
   "#..............#"
@@ -145,7 +172,7 @@ time-limit : 300           -- a match ends after this many seconds; the most tak
 -- ---------------------------------------------------------------- the campaign
 -- Three missions, each its own map, guards, targets and way out. On the console, winning one leads to the next
 -- (alone, or two phones in co-op). guards: [number, x, y, then where it patrols to]; targets: [x, y, model, size].
-stage : 1                  -- which mission (1 to 3)
+stage : 1                  -- which mission (1 to 5)
 campaign : false           -- true on the console: a won mission waits for the next instead of starting again
 lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["crate", 12.3, 8.3, 0.8, 0.8]]
 depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9], ["delivery_van", 12.4, 14.35, 0, 1.7]]
@@ -154,6 +181,10 @@ compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5,
 -- the compound's pickups (the heavy blaster waits in the HQ), for its mission and for matches out in the yard
 compound-spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]]
 compound-heavy : [5.5, 5.5]
+-- the quarry's things: the truck you came in, rocks, a few trees, the rigs' generator and crates
+quarry-props : [["delivery_van", 5.0, 1.7, 0, 1.0], ["rock_large", 9.5, 2.0, 0.4, 1.4], ["rock_large", 22.0, 6.0, 1.2, 1.2], ["rock_large", 6.0, 19.0, 2.0, 1.3], ["rock_large", 13.0, 17.8, 0.7, 1.0], ["tree_pine", 1.7, 22.2, 0, 3.2], ["tree_pine_tall", 22.3, 1.7, 0.5, 4.0], ["tree_oak", 9.0, 22.0, 0.3, 2.8], ["crate", 17.0, 9.5, 0.4, 0.8], ["barrels", 7.0, 12.8, 0, 0.9], ["crate", 14.2, 19.6, 1.0, 0.8], ["generator", 14.0, 1.6, 0, 1.0]]
+quarry-spots : [["ammo", 6.5, 9.5], ["armour", 15.5, 3.5], ["ammo", 4.5, 15.5], ["ammo", 13.5, 21.5], ["armour", 21.5, 12.5], ["ammo", 10.5, 4.5]]
+quarry-heavy : [12.5, 13.5]
 missions : [
   [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", band : #2a9d8f, air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
@@ -197,6 +228,18 @@ missions : [
     scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
     spots : compound-spots, heavy : compound-heavy
     brief : ["A walled compound in the open: ten guards in the yard.", "Wreck both radio masts, take the flight plans", "from the HQ, and get out through the gate."]
+  ]
+  [
+    name : "THE QUARRY", map : quarry, props : quarry-props, walls : "stone", air : #cdbfa4, floor : "wood", ceiling : "plate", haze : 42
+    light : [#fff6e6, #8a7350, #ffe2b8, 1.4], sky-top : #5d9de2, ground : "gravel"
+    spawn-at : [2.5, 1.5, 0.8], exit : [2.5, 1.5], exit-name : "BACK TO THE TRUCK"
+    guards : [[1, 6.5, 6.5, 16.5, 6.5], [2, 12.5, 2.5, 12.5, 5.5], [3, 20.5, 2.5, 20.5, 8.5], [4, 5.5, 11.5, 15.5, 11.5], [5, 14.5, 9.5, 14.5, 15.5], [6, 2.5, 13.5, 2.5, 17.5], [7, 7.5, 16.5, 15.5, 16.5], [8, 21.5, 12.5, 21.5, 16.5], [9, 11.5, 20.5, 11.5, 18.5], [10, 18.5, 13.5, 18.5, 13.5]]
+    targets : [[8.5, 8.5, "generator_large", 1.3], [20.5, 14.5, "generator_large", 1.3]], target-name : "DRILL RIGS", target-one : "DRILL RIG"
+    guard-kinds : [2, 1, 3]
+    intel : [18.5, 20.5], intel-name : "SURVEY MAPS", silencer : [22.5, 2.5]
+    scientists : [[1, 4.5, 21.5, 12.5, 21.5]]
+    spots : quarry-spots, heavy : quarry-heavy
+    brief : ["A quarry in the hills, wide open, ten guards.", "Wreck both drill rigs, take the survey maps", "from the site office, and get back to the truck."]
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
