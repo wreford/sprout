@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 520 pass, 303 for the language and 217 for the games.
+- **Tests:** 521 pass, 303 for the language and 218 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (217)
+node game-tests.js    # game tests (218)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 520 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 521 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4495,6 +4495,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a hit sparks on what it hit", hs.draw().some(x => x[0] === "flash" && x[1][4] === "#ffe08a" && Math.abs(x[1][0] - 13.5) < 0.5)); }
+  { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({})); put(al, 0, { x: 9.5, y: 7.5, angle: 0 }); for (let k = 0; k < 10; k++) al.tick(1 / 60, pad({}));
+    const lights = al.draw().filter(x => x[0] === "light");
+    ok("silvereye: when the alarm is up the light turns red", lights.length === 1 && ["#ff5a4a", "#c0605a"].includes(String(lights[0][1][2]).toLowerCase()), lights.map(l => l[1])); }
   // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
   { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
     for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
@@ -11701,7 +11704,9 @@ draw : [game |
   back-y : you angle sin * (0 - room) * ease + (you y)
   -- the mission's light: sky, floor bounce and key light, and how strong
   light-now : scene light
-  light [light-now @ 1, light-now @ 2, light-now @ 3, light-now @ 4]
+  -- while the alarm is up the key light turns red and pulses, like a warning beacon going round
+  beacon : now * 2 % 1 < 0.5
+  light [light-now @ 1, cond [alarm, #5a2024, any, light-now @ 2], cond [alarm and beacon, #ff5a4a, alarm, #c0605a, any, light-now @ 3], light-now @ 4 * (cond [alarm and beacon, 1.15, any, 1])]
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [map-w / 2, -0.05, map-h / 2, map-w, 0.1, map-h, scene floor]

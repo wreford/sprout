@@ -752,7 +752,9 @@ draw : [game |
   back-y : you angle sin * (0 - room) * ease + (you y)
   -- the mission's light: sky, floor bounce and key light, and how strong
   light-now : scene light
-  light [light-now @ 1, light-now @ 2, light-now @ 3, light-now @ 4]
+  -- while the alarm is up the key light turns red and pulses, like a warning beacon going round
+  beacon : now * 2 % 1 < 0.5
+  light [light-now @ 1, cond [alarm, #5a2024, any, light-now @ 2], cond [alarm and beacon, #ff5a4a, alarm, #c0605a, any, light-now @ 3], light-now @ 4 * (cond [alarm and beacon, 1.15, any, 1])]
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [map-w / 2, -0.05, map-h / 2, map-w, 0.1, map-h, scene floor]
