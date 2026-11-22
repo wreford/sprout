@@ -1,16 +1,20 @@
--- SilverEye: an underground lab, proximity mines and turrets you program in Sprout, in low-poly 3D.
--- Alone, sneak through and take down the six guards. With a friend it's a duel: send an invite by text (no server)
--- and the first to five takedowns wins. Mines and turrets go for whoever comes near, so lay traps.
+-- SilverEye: five missions, proximity mines and turrets you program in Sprout, in low-poly 3D.
+-- Alone, a campaign: the lab, the depot, the relay, then the compound and the quarry out under the sky. In each, take
+-- down the guards, wreck the targets, take the intel and get out; keeping the scientists safe is a bonus. Guards hear
+-- gunfire, so a silencer helps. A combat sim puts you against simulants; two phones play a duel or the campaign in
+-- co-op, linked by an invite sent by text (no server). Mines and turrets go for whoever comes near, so lay traps.
 -- On its own page (taskiap.com/silvereye) it plays on a pocket console: the stick moves and strafes (push it all the
 -- way up to run), drag the screen to look, hold A to fire, B drops a mine, C-up sets down a turret, C-down turns round.
 -- Keys: WASD to move and strafe, arrows to turn, space to fire, M for a mine, T for a turret.
 -- In the editor's player: drag above or below the middle to walk, left or right to turn, tap the middle to fire.
--- The turrets run turret-program: change it while you play and every turret thinks the new way, on both phones.
--- Modes: Mission (the guards), Combat sim (you against simulants), Duel (two phones, simulants welcome).
--- A love letter to GoldenEye 007 (Rare, 1997) and Perfect Dark (Rare, 2000): their ideas, our own lab and art.
--- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
+-- The turrets run turret-program and the simulants simulant-program, in plain words (it sees-someone, it how-far):
+-- change one while you play and they think the new way at once, on both phones. Every number below can be changed too.
+-- A love letter to GoldenEye 007 (Rare, 1997) and Perfect Dark (Rare, 2000): their ideas, our own maps and art.
+-- Characters, props and the turret by Quaternius, the blasters from Kenney's Blaster Kit, textures by Screaming Brain
+-- Studios (all CC0, credited in vendor/models/README.md).
 
--- two maps of our own: the lab (missions and matches) and the depot (matches): rows of shelving round a loading bay
+-- the maps are our own: the lab, the depot (rows of shelving round a loading bay) and the relay indoors, the compound
+-- and the quarry out in the open. Any of them but the relay can be the arena for a match.
 arena : "lab"              -- "lab", "depot", "compound" or "quarry" (both out in the open), for a combat sim or a duel
 two-phones : "duel"        -- what two phones play: "duel" (against each other) or "coop" (the mission, together)
 depot : [
