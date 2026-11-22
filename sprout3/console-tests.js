@@ -59,6 +59,8 @@ server.listen(0, async () => {
       onMotion(new DeviceMotionEvent("devicemotion", { rotationRate: { alpha: 0, beta: 0, gamma: -90 }, accelerationIncludingGravity: { x: 0, y: -9.8, z: 0 }, interval: 16 }));
       const after = pad.look; settings.gyro = "off"; return after - before; });
     ok("with gyro aim on, turning the phone right turns you right", turned > 0.01 && turned < 0.2, turned);
+    const aimTest = await page.evaluate(() => { const look0 = pad.look; pad.zoom = true; aimBy(0.1, 0.05); const r = { yaw: pad.aimYaw, pitch: pad.aimPitch, turned: pad.look - look0 }; aimBy(5, 0); r.pushed = pad.look - look0; pad.zoom = false; held(); r.back = pad.aimYaw; return r; });
+    ok("aim mode: a drag moves the sight and not the view, the edge pushes the view round, and letting go brings the sight back", aimTest.yaw > 0.09 && aimTest.pitch > 0.04 && aimTest.turned === 0 && aimTest.pushed > 1 && aimTest.back === 0, aimTest);
     ok("you play as the agent you made", await page.evaluate(() => { const a = game.state.field("agents").part(1); return a.field("skin") === 9 && a.field("tag") === "ACE"; }));
     const a = await (await page.$("#bA")).boundingBox();
     // software 3D draws few frames a second here, and each frame is at most 0.05 s of game time, so hold A a while

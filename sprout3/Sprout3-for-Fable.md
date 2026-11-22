@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 542 pass, 303 for the language and 239 for the games.
+- **Tests:** 545 pass, 303 for the language and 242 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (239)
+node game-tests.js    # game tests (242)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 542 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 545 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4922,6 +4922,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const wide = z.draw().find(x => x[0] === "view")[1][5];
   z.tick(1 / 60, pad({ zoom: true, fire: true }), pad({}));
   const narrow = z.draw().find(x => x[0] === "view")[1][5];
+  // aim mode's sight: a little high is the head (a guard goes down at one shot), too high misses, low is the legs
+  { const shot = (pitch, yaw, angle) => { const h = L.makeGame(src, {}); h.tick(1 / 60, pad({})); put(h, 0, { x: 9.5, y: 7.5, angle });
+      h.tick(1 / 60, pad({ zoom: true, "aim-pitch": pitch, "aim-yaw": yaw })); h.tick(1 / 60, pad({ zoom: true, fire: true, "aim-pitch": pitch, "aim-yaw": yaw }));
+      const g3 = S.partsOf(f(h, "guards")).find(g => g.field("id") === 3); return [g3.field("health"), h.draw().some(x => x[0] === "text" && x[1][0] === "HEADSHOT")]; };
+    const d = Math.hypot(13.5 - 9.5, 0) || 4, head = shot(Math.atan(0.2 / d), 0, 0), high = shot(Math.atan(0.6 / d), 0, 0), legs = shot(Math.atan(-0.9 / d), 0, 0), body = shot(0, 0, 0);
+    ok("silvereye: in aim mode a shot a little high is a headshot, and drops a guard", head[0] <= 0 && head[1], head);
+    ok("silvereye: too high misses, low hits the legs for less than the body", high[0] === 100 && legs[0] > body[0] && body[0] < 100, [high, legs, body]);
+    const off = shot(0, 0.12, -0.12);
+    ok("silvereye: the sight moved off the middle aims the shot there while the view stays", off[0] < 100, off); }
   ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);
   // the field of view is set across the screen, and the camera gets the matching angle top to bottom
   const fv = L.makeGame(src, { W: 300, H: 330 }); fv.tick(1 / 60, pad({ fov: 100 }));
@@ -11652,7 +11661,7 @@ wants : [inp |
     swap : (inp held "swap" else false) or (key "q")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
-    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1, skin : inp held "skin" else 1, tag : inp held "tag" else ""
+    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, aim-yaw : inp held "aim-yaw" else 0, aim-pitch : inp held "aim-pitch" else 0, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1, skin : inp held "skin" else 1, tag : inp held "tag" else ""
   ]
 ]
 up : [a | a down-at = false]
@@ -11711,19 +11720,30 @@ play : [game |
   breakable : [p | (p @ 1 = "crate") or (p @ 1 = "barrels")]
   standing-props : props numbered keep [[k, p] | (breakable p) and (((game broken else []) has k) not)]
   marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up keep [a | game versus] collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]] .. (standing-props collect [[k, p] | [who : "prop", id : k, owner : 0, x : p @ 2, y : p @ 3]]))
-  -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
+  -- aiming: the nearest mark near the sight, nearer than the wall (a little help, as on a pad). In aim mode (Z) the
+  -- sight moves about the screen while the view holds still, and the shot goes where it is: shot-angle
+  shot-angle : [a | a angle + (cond [a zoomed, a asks aim-yaw else 0, any, 0])]
   aim-at : [a |
-    wall : cast [a x, a y, a angle] far
+    wall : cast [a x, a y, shot-angle a] far
     marks keep [m | m owner != (a id)] keep [m |
       gd : distance [a x, a y, m x, m y]
-      rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
+      rel : wrap (m y - (a y) atan2 (m x - (a x)) - (shot-angle a))
       -- aim help: how near the middle of your view counts, scaled by the help this player asked for (none at 0)
       (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)] * (a asks assist else 1) max 0.012)) and (gd < wall)
     ] smallest-by [m | distance [a x, a y, m x, m y]]
   ]
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
   shooters : ready keep can-shoot
-  shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
+  -- where on the body a shot lands: in aim mode, from how high the sight is and how far the mark: the head above
+  -- 1.6 metres, the legs below 0.85, over the top above 1.95 (a miss); without aiming, the body
+  zone-of : [a |
+    gd : distance [a x, a y, a aimed x, a aimed y]
+    up-to : (a asks aim-pitch else 0) tan * gd + 1.55
+    person : (a aimed who = "guard") or (a aimed who = "agent")
+    cond [(a zoomed not) or (person not), "body", up-to > 1.95, "miss", up-to > 1.6, "head", up-to < 0.85, "legs", any, "body"]
+  ]
+  zone-power : [z | cond [z = "head", 3, z = "legs", 0.6, any, 1]]
+  shot-hits : shooters keep [a | (a aimed != false) [zone-of a != "miss"] else [false]] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy", zone : zone-of a]]
   -- a shot is loud unless it's from a silenced blaster (the heavy blaster is always loud)
   loud : [a | (a weapon = "heavy") or ((a quiet else false) not)]
   (shooters any [a | (a weapon != "heavy") and (loud a)]) [sound "shoot"]
@@ -11731,8 +11751,8 @@ play : [game |
   (shooters any [a | a weapon = "heavy"]) [sound "heavy"]
   -- a miss leaves a hole in the wall where it struck (the last 24 stay)
   misses : shooters keep [a | a aimed = false] collect [a |
-    far : cast [a x, a y, a angle] far - 0.02
-    [x : a angle cos * far + (a x), y : a angle sin * far + (a y), rise : noise [now * 13, a id] * 0.5 + 1.05]
+    far : cast [a x, a y, shot-angle a] far - 0.02
+    [x : shot-angle a cos * far + (a x), y : shot-angle a sin * far + (a y), rise : cond [a zoomed, (a asks aim-pitch else 0) tan * far + 1.55 max 0.1 min 2.4, any, noise [now * 13, a id] * 0.5 + 1.05]]
   ]
   holes : (game holes else []) .. misses
   (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
@@ -11766,7 +11786,7 @@ play : [game |
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]
-  power : [k normal hard | shot-hits keep [h | h key = k] collect [h | cond [h heavy, hard, any, normal]] sum]
+  power : [k normal hard | shot-hits keep [h | h key = k] collect [h | cond [h heavy, hard, any, normal] * (zone-power (h zone))] sum]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hit-guards : game guards collect [g |
@@ -11883,7 +11903,7 @@ play : [game |
     by-shot : shot-hits keep [h | h key = k]
     by-turret : thought keep [t | t victim = k]
     by-mine : caught-by [a x, a y]
-    shot-pain : by-shot collect [h | cond [h heavy, heavy-damage, h steady, steady-damage, any, duel-damage]] sum
+    shot-pain : by-shot collect [h | cond [h heavy, heavy-damage, h steady, steady-damage, any, duel-damage] * (zone-power (h zone))] sum
     -- just back in a match: nothing hurts for a moment
     total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (pain (a id)) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
@@ -11915,6 +11935,7 @@ play : [game |
       turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
       hit-at : cond [(can-shoot a) and (a aimed != false), now, any, a hit-at]
+      head-at : cond [(can-shoot a) and (a aimed != false) and ((a aimed != false) [zone-of a = "head"] else [false]), now, any, a head-at else -10]
       shots-fired : a shots-fired + (cond [can-shoot a, 1, any, 0])
       shots-hit : a shots-hit + (cond [(can-shoot a) and (a aimed != false), 1, any, 0])
       carried : cond [can-drop a, a carried - 1, any, a carried]
@@ -12021,6 +12042,11 @@ draw : [game |
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
+  -- aim mode: the sight's angles from the middle, and where that is on the screen
+  sight-yaw : cond [you zoomed, you asks aim-yaw else 0, any, 0]
+  sight-pitch : cond [you zoomed, you asks aim-pitch else 0, any, 0]
+  aim-cx : sight-yaw tan / (across / 2 * pi / 180 tan) * (W / 2) + (W / 2)
+  aim-cy : H / 2 - (sight-pitch tan / (tall / 2 * pi / 180 tan) * (H / 2))
   -- a mission opens with the camera sweeping down from high behind you into your eyes (three seconds, eased)
   intro : cond [(mode = "mission") and (game over = ""), 1 - ((now - (game began)) / 3) max 0, any, 0]
   ease : intro * intro * (3 - (intro * 2))
@@ -12153,7 +12179,7 @@ draw : [game |
   sway-x : cond [you moving, stride sin * 0.012, any, 0]
   sway-y : cond [you moving, stride * 2 sin abs * 0.01, any, 0]
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
-  (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
+  (down not) and (you zoomed) [hold [gun, sight-yaw * 0.35, sight-pitch * 0.3 - 0.17, -0.42 + kick, 0 - sight-yaw, sight-pitch, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), cond [(you weapon != "heavy") and (you quiet else false), 0.035, any, 0.08], "#ffd76a"]]
   -- tracers: a streak from the gun to where the shot lands, for the moment of the shot, yours and everyone's
   tracer : [sx sy fx fy aimed angle colour |
@@ -12162,7 +12188,7 @@ draw : [game |
     ey : (aimed != false) [aimed y] else [angle sin * end-far + fy]
     beam [sx, 1.28, sy, ex, cond [aimed != false, 1.15, any, 1.4], ey, colour]
   ]
-  (up you) and (you flash > 0.04) [tracer [you angle cos * 0.75 + (you x) - (you angle sin * 0.14), you angle sin * 0.75 + (you y) + (you angle cos * 0.14), you x, you y, you aimed, you angle, cond [you weapon = "heavy", "#9be7ff", any, "#ffe08a"]]]
+  (up you) and (you flash > 0.04) [tracer [you angle cos * 0.75 + (you x) - (you angle sin * 0.14), you angle sin * 0.75 + (you y) + (you angle cos * 0.14), you x, you y, you aimed, you angle + sight-yaw, cond [you weapon = "heavy", "#9be7ff", any, "#ffe08a"]]]
   rivals keep [r | (up r) and (r flash > 0.04)] each [r | tracer [r angle cos * 0.5 + (r x), r angle sin * 0.5 + (r y), r x, r y, r aimed else false, r angle, "#ffb38a"]]
   game guards keep [g | (g health > 0) and (g fired else false)] each [g |
     mark : game agents keep [a | a id = (g target else 0)] @ 1 else false
@@ -12180,15 +12206,16 @@ draw : [game |
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
   sight-always or (you zoomed) [
-    line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
-    line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
-    line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
-    line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+    line [aim-cx - 7, aim-cy, aim-cx - 2, aim-cy, sight]
+    line [aim-cx + 2, aim-cy, aim-cx + 7, aim-cy, sight]
+    line [aim-cx, aim-cy - 7, aim-cx, aim-cy - 2, sight]
+    line [aim-cx, aim-cy + 2, aim-cx, aim-cy + 7, sight]
   ]
   (now - (you hit-at) < 0.15) [
-    line [W / 2 - 10, H / 2 - 10, W / 2 - 5, H / 2 - 5, cream], line [W / 2 + 10, H / 2 - 10, W / 2 + 5, H / 2 - 5, cream]
-    line [W / 2 - 10, H / 2 + 10, W / 2 - 5, H / 2 + 5, cream], line [W / 2 + 10, H / 2 + 10, W / 2 + 5, H / 2 + 5, cream]
+    line [aim-cx - 10, aim-cy - 10, aim-cx - 5, aim-cy - 5, cream], line [aim-cx + 10, aim-cy - 10, aim-cx + 5, aim-cy - 5, cream]
+    line [aim-cx - 10, aim-cy + 10, aim-cx - 5, aim-cy + 5, cream], line [aim-cx + 10, aim-cy + 10, aim-cx + 5, aim-cy + 5, cream]
   ]
+  (now - (you head-at else -10) < 0.5) [text ["HEADSHOT", aim-cx, aim-cy - 18, 8, red]]
   -- the mini-map: 48 pixels across whatever the map's size
   mm : 48 / (map-w max map-h)
   rect [5, 5, 50, 50, "#000000a0"]

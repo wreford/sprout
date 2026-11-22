@@ -810,6 +810,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const wide = z.draw().find(x => x[0] === "view")[1][5];
   z.tick(1 / 60, pad({ zoom: true, fire: true }), pad({}));
   const narrow = z.draw().find(x => x[0] === "view")[1][5];
+  // aim mode's sight: a little high is the head (a guard goes down at one shot), too high misses, low is the legs
+  { const shot = (pitch, yaw, angle) => { const h = L.makeGame(src, {}); h.tick(1 / 60, pad({})); put(h, 0, { x: 9.5, y: 7.5, angle });
+      h.tick(1 / 60, pad({ zoom: true, "aim-pitch": pitch, "aim-yaw": yaw })); h.tick(1 / 60, pad({ zoom: true, fire: true, "aim-pitch": pitch, "aim-yaw": yaw }));
+      const g3 = S.partsOf(f(h, "guards")).find(g => g.field("id") === 3); return [g3.field("health"), h.draw().some(x => x[0] === "text" && x[1][0] === "HEADSHOT")]; };
+    const d = Math.hypot(13.5 - 9.5, 0) || 4, head = shot(Math.atan(0.2 / d), 0, 0), high = shot(Math.atan(0.6 / d), 0, 0), legs = shot(Math.atan(-0.9 / d), 0, 0), body = shot(0, 0, 0);
+    ok("silvereye: in aim mode a shot a little high is a headshot, and drops a guard", head[0] <= 0 && head[1], head);
+    ok("silvereye: too high misses, low hits the legs for less than the body", high[0] === 100 && legs[0] > body[0] && body[0] < 100, [high, legs, body]);
+    const off = shot(0, 0.12, -0.12);
+    ok("silvereye: the sight moved off the middle aims the shot there while the view stays", off[0] < 100, off); }
   ok("silvereye: aiming narrows the view and a steady shot hits harder", narrow < wide * 0.6 && agent(z, 2).field("health") === 50, [wide, narrow, agent(z, 2).field("health")]);
   // the field of view is set across the screen, and the camera gets the matching angle top to bottom
   const fv = L.makeGame(src, { W: 300, H: 330 }); fv.tick(1 / 60, pad({ fov: 100 }));
