@@ -970,5 +970,33 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
+
+// ---------------- Blended Zebra 8 (decision 120): a bot climbs, blends at the oasis, and the recipe makes CRUSH
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const src = fs.readFileSync(__dirname + "/examples/blended-zebra.sp", "utf8") + '\nrecipe-check : blend-of [card-book get-in ["bite"], card-book get-in ["kick"]] name\nplain-check : blend-of [card-book get-in ["graze"], card-book get-in ["hide"]]\n';
+  const g = L.makeGame(src, { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  ok("blended zebra: BITE blended with KICK is the ancestral CRUSH", g.file.field("recipe-check") === "CRUSH");
+  const plain = g.file.field("plain-check");
+  ok("blended zebra: a plain blend does both cards' things, at the dearer cost, under a name made of both", plain.field("name") === "GRADE" && plain.field("heal") === 4 && plain.field("block") === 6 && plain.field("cost") === 1 && plain.field("level") === 1, S.format(plain));
+  const st = k => g.state.fieldNames().includes(k) ? g.state.field(k) : undefined, tap = k => { g.tick(1 / 60, held([k])); g.tick(1 / 60, held([])); };
+  let blended = false, deckBefore = 0;
+  for (let t = 0; t < 3000 && !(st("floor") >= 4 && st("mode") === "map") && st("mode") !== "fallen"; t++) {
+    const mode = st("mode");
+    if (mode === "title") tap("one");
+    else if (mode === "map") { if (st("floor") === 3 && !blended) { tap("right"); tap("one"); } else tap("one"); }
+    else if (mode === "oasis") tap("one");
+    else if (mode === "blend") { deckBefore = S.partsOf(st("deck")).length; tap("one"); tap("right"); tap("one"); tap("one"); blended = true; }
+    else if (mode === "fight") { const fi = st("fight"), hand = S.partsOf(fi.field("pile").field("hand")); if (hand.length && hand[0].field("cost") <= fi.field("energy")) tap("one"); else tap("two"); }
+    else if (mode === "reward") tap("one");
+    else g.tick(1 / 60, held([]));
+  }
+  ok("blended zebra: a bot fights up past the third floor, blending two cards into one at the oasis", st("floor") >= 4 && blended && S.partsOf(st("deck")).some(c => c.field("level") >= 1), [st("floor"), st("mode"), blended]);
+  ok("blended zebra: climbs without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

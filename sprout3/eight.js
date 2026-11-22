@@ -4,7 +4,7 @@
 // from the keys, the touch screen or a controller. Sprout's game layer (live3.js) runs the game sixty times a second.
 //
 // What a game can use beyond the 2D words:
-//   sprite [art, x, y, ink, flip]   art is a list of rows of text, ink a record from letter to colour ("." is clear)
+//   sprite [art, x, y, ink, flip, scale]   art is rows of text, ink a record from letter to colour ("." is clear)
 //   tiles [map, set, ink, x, y]     map is rows of text, set a list of [character, art]; drawn whole, cached
 //   hiss [length, pitch]            the noise channel; beep [frequency, length] is the square wave
 //   song : "name" in the state      plays songs's song of that name: [bpm, beats, lead, bass, drums, once]
@@ -65,6 +65,23 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
 #e8 .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--body);z-index:5;transition:opacity .5s}
 #e8 .boot span{font:var(--logo-weight) calc(var(--logo-size) * 1.3)/1 var(--brand),system-ui,sans-serif;font-style:var(--logo-style);letter-spacing:var(--logo-track);color:var(--logo);animation:e8in 1.1s steps(8) both}
 @keyframes e8in{from{transform:translateY(-120px);opacity:0}to{transform:none;opacity:1}}
+/* options a skin can choose (decision 120): a round D-pad, buttons in a row, a plate behind the brand, a wide body */
+#e8 .dpad.disc{border-radius:50%;background:var(--dpad);box-shadow:inset 0 3px 0 #ffffff22,0 4px 0 #0008,0 0 0 5px #00000026}
+#e8 .dpad.disc i{background:#ffffff16;box-shadow:none}#e8 .dpad.disc .h{left:14px;right:14px;top:52px;height:14px}#e8 .dpad.disc .v{top:14px;bottom:14px;left:52px;width:14px}
+#e8 .dpad.disc .c{display:none}
+#e8 .dpad.disc.on-left{box-shadow:inset 16px 0 0 #ffffff26,0 4px 0 #0008,0 0 0 5px #00000026}#e8 .dpad.disc.on-right{box-shadow:inset -16px 0 0 #ffffff26,0 4px 0 #0008,0 0 0 5px #00000026}
+#e8 .dpad.disc.on-up{box-shadow:inset 0 16px 0 #ffffff26,0 4px 0 #0008,0 0 0 5px #00000026}#e8 .dpad.disc.on-down{box-shadow:inset 0 -16px 0 #ffffff26,0 4px 0 #0008,0 0 0 5px #00000026}
+#e8 .btns.row{transform:none;align-items:center}#e8 .btns.row .btn.two{margin-bottom:0}
+#e8[class*="pattern-"] .top span,#e8[class*="pattern-"] .pill span{background:var(--plate);color:var(--ink);padding:3px 6px;border-radius:5px}
+#e8 .brand.plate{background:var(--plate);border-radius:12px;margin:10px 7% 0;padding:8px 12px;box-shadow:inset 0 1px 3px #0005}
+@media (orientation:landscape) and (min-height:561px){
+  #e8 .gb.wide{width:min(96vw,calc((100vh - 64px) * 1.8));aspect-ratio:18/10;border-radius:46% 46% 46% 46% / 22% 22% 30% 30%;padding:0 0 16px;
+    grid-template-columns:1fr auto 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top top top" "dpad bezel btns" "pills brand ."}
+  #e8 .gb.wide .top{padding:14px 18% 6px}
+  #e8 .gb.wide .bezel{margin:0;align-self:center;padding:24px 18px 16px 44px;border-radius:14px}
+  #e8 .gb.wide .brand{justify-content:center;padding:10px 0 0;margin:8px 0 0}#e8 .gb.wide .brand.plate{padding:6px 14px}
+  #e8 .gb.wide .pills{align-self:center;padding:0}#e8 .gb.wide .grille{right:9%;bottom:16%}
+}
 /* a phone: the handheld fills the screen */
 #e8.touch{padding:0}
 #e8.touch .gb{width:100vw;height:100%;aspect-ratio:auto;border-radius:0 0 74px 0;padding:env(safe-area-inset-top) 0 max(30px,env(safe-area-inset-bottom))}
@@ -198,17 +215,18 @@ function start(opts) {
   document.head.appendChild(style);
   const touch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in root;
   const box = document.createElement("div"); box.id = "e8"; if (touch) box.classList.add("touch");
-  const vars = { page: skin.page, page2: skin.page2, body: skin.body, body2: skin.body2, ink: skin.ink, bezel: skin.bezel, "bezel-ink": skin.bezelInk, s1: skin.stripe1, s2: skin.stripe2,
+  if (skin.pattern) box.classList.add("pattern-" + skin.pattern);
+  const vars = { plate: skin.plate || "transparent", page: skin.page, page2: skin.page2, body: skin.body, body2: skin.body2, ink: skin.ink, bezel: skin.bezel, "bezel-ink": skin.bezelInk, s1: skin.stripe1, s2: skin.stripe2,
     logo: skin.logoColour, sub: skin.subColour, brand: `"${skin.font}"`, "logo-size": skin.logoSize, "logo-weight": skin.logoWeight, "logo-style": skin.logoStyle, "logo-track": skin.logoTrack,
     btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint };
   for (const k in vars) box.style.setProperty("--" + k, vars[k]);
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  box.innerHTML = `<div class="gb">
+  box.innerHTML = `<div class="gb${skin.shape === "wide" ? " wide" : ""}">
   <div class="top"><i></i><span>${esc(skin.badge)}</span><i></i></div>
   <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
-  <div class="brand"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
-  <div class="dpad"><i class="h"></i><i class="v"></i><i class="c"></i></div>
-  <div class="btns"><div class="btn one">1</div><div class="btn two">2</div></div>
+  <div class="brand${skin.plate ? " plate" : ""}"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
+  <div class="dpad${skin.dpadShape === "disc" ? " disc" : ""}"><i class="h"></i><i class="v"></i><i class="c"></i></div>
+  <div class="btns${skin.buttonRow ? " row" : ""}"><div class="btn one">1</div><div class="btn two">2</div></div>
   <div class="pills"><div class="pill mute2"><b></b><span>SOUND</span></div><div class="pill pause"><b></b><span>PAUSE</span></div></div>
   <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 </div>
@@ -216,6 +234,13 @@ function start(opts) {
 <div class="boot"><span>${esc(skin.logo)}</span></div>`;
   document.body.appendChild(box);
   document.body.style.background = skin.page;
+  if (skin.pattern === "zebra") {
+    const band = (y, w) => `<path d='M-20 ${y} C 20 ${y - 18}, 50 ${y + 22}, 90 ${y} S 160 ${y - 16}, 200 ${y + 6}' stroke='%23111' stroke-width='${w}' fill='none' stroke-linecap='round'/>`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'>${[[14, 13], [52, 9], [86, 15], [122, 8], [158, 12]].map(([y, w]) => band(y, w)).join("")}</svg>`;
+    const body = box.querySelector(".gb");
+    body.style.backgroundImage = `url("data:image/svg+xml,${svg.replace(/</g, "%3C").replace(/>/g, "%3E").replace(/ /g, "%20")}"),linear-gradient(165deg,${skin.body},${skin.body2})`;
+    body.style.backgroundSize = "180px 180px, auto";
+  }
   // iOS Safari zooms in on a quick second tap, and on a pinch, whatever the viewport says (it ignores user-scalable=no):
   // a game wants neither, so the second tap of a double tap and every pinch are cancelled. Text boxes are left alone.
   let lastTap = 0;
@@ -241,14 +266,16 @@ function start(opts) {
     const roomW = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const wide = innerWidth > innerHeight && innerHeight < 560;
     const gb = $(".gb").getBoundingClientRect();
-    const roomH = wide ? r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) : gb.height * 0.46;
-    let k = Math.min(roomW / W, roomH / H); if (k >= 3) k = Math.floor(k);
+    const wideBody = skin.shape === "wide" && !wide && matchMedia("(orientation:landscape) and (min-height:561px)").matches;
+    const roomH = wide ? r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) : gb.height * (wideBody ? 0.6 : 0.46);
+    let k = wideBody ? Math.min(gb.width * 0.5 / W, roomH / H) : Math.min(roomW / W, roomH / H); if (k >= 3) k = Math.floor(k);
     canvas.style.width = Math.max(W / 2, W * k) + "px"; canvas.style.height = Math.max(H / 2, H * k) + "px";
   }
   addEventListener("resize", fit); setTimeout(fit, 0); setTimeout(fit, 300);
 
   // ---- input: keys, the touch pad and buttons, a controller
-  const KEYS = new Set(), TOUCH = new Set(), PADKEYS = new Set();
+  // a press is latched until the next frame has seen it, so a tap quicker than a frame still counts (decision 120)
+  const KEYS = new Set(), TOUCH = new Set(), PADKEYS = new Set(), LATCH = new Set();
   const KEYNAME = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", z: "one", j: "one", c: "one", x: "two", k: "two", " ": "two" };
   let paused = false;
   const setPaused = p => { paused = p; if (musicBus) musicBus.gain.value = p ? 0.08 : 0.3; };
@@ -257,7 +284,7 @@ function start(opts) {
     if (e.key === "Enter" || e.key === "Escape" || e.key === "p") { setPaused(!paused); e.preventDefault(); return; }
     if (e.key === "m") { toggleMute(); return; }
     if (e.key === "f") { toggleFull(); return; }
-    const k = KEYNAME[e.key] || KEYNAME[e.key.toLowerCase()]; if (k) { KEYS.add(k); e.preventDefault(); }
+    const k = KEYNAME[e.key] || KEYNAME[e.key.toLowerCase()]; if (k) { KEYS.add(k); LATCH.add(k); e.preventDefault(); }
   });
   addEventListener("keyup", e => { const k = KEYNAME[e.key] || KEYNAME[e.key.toLowerCase()]; if (k) KEYS.delete(k); });
   addEventListener("blur", () => { KEYS.clear(); TOUCH.clear(); });
@@ -266,7 +293,7 @@ function start(opts) {
   function dpadSet(id, e) {
     const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), far = Math.hypot(dx, dy);
     const dirs = []; if (far > 12) { const a = Math.atan2(dy, dx), oct = Math.round(a / (Math.PI / 4)); const m = { 0: ["right"], 1: ["right", "down"], 2: ["down"], 3: ["down", "left"], 4: ["left"], "-4": ["left"], "-3": ["left", "up"], "-2": ["up"], "-1": ["up", "right"] }; dirs.push(...(m[oct] || [])); }
-    dirOf.set(id, dirs); refreshPad();
+    dirOf.set(id, dirs); for (const d of dirs) LATCH.add(d); refreshPad();
   }
   function refreshPad() { for (const d of ["left", "right", "up", "down"]) TOUCH.delete(d); for (const ds of dirOf.values()) for (const d of ds) TOUCH.add(d); for (const d of ["left", "right", "up", "down"]) dpad.classList.toggle("on-" + d, TOUCH.has(d)); }
   dpad.addEventListener("pointerdown", e => { e.preventDefault(); audio(); dpad.setPointerCapture(e.pointerId); dpadSet(e.pointerId, e); });
@@ -275,7 +302,7 @@ function start(opts) {
   dpad.addEventListener("pointerup", dpadUp); dpad.addEventListener("pointercancel", dpadUp);
   for (const name of ["one", "two"]) {
     const b = $(".btn." + name), on = new Set();
-    b.addEventListener("pointerdown", e => { e.preventDefault(); audio(); b.setPointerCapture(e.pointerId); on.add(e.pointerId); TOUCH.add(name); b.classList.add("down"); if (navigator.vibrate) navigator.vibrate(8); });
+    b.addEventListener("pointerdown", e => { e.preventDefault(); audio(); b.setPointerCapture(e.pointerId); on.add(e.pointerId); TOUCH.add(name); LATCH.add(name); b.classList.add("down"); if (navigator.vibrate) navigator.vibrate(8); });
     const lift = e => { on.delete(e.pointerId); if (!on.size) { TOUCH.delete(name); b.classList.remove("down"); } };
     b.addEventListener("pointerup", lift); b.addEventListener("pointercancel", lift);
   }
@@ -294,7 +321,7 @@ function start(opts) {
       if (b(9) && !padStart) setPaused(!paused); padStart = b(9);
     }
   }
-  const heldCell = () => { const m = new Map(); for (const set of [KEYS, TOUCH, PADKEYS]) for (const k of set) m.set(k, true); return S.valueCellOf([], m); };
+  const heldCell = () => { const m = new Map(); for (const set of [KEYS, TOUCH, PADKEYS, LATCH]) for (const k of set) m.set(k, true); return S.valueCellOf([], m); };
 
   // ---- drawing
   function disc(cx, cy, r, colour) {
@@ -322,8 +349,9 @@ function start(opts) {
       else if (name === "text") words8(a);
       else if (name === "sprite") {
         if (!a[0] || typeof a[0] !== "object") { if (!warned) { warned = true; console.warn("sprite wants a list of rows, not " + S.format(a[0])); } continue; }
-        const bm = bitmap(a[0], a[3]), x = Math.round(a[1]), y = Math.round(a[2]);
-        if (a[4] === true || a[4] === -1) { g.save(); g.translate(x + bm.width, y); g.scale(-1, 1); g.drawImage(bm, 0, 0); g.restore(); } else g.drawImage(bm, x, y);
+        // a sixth value, a whole number, draws it that many times bigger (decision 120)
+        const bm = bitmap(a[0], a[3]), x = Math.round(a[1]), y = Math.round(a[2]), k = Math.max(1, Math.round(+a[5] || 1)), w = bm.width * k, h = bm.height * k;
+        if (a[4] === true || a[4] === -1) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(bm, 0, 0, w, h); g.restore(); } else g.drawImage(bm, x, y, w, h);
       }
       else if (name === "tiles") g.drawImage(tileCanvas(a[0], a[1], a[2]), Math.round(a[3]), Math.round(a[4]));
     }
@@ -388,7 +416,7 @@ function start(opts) {
       pollPad();
       const dt = Math.min(0.1, (now - last) / 1000); last = now;
       try {
-        if (!paused) { acc += dt; let n = 0; while (acc >= STEP && n < 4) { game.tick(STEP, heldCell()); acc -= STEP; n++; } if (n === 4) acc = 0; }
+        if (!paused) { acc += dt; let n = 0; while (acc >= STEP && n < 4) { game.tick(STEP, heldCell()); LATCH.clear(); acc -= STEP; n++; } if (n === 4) acc = 0; }
         const list = game.draw();
         g.save();
         if (shake > 0.3 && !paused) g.translate(Math.round((Math.random() * 2 - 1) * shake), Math.round((Math.random() * 2 - 1) * shake));

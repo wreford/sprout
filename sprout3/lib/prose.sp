@@ -26,6 +26,11 @@ initials : [line | line words collect [w | w chars @ 1 upper] join ""]
 -- e.g. prose truncate ["The quick brown fox", 10] → The quick…
 truncate : [line n | (line length <= n) [line] else [line chars take (n - 1) join "" trim .. "…"]]
 
+-- two words blended into one: the first half of one and the last half of the other (a portmanteau)
+-- e.g. prose blend ["bite", "kick"] → bick
+-- e.g. prose blend ["graze", "hide"] → grade
+blend : [a b | a chars take (a length / 2 ceil) join "" .. (b chars drop (b length / 2 floor) join "")]
+
 -- extra spaces taken out: trimmed, and one space between words
 -- e.g. prose tidy "  far   too    spaced  " → far too spaced
 tidy : [line | line words join " "]

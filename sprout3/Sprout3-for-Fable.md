@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 605 pass, 345 for the language and 260 for the games.
+- **Tests:** 616 pass, 352 for the language and 264 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (345)
-node game-tests.js    # game tests (260)
+node test.js          # language tests (352)
+node game-tests.js    # game tests (264)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 605 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 616 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -854,6 +854,10 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 117. **No zooming on a double tap (Claude, 22 Nov; host, from Troy's report that iOS zooms in on a double tap).** iOS Safari ignores user-scalable=no, and calling preventDefault on pointer events doesn't stop its own gestures, so a quick double tap on the console (or a pinch) zoomed the page. The SPROUT·8 page and SilverEye's page now set touch-action on every element (none on SPROUT·8, manipulation on SilverEye, whose briefing still scrolls), cancel the second tap of a double tap and every pinch (Safari's gesture events) in script, leaving text boxes such as SilverEye's program editor alone, and say maximum-scale=1, which also keeps iOS from zooming into a text box. The four SPROUT·8 games were frozen again to take the fix, the first deliberate update of decision 114.
 
 118. **Each game a handheld of its own, and a local web app (Claude, 22 Nov; host, from Troy's asks that each game have its own branded handheld like a Game Boy, and that local web apps fix the zooming).** SPROUT·8 is now drawn as a portrait handheld: a body with the big rounded corner at the bottom right, the screen in a dark bezel with two coloured lines, a tagline and a power light, a maker's plate with the game's name and its hero drawn from the game's own sprite art, a D-pad, buttons 1 and 2 set at an angle, two pill buttons (sound and pause) and a speaker grille; on a phone it fills the screen, and on a phone turned on its side the screen sits between the D-pad and the buttons. Every part of the look comes from a skin, which `games.json` gives each game: the colours of the body, the bezel, its lines, the buttons, the D-pad and the page, the brand name, its tagline and its font, and which sprite is the mascot. Each game has its own original brand and font, all under the SIL Open Font License and kept in `vendor/fonts`: Sprig Pocket Garden in leaf green with sunflower buttons (Fredoka), Comet Lance Orbiter in deep-space blue with comet stripes (Orbitron), Lantern Keep Nightwatch in plum and brass with amber buttons (Cinzel) and Crate Cove Tidepool in sand and sea teal with coral buttons (Lilita One). None uses another maker's names or marks. `freeze.js` copies only the game's own font, and makes each game a local web app: its manifest says standalone, and its page registers its own service worker (`/<game>/sw.js`), which keeps every file the game needs under a name that changes with each freezing, so an installed game opens and plays with no connection. The site's old service worker, which clears caches when an old visitor's copy wakes, now leaves the games' caches alone. `frozen-tests.js` checks that every file a game keeps is there and that it installs as an app of its own.
+
+119. **cond works out only what it chooses, and library words don't clash with a program's names (Claude, 22 Nov; the language, from Troy's ask that each new game make Sprout the language better, not only its libraries).** `cond [test, answer, ...]` was a word of the prelude that took a list, so every test and every answer was worked out before it chose: an answer that called its own cell again never stopped (three games met this), and the sounds and other effects written in the answers not chosen happened anyway. The compiler now writes a `cond` given its list in place as a chain of choices: the tests are worked out in order up to the first that is true (or any), and only that answer is worked out, in the tail of the cell when the cond is, so an answer can call its own cell again as deep as it likes (`f : [n | cond [n < 1, 0, any, f (n - 1)]]` runs to twenty thousand). The answers given are the same as before. A program's own `cond`, and `cond` given a list made elsewhere, are as they were. And the lint "is both a field here and a name in scope" no longer fires for a word read straight from a global named in place (`piles draw`, `vec size`): every game has a cell called draw, and a library module's word can't mean it; a program's own records still lint as before.
+
+120. **Blended Zebra 8, and handhelds that differ in more than colour (Claude, 22 Nov; a game, the host and the library, from Troy's asks for a simple 8-bit Blended Zebra and for more variety in each new game's handheld).** Blended Zebra 8 (`examples/blended-zebra.sp`, at `/blended-zebra/`, on its own frozen Sprout) is the endless black, white and red deckbuilder made small: a zebra climbs a savanna floor by floor, picking a door (a fight, an oasis every third floor, a boss every fifth); a fight deals five cards and three energy a turn, attacks go through the foe's guard, blocks last the turn, and the foe shows its next move (attack, guard or roar); after a win you take one of three cards; at an oasis you rest or blend two cards into one that does both, at the dearer cost, under a name made of both (BITE and HIDE blend to BIDE), and a blend can be blended once more before it is MAX; BITE and KICK make the ancestral CRUSH. It keeps your best floor. The library gained `piles` (fresh, draw, play, exhaust, end-turn, all-cards: the stock, hand and discard of a deckbuilder, the discard shuffled back by seed when the stock runs out) and `prose blend` (two words into one, half of each). The skins gained options that change the handheld's shape and feel, not only its colours: `shape: "wide"` (a landscape body with the screen in the middle, the D-pad on the left and the buttons on the right, on a computer or a tablet held sideways), `pattern: "zebra"` (wavy stripes in the plastic), `dpadShape: "disc"` (a round pad), `buttonRow` (the buttons side by side) and `plate` (a light panel behind the brand, and behind the small labels on a patterned body). Blended Zebra's handheld uses all of them, in white plastic with black stripes and red controls, with its own font, Sora (SIL Open Font License). `sprite` takes a sixth value, a whole number, to draw a picture that many times bigger. And SPROUT·8 now latches a press until the next frame has seen it, so a tap quicker than a frame still counts.
 ````
 
 ---
@@ -1150,6 +1154,16 @@ class CodeGen {
   }
   // quoted code is made once, when the program loads, from its syntax tree
   quotedConstant(term) { const k = "QUOTED_" + this.constants.length; this.constants.push("const " + k + "=quoted(" + JSON.stringify(JSON.stringify(term, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value)) + ");"); return k; }
+  // the answer of the first test that is true (or any), else false: a chain of choices, built from the last one back
+  condCode(items, tail) {
+    const t = this.newTemp(), anyCode = this.nameCode("any");
+    let code = "false";
+    for (let k = items.length - 1 - ((items.length - 1) % 2); k >= 0; k -= 2) {
+      const answer = items[k + 1] ? this.genChain(items[k + 1], tail) : "false";
+      code = "((" + t + "=" + this.genChain(items[k], false) + ")===true||" + t + "===" + anyCode + "?" + answer + ":" + code + ")";
+    }
+    return code;
+  }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
   arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
@@ -1193,8 +1207,12 @@ class CodeGen {
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
     // quote [code]: the code itself as a value (decision 102), unless a program names something quote
     const quoting = terms[0].type === "word" && terms[0].value === "quote" && terms.length > 1 && !this.lookup("quote");
-    let code = quoting ? this.quotedConstant(terms[1]) : this.genTerm(terms[0], true), run = null;
-    for (let i = quoting ? 2 : 1; i < terms.length; i++) {
+    // cond [test, answer, ...] written out: only the tests up to the first true one, and its answer, are worked out
+    // (decision 119), so an answer can call its own cell again, and the sounds of the answers not chosen don't happen
+    const lazyCond = terms[0].type === "word" && terms[0].value === "cond" && terms.length > 1 && terms[1].type === "cell" && !terms[1].names.length
+      && terms[1].items.length > 0 && terms[1].items.every(item => item.type === "chain") && !this.lookup("cond");
+    let code = quoting ? this.quotedConstant(terms[1]) : lazyCond ? this.condCode(terms[1].items, tail && terms.length === 2) : this.genTerm(terms[0], true), run = null;
+    for (let i = quoting || lazyCond ? 2 : 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
       if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
@@ -1230,7 +1248,10 @@ class CodeGen {
         const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
         // flags: 1, a miss is quiet (else follows); 2, the name in scope is a global, not one the program binds, so a field
         // of the same name wins without a lint (library modules have words like format and noise; decision 73, refined by 106)
-        const flags = (quiet ? 1 : 0) | (!found && lexical !== "null" ? 2 : 0);
+        // ... and a word read straight from a global named in place (a library module: piles draw, vec size) can't mean the
+        // program's own name of the same spelling, so it doesn't lint either (decision 119)
+        const fromGlobal = i === 1 && terms[0].type === "word" && !this.lookup(terms[0].value) && this.globals.has(terms[0].value);
+        const flags = (quiet ? 1 : 0) | ((!found && lexical !== "null") || fromGlobal ? 2 : 0);
         code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (flags ? "," + flags : "") + ")";
       } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
         code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
@@ -4131,6 +4152,21 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("112 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
+// ---------------- cond works out only what it chooses (decision 119)
+{
+  S.setLog(m => logs.push(m)); logs.length = 0;
+  ok("119 cond gives the same answers", val('cond [false, 1, true, 2, any, 3]') === "2" && val('cond [1 > 2, "a", any, "b"]') === "b" && val('cond [false, 1]') === "false" && val('cond [any, "first"]') === "first" && val('cond [false, 1, true]') === "false");
+  ok("119 an answer can call its own cell again, as deep as it likes", S.format(S.load("f : [n | cond [n < 1, 0, any, f (n - 1)]]\nresult : f 20000").field("result")) === "0" && logs.length === 0);
+  out.length = 0; S.load('r : cond [true, "a" print, any, "b" print]').run(S.BANG);
+  ok("119 the effects of the answers not chosen don't happen", JSON.stringify(out) === '["a"]');
+  ok("119 a program's own cond is its own", S.format(S.load("cond : [x | \"mine\"]\nresult : cond [1, 2]").field("result")) === "mine");
+  ok("119 cond written with a list made elsewhere still works", S.format(S.load("cases : [false, 1, any, 2]\nresult : cond cases").field("result")) === "2");
+  logs.length = 0; S.load("draw : [game | game]\nresult : piles draw [[stock : [1, 2], hand : [], discard : []], 1, 7] hand").field("result");
+  ok("119 a library's word read in place doesn't clash with the program's own name", !logs.some(m => /both a field/.test(m)), logs);
+  logs.length = 0; S.load("size : 3\nbox : [size : 4]\nresult : box size").field("result");
+  ok("119 a program's own record still lints when its field is named like a name in scope", logs.some(m => /both a field/.test(m)));
+}
+
 // ---------------- wrapped libraries (decision 106)
 {
   S.setLog(m => logs.push(m));
@@ -5134,6 +5170,34 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   pressH("two");
   ok("crate cove: button 2 starts the cove again", S.format(h.state.field("crab")) === at0 && h.state.field("moves") === 0, [S.format(h.state.field("crab")), at0]);
   ok("crate cove: plays without a message", logs.length === 0, logs.slice(0, 3));
+  Object.defineProperty(S.globals, "zzfx", was);
+}
+
+
+// ---------------- Blended Zebra 8 (decision 120): a bot climbs, blends at the oasis, and the recipe makes CRUSH
+{
+  const was = Object.getOwnPropertyDescriptor(S.globals, "zzfx"), quietWord = name => new S.Native(name, () => S.effect(() => {}), true);
+  Object.defineProperty(S.globals, "zzfx", { value: S.valueCellOf([], new Map([["preset", quietWord("preset")], ["play", quietWord("play")]])), configurable: true, writable: true, enumerable: true });
+  logs.length = 0;
+  const src = fs.readFileSync(__dirname + "/examples/blended-zebra.sp", "utf8") + '\nrecipe-check : blend-of [card-book get-in ["bite"], card-book get-in ["kick"]] name\nplain-check : blend-of [card-book get-in ["graze"], card-book get-in ["hide"]]\n';
+  const g = L.makeGame(src, { W: 256, H: 192, host: { saved: S.valueCellOf([], new Map()) }, onEffect: () => {} });
+  ok("blended zebra: BITE blended with KICK is the ancestral CRUSH", g.file.field("recipe-check") === "CRUSH");
+  const plain = g.file.field("plain-check");
+  ok("blended zebra: a plain blend does both cards' things, at the dearer cost, under a name made of both", plain.field("name") === "GRADE" && plain.field("heal") === 4 && plain.field("block") === 6 && plain.field("cost") === 1 && plain.field("level") === 1, S.format(plain));
+  const st = k => g.state.fieldNames().includes(k) ? g.state.field(k) : undefined, tap = k => { g.tick(1 / 60, held([k])); g.tick(1 / 60, held([])); };
+  let blended = false, deckBefore = 0;
+  for (let t = 0; t < 3000 && !(st("floor") >= 4 && st("mode") === "map") && st("mode") !== "fallen"; t++) {
+    const mode = st("mode");
+    if (mode === "title") tap("one");
+    else if (mode === "map") { if (st("floor") === 3 && !blended) { tap("right"); tap("one"); } else tap("one"); }
+    else if (mode === "oasis") tap("one");
+    else if (mode === "blend") { deckBefore = S.partsOf(st("deck")).length; tap("one"); tap("right"); tap("one"); tap("one"); blended = true; }
+    else if (mode === "fight") { const fi = st("fight"), hand = S.partsOf(fi.field("pile").field("hand")); if (hand.length && hand[0].field("cost") <= fi.field("energy")) tap("one"); else tap("two"); }
+    else if (mode === "reward") tap("one");
+    else g.tick(1 / 60, held([]));
+  }
+  ok("blended zebra: a bot fights up past the third floor, blending two cards into one at the oasis", st("floor") >= 4 && blended && S.partsOf(st("deck")).some(c => c.field("level") >= 1), [st("floor"), st("mode"), blended]);
+  ok("blended zebra: climbs without a message", logs.length === 0, logs.slice(0, 3));
   Object.defineProperty(S.globals, "zzfx", was);
 }
 
@@ -7174,6 +7238,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/blended-zebra/">Blended Zebra 8</a><span>The endless black, white and red deckbuilder, small and 8-bit: fight with five cards and three energy, blend two cards into one at the oasis, climb as far as you can.</span></li>
 <li><a href="/crate-cove/">Crate Cove</a><span>An 8-bit pushing puzzle on SPROUT·8: six coves of driftwood to push onto the tide marks, with undo and your fewest moves kept.</span></li>
 <li><a href="/lantern-keep/">Lantern Keep</a><span>An 8-bit maze game on SPROUT·8: light every lantern in a dark keep while shadow wisps hunt you down the corridors.</span></li>
 <li><a href="/comet-lance/">Comet Lance</a><span>An 8-bit vertical shooter on SPROUT·8: waves of drones, darters and spinners, a boss every fifth wave, and P capsules that widen your shot.</span></li>
@@ -8890,7 +8955,7 @@ const GROUPS = [
   ["Time and motion", ["ease", "motion", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "hex", "iso", "camera", "layout", "matrix", "geo"]],
-  ["Chance", ["seeded", "dice", "cards"]],
+  ["Chance", ["seeded", "dice", "cards", "piles"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy"]],
   ["Colour", ["palette"]],
 ];

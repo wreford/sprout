@@ -436,6 +436,21 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("112 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
+// ---------------- cond works out only what it chooses (decision 119)
+{
+  S.setLog(m => logs.push(m)); logs.length = 0;
+  ok("119 cond gives the same answers", val('cond [false, 1, true, 2, any, 3]') === "2" && val('cond [1 > 2, "a", any, "b"]') === "b" && val('cond [false, 1]') === "false" && val('cond [any, "first"]') === "first" && val('cond [false, 1, true]') === "false");
+  ok("119 an answer can call its own cell again, as deep as it likes", S.format(S.load("f : [n | cond [n < 1, 0, any, f (n - 1)]]\nresult : f 20000").field("result")) === "0" && logs.length === 0);
+  out.length = 0; S.load('r : cond [true, "a" print, any, "b" print]').run(S.BANG);
+  ok("119 the effects of the answers not chosen don't happen", JSON.stringify(out) === '["a"]');
+  ok("119 a program's own cond is its own", S.format(S.load("cond : [x | \"mine\"]\nresult : cond [1, 2]").field("result")) === "mine");
+  ok("119 cond written with a list made elsewhere still works", S.format(S.load("cases : [false, 1, any, 2]\nresult : cond cases").field("result")) === "2");
+  logs.length = 0; S.load("draw : [game | game]\nresult : piles draw [[stock : [1, 2], hand : [], discard : []], 1, 7] hand").field("result");
+  ok("119 a library's word read in place doesn't clash with the program's own name", !logs.some(m => /both a field/.test(m)), logs);
+  logs.length = 0; S.load("size : 3\nbox : [size : 4]\nresult : box size").field("result");
+  ok("119 a program's own record still lints when its field is named like a name in scope", logs.some(m => /both a field/.test(m)));
+}
+
 // ---------------- wrapped libraries (decision 106)
 {
   S.setLog(m => logs.push(m));

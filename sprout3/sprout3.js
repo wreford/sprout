@@ -283,6 +283,16 @@ class CodeGen {
   }
   // quoted code is made once, when the program loads, from its syntax tree
   quotedConstant(term) { const k = "QUOTED_" + this.constants.length; this.constants.push("const " + k + "=quoted(" + JSON.stringify(JSON.stringify(term, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value)) + ");"); return k; }
+  // the answer of the first test that is true (or any), else false: a chain of choices, built from the last one back
+  condCode(items, tail) {
+    const t = this.newTemp(), anyCode = this.nameCode("any");
+    let code = "false";
+    for (let k = items.length - 1 - ((items.length - 1) % 2); k >= 0; k -= 2) {
+      const answer = items[k + 1] ? this.genChain(items[k + 1], tail) : "false";
+      code = "((" + t + "=" + this.genChain(items[k], false) + ")===true||" + t + "===" + anyCode + "?" + answer + ":" + code + ")";
+    }
+    return code;
+  }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
   arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
@@ -326,8 +336,12 @@ class CodeGen {
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
     // quote [code]: the code itself as a value (decision 102), unless a program names something quote
     const quoting = terms[0].type === "word" && terms[0].value === "quote" && terms.length > 1 && !this.lookup("quote");
-    let code = quoting ? this.quotedConstant(terms[1]) : this.genTerm(terms[0], true), run = null;
-    for (let i = quoting ? 2 : 1; i < terms.length; i++) {
+    // cond [test, answer, ...] written out: only the tests up to the first true one, and its answer, are worked out
+    // (decision 119), so an answer can call its own cell again, and the sounds of the answers not chosen don't happen
+    const lazyCond = terms[0].type === "word" && terms[0].value === "cond" && terms.length > 1 && terms[1].type === "cell" && !terms[1].names.length
+      && terms[1].items.length > 0 && terms[1].items.every(item => item.type === "chain") && !this.lookup("cond");
+    let code = quoting ? this.quotedConstant(terms[1]) : lazyCond ? this.condCode(terms[1].items, tail && terms.length === 2) : this.genTerm(terms[0], true), run = null;
+    for (let i = quoting || lazyCond ? 2 : 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
       if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
@@ -363,7 +377,10 @@ class CodeGen {
         const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
         // flags: 1, a miss is quiet (else follows); 2, the name in scope is a global, not one the program binds, so a field
         // of the same name wins without a lint (library modules have words like format and noise; decision 73, refined by 106)
-        const flags = (quiet ? 1 : 0) | (!found && lexical !== "null" ? 2 : 0);
+        // ... and a word read straight from a global named in place (a library module: piles draw, vec size) can't mean the
+        // program's own name of the same spelling, so it doesn't lint either (decision 119)
+        const fromGlobal = i === 1 && terms[0].type === "word" && !this.lookup(terms[0].value) && this.globals.has(terms[0].value);
+        const flags = (quiet ? 1 : 0) | ((!found && lexical !== "null") || fromGlobal ? 2 : 0);
         code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (flags ? "," + flags : "") + ")";
       } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
         code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
