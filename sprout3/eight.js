@@ -70,7 +70,7 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
 #e8 .below{display:flex;gap:12px;align-items:center;font:7px "Press Start 2P",monospace;color:var(--hint)}
 #e8 .below button{font:7px "Press Start 2P",monospace;color:var(--hint);background:#ffffff14;border:0;border-radius:8px;padding:7px 9px;cursor:pointer}
 #e8.touch .below{display:none}
-#e8 .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--body);z-index:5;transition:opacity .5s}
+#e8 .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--body);z-index:5;transition:opacity .5s;pointer-events:none}
 #e8 .boot span{font:var(--logo-weight) calc(var(--logo-size) * 1.3)/1 var(--brand),system-ui,sans-serif;font-style:var(--logo-style);letter-spacing:var(--logo-track);color:var(--logo);animation:e8in 1.1s steps(8) both}
 @keyframes e8in{from{transform:translateY(-120px);opacity:0}to{transform:none;opacity:1}}
 /* options a skin can choose (decision 120): a round D-pad, buttons in a row, a plate behind the brand, a wide body */
@@ -139,6 +139,17 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
   #e8 .holo{top:auto;right:auto;left:16px;bottom:34px}
   #e8 .gb.hyper .bezel,#e8.touch .gb.hyper .bezel{padding-left:46px}
 }
+/* a tall screen (decision 143): the screen takes the body's width and nearly all its height, the controls a low row */
+#e8 .gb.tall{width:min(96vw,calc((100vh - 52px) * 0.6));height:calc(100vh - 52px);aspect-ratio:auto;grid-template-columns:1fr auto 1fr;
+  grid-template-rows:auto 1fr auto auto;grid-template-areas:"top top top" "bezel bezel bezel" "dpad brand btns" "pills pills pills";padding:0 0 8px;border-radius:18px 18px 44px 18px}
+#e8 .gb.tall .bezel{margin:0 3%;padding:18px 3% 10px;border-radius:12px;min-height:0}
+#e8 .gb.tall .led,#e8 .gb.tall .grille{display:none}
+#e8 .gb.tall .brand{flex-direction:column;justify-content:center;align-items:center;padding:8px 0 0;gap:4px;margin:0}
+#e8 .gb.tall .brand .mascot{width:30px;height:30px;margin:0}#e8 .gb.tall .brand .sub{align-self:center;padding:0}
+#e8 .gb.tall .dpad{width:104px;height:104px;margin-top:10px}#e8 .gb.tall .dpad .h{top:34px;height:36px}#e8 .gb.tall .dpad .v{left:34px;width:36px}#e8 .gb.tall .dpad .c{left:43px;top:43px}
+#e8 .gb.tall .btns{transform:none;gap:12px}#e8 .gb.tall .btn{width:50px;height:50px}#e8 .gb.tall .btn.two{margin-bottom:22px}
+#e8 .gb.tall .pills{padding:2px 0 0}
+#e8.touch .gb.tall{width:100vw;height:100%;border-radius:0;padding-bottom:max(8px,env(safe-area-inset-bottom))}
 @media (orientation:landscape) and (min-height:561px){
   #e8 .gb.wide{width:min(96vw,calc((100vh - 64px) * 1.8));aspect-ratio:18/10;border-radius:46% 46% 46% 46% / 22% 22% 30% 30%;padding:0 0 16px;
     grid-template-columns:1fr auto 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top top top" "dpad bezel btns" "pills brand ."}
@@ -302,6 +313,9 @@ function start(opts) {
   opts = opts || {};
   if (opts.bits === 16) { W = 320; H = 224; LEVELS = 8; BITS = 16; snapped.clear(); }
   if (opts.bits === 256) { W = 480; H = 270; LEVELS = 0; BITS = 256; snapped.clear(); }
+  // a screen of the game's own size (decision 143), as [width, height]; taller than wide makes a tall handheld
+  if (Array.isArray(opts.screen) && opts.screen.length === 2) { W = Math.round(+opts.screen[0]) || W; H = Math.round(+opts.screen[1]) || H; }
+  const TALL = H > W;
   const skin = Object.assign({}, PLAIN, BITS === 16 ? PLAIN16 : BITS === 256 ? PLAIN256 : {}, opts.skin || {});
   // the buttons: two, or four in an arc on SPROUT·256
   const BUTTONS = BITS === 256 ? ["one", "two", "three", "four"] : ["one", "two"];
@@ -318,7 +332,7 @@ function start(opts) {
     btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint, stick: skin.stick || skin.button };
   for (const k in vars) box.style.setProperty("--" + k, vars[k]);
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  box.innerHTML = `<div class="gb${skin.shape === "wide" || skin.shape === "cabinet" ? " " + skin.shape : skin.shape === "hyper" ? " wide hyper" : ""}">
+  box.innerHTML = `<div class="gb${TALL ? " tall" : skin.shape === "wide" || skin.shape === "cabinet" ? " " + skin.shape : skin.shape === "hyper" ? " wide hyper" : ""}">
   <div class="top"><i></i><span>${esc(skin.badge)}</span><i></i></div>
   <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER${BITS === 256 ? '<b class="mem"></b>MEMORY' : ""}</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
   <div class="brand${skin.plate ? " plate" : ""}"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
@@ -371,6 +385,14 @@ function start(opts) {
   function fit() {
     const bz = $(".bezel"), r = bz.getBoundingClientRect(), cs = getComputedStyle(bz);
     const roomW = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    // a tall screen (decision 143) takes all the width and all the height the controls leave, at any size, not whole pixels
+    if (TALL && !(innerWidth > innerHeight && innerHeight < 560)) {
+      const gbr = $(".gb").getBoundingClientRect(), h = sel => { const el = $(sel); return el && getComputedStyle(el).display !== "none" ? el.getBoundingClientRect().height : 0; };
+      const roomH = gbr.height - h(".top") - Math.max(h(".dpad"), h(".btns"), h(".brand")) - h(".pills") - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 28;
+      const k = Math.max(0.5, Math.min(roomW / W, roomH / H));
+      canvas.style.width = W * k + "px"; canvas.style.height = H * k + "px";
+      return;
+    }
     const wide = innerWidth > innerHeight && innerHeight < 560;
     const gb = $(".gb").getBoundingClientRect();
     const wideBody = skin.shape === "wide" && !wide && matchMedia("(orientation:landscape) and (min-height:561px)").matches;
@@ -415,7 +437,14 @@ function start(opts) {
     b.addEventListener("pointerup", lift); b.addEventListener("pointercancel", lift);
   }
   $(".pause").addEventListener("pointerdown", e => { e.preventDefault(); audio(); setPaused(!paused); });
-  canvas.addEventListener("pointerdown", () => { audio(); if (paused) setPaused(false); });
+  // a tap on the screen reaches the game as a touch (decision 143), at the screen's own pixels: the frame's input gets
+  // tapped, touching, touch-x and touch-y. A tap while paused only carries on.
+  const onScreen = e => { const r = canvas.getBoundingClientRect(); return [Math.max(0, Math.min(W - 1, (e.clientX - r.left) / r.width * W)), Math.max(0, Math.min(H - 1, (e.clientY - r.top) / r.height * H))]; };
+  let screenTouch = false;
+  canvas.addEventListener("pointerdown", e => { audio(); if (paused) { setPaused(false); return; } if (!game) return; e.preventDefault(); try { canvas.setPointerCapture(e.pointerId); } catch (err) {} screenTouch = true; const [x, y] = onScreen(e); game.down(x, y); });
+  canvas.addEventListener("pointermove", e => { if (screenTouch && game) { const [x, y] = onScreen(e); game.move(x, y); } });
+  const screenUp = () => { if (screenTouch && game) game.up(); screenTouch = false; };
+  canvas.addEventListener("pointerup", screenUp); canvas.addEventListener("pointercancel", screenUp);
   let padStart = false;
   function pollPad() {
     PADKEYS.clear();
@@ -532,6 +561,7 @@ function start(opts) {
       const keep = store.get(saveKey, null);
       const host = { saved: keep ? S.libraries.fromJS(keep) : S.valueCellOf([], new Map()), console8: true };
       game = LIVE.makeGame(src, { W, H, onEffect, host });
+      root.Eight.game = game;
       // the maker's plate shows the game's own hero, drawn from its art
       try { const art = skin.mascot ? game.file.field(skin.mascot) : S.UNSET, ink = game.file.field(skin.mascotInk || "ink");
         if (art !== S.UNSET && S.isCell(art)) { const bm = bitmap(art, ink === S.UNSET ? null : ink), m = $(".mascot"); m.width = bm.width; m.height = bm.height; m.getContext("2d").drawImage(bm, 0, 0); } else $(".mascot").style.display = "none"; } catch (e) {}

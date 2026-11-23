@@ -49,7 +49,7 @@ fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html>
 <base href="/${name}/sprout/">
 </head><body>
 ${RUNTIME.map(f => `<script src="${f}?v=${stamp}"></script>`).join("\n")}
-<script>Eight.start({ game: "game.sp?v=${stamp}", title: ${JSON.stringify(meta.title)}, key: ${JSON.stringify(name)}, skin: ${JSON.stringify(skin)}${hasCss ? `, css: "skin.css?v=${stamp}"` : ""}${meta.bits ? `, bits: ${meta.bits}` : ""} });
+<script>Eight.start({ game: "game.sp?v=${stamp}", title: ${JSON.stringify(meta.title)}, key: ${JSON.stringify(name)}, skin: ${JSON.stringify(skin)}${hasCss ? `, css: "skin.css?v=${stamp}"` : ""}${meta.bits ? `, bits: ${meta.bits}` : ""}${meta.screen ? `, screen: ${JSON.stringify(meta.screen)}` : ""} });
 // a local web app: its own service worker keeps every file it needs, so it opens and plays with no connection
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/${name}/sw.js", { scope: "/${name}/" }).catch(() => {}));</script>
 </body></html>

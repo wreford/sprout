@@ -165,6 +165,21 @@ server.listen(0, async () => {
       ok("SPROUT·256: no errors on the page", serr.length === 0, serr);
       await ctx.close();
     }
+    // a tall screen (decision 143): 240 by 400 on a phone, taking most of it, and a tap on it reaching the game
+    {
+      const ctx = await browser.newContext(devices["iPhone 13"]), tp = await ctx.newPage(), terr = [];
+      tp.on("pageerror", e => terr.push(e.message)); tp.on("console", m => { if (m.type() === "error") terr.push(m.text()); });
+      const base = new URL(url).origin + "/sprout3/", runtime = ["sprout3.js", "words.js", "parse.js", "stdlib.js", "libs.js", "kernels.js", "live3.js", "eight.js"];
+      await tp.goto(base + "index.html");
+      await tp.setContent(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="${base}"></head><body>${runtime.map(f => `<script src="${f}"></script>`).join("")}<script>Eight.start({ game: "examples/test-card-tall.sp", title: "Tall", key: "tall", bits: 16, screen: [240, 400] });</script></body></html>`);
+      await tp.waitForFunction(() => window.Eight && Eight.game && !document.querySelector("#e8 .boot"), null, { timeout: 15000 }).catch(() => {});
+      const box = await (await tp.$(".screen canvas")).boundingBox();
+      await tp.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.75); await tp.waitForTimeout(300);
+      const st = await tp.evaluate(() => { const c = document.querySelector(".screen canvas"); return { w: c.width, h: c.height, tall: !!document.querySelector(".gb.tall"), share: c.getBoundingClientRect().height / innerHeight, taps: Sprout3.format(Eight.game.state.field("taps")), at: Sprout3.format(Eight.game.state.field("at")) }; });
+      ok("a tall screen: 240 by 400, the tall body, the screen most of a phone's height, and a tap reaching the game where it fell", st.w === 240 && st.h === 400 && st.tall && st.share > 0.6 && st.taps === "1" && /^6\d(\.\d+)?x30\d/.test(st.at), st);
+      ok("a tall screen: no errors on the page", terr.length === 0, terr);
+      await ctx.close();
+    }
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");

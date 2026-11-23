@@ -46,7 +46,7 @@ for (const name of Object.keys(games)) {
 (async () => {
   const { execFile } = require("child_process"), queue = plays.slice();
   const one = async () => { for (let name; (name = queue.shift());) {
-    const screen = games[name].bits === 256 ? ["480", "270"] : games[name].bits === 16 ? ["320", "224"] : ["256", "192"];
+    const screen = Array.isArray(games[name].screen) ? games[name].screen.map(String) : games[name].bits === 256 ? ["480", "270"] : games[name].bits === 16 ? ["320", "224"] : ["256", "192"];
     const res = await new Promise(done => execFile("node", ["-e", PLAY, path.join(SITE, name, "sprout"), ...screen], { timeout: 120000 }, (e, out) => {
       if (e) return done({ error: String(e.message).slice(0, 300) });
       try { done(JSON.parse(String(out).trim().split("\n").pop())); } catch (err) { done({ error: String(out).slice(0, 300) }); } }));
