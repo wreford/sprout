@@ -535,6 +535,29 @@ const JSON_MODULE = record(["read", "write", "pretty"], [
 ]);
 S.globals.json = JSON_MODULE;
 
+// ===================================================================== lick (decision 142): little trees of data, after
+// the data language of _why's Potion. lick read text: an indented outline into a list of nodes [name, words, kids], a
+// word that is a number read as one, "--" lines left out; lick write nodes: the outline again, two spaces a level
+function lickRead(t) {
+  const top = { kids: [] }, open = [{ depth: -1, node: top }];
+  for (const raw of t.split(/\r?\n/)) {
+    const line = raw.trim(); if (!line || line.startsWith("--")) continue;
+    const depth = raw.length - raw.trimStart().length, [name, ...words] = line.split(/\s+/);
+    while (open[open.length - 1].depth >= depth) open.pop();
+    const node = { name, words: words.map(w => /^-?\d+(\.\d+)?$/.test(w) ? Number(w) : w), kids: [] };
+    open[open.length - 1].node.kids.push(node); open.push({ depth, node });
+  }
+  const toCell = n => record(["name", "words", "kids"], [n.name, list(n.words), list(n.kids.map(toCell))]);
+  return list(top.kids.map(toCell));
+}
+const lickField = (n, k) => { const v = isCell(n) ? n.field(k) : UNSET; return v === UNSET ? false : v; };
+const lickWrite = (nodes, depth) => items(nodes).map(n => "  ".repeat(depth) + [lickField(n, "name"), ...(isCell(lickField(n, "words")) ? items(lickField(n, "words")) : [])].map(w => formatValue(w)).join(" ")
+  + (isCell(lickField(n, "kids")) && items(lickField(n, "kids")).length ? "\n" + lickWrite(lickField(n, "kids"), depth + 1) : "")).join("\n");
+S.globals.lick = record(["read", "write"], [
+  new I.Native("read", t => typeof t === "string" ? lickRead(t) : notUnderstood(t, "lick read")),
+  new I.Native("write", v => isCell(v) ? lickWrite(v, 0) : notUnderstood(v, "lick write")),
+]);
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end

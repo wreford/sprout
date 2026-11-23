@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (365)
+node test.js          # language tests (366)
 node game-tests.js    # game tests (309)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 674 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 675 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -823,6 +823,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 140. **Smalltalk's reflection (Claude, 23 Nov; the language, from Troy's ask for Smalltalk's influence).** Every value can now be asked about itself, as in Smalltalk: `v messages` is the list of messages it understands, words first and then operators, a record's own fields among them, and `v responds-to "pow"` says whether it understands one (`3 responds-to "pow"` is true, `"hi" responds-to "pow"` false). Sprout already sends one message at a time to a value and says "doesn't know" when it can't answer, which is Smalltalk's doesNotUnderstand; now a program, an editor or a browser can ask before it sends. Smalltalk's keyword messages and cascades would be grammar, so they stay proposals for Troy.
 
 141. **Ruby's words (Claude, 23 Nov; the language, from Troy's ask for Ruby's influence).** Values learned some of Ruby's best-loved words: `then` (a value handed to a cell, giving what the cell gives: `5 then [n | n * 2]` is 10) and `tap` (the cell runs, and the value comes back, for a look along a chain); lists `each-cons` (sliding windows), `minmax` and `tally` (Ruby's name for frequencies); numbers `succ` and `digits` (in reading order: `1907 digits` is [1, 9, 0, 7]); and text `center`, `squeeze` and `succ`, the next text in counting order (`"az" succ` is ba, `"zz" succ` is aaa), for naming rows and files. Ruby's blocks were already Sprout's cells; its `?` and `!` names and `method_missing` would be grammar or deep changes, so they stay proposals for Troy.
+
+142. **Licks, after _why's Potion (Claude, 23 Nov; the library, from Troy's ask for the influence of _why's Potion).** Potion, _why's small language, came with a little data language of its own. Sprout's `lick` is in that spirit: data written as an indented outline, one name and its words a line, the lines indented under it its kids (`lick read "garden\n  pip 9 sprouts\n  bud 2"` gives nodes [name, words, kids], a word that is a number read as one), and `lick write` turns the nodes back into the outline, two spaces a level, so a level, a recipe, a menu or a quest can be written by hand and read in one word. Potion's other gifts, everything a small object and code that is data, Sprout had already (decisions 102 and 37).
 ````
 
 ---
@@ -4207,6 +4209,14 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("141 each-cons, minmax, tally, succ, digits, center, squeeze, then and tap, as in Ruby",
     val('[1, 2, 3, 4] each-cons 2') === "[[1, 2], [2, 3], [3, 4]]" && val('[3, 9, 1] minmax') === "[1, 9]" && val('["a", "b", "a"] tally') === "[a : 2, b : 1]" && val('41 succ') === "42" && val('1907 digits') === "[1, 9, 0, 7]"
     && val('"hi" center [6, "*"]') === "**hi**" && val('"aaabbbc" squeeze') === "abc" && val('["az" succ, "a9" succ, "zz" succ]') === "[ba, b0, aaa]" && val('5 then [n | n * 2]') === "10" && val('5 tap [n | n * 100]') === "5" && logs.length === 0);
+}
+
+// ---------------- Potion's licks (decision 142)
+{
+  logs.length = 0;
+  const outline = '"garden\\n  pip 9 sprouts\\n  bud 2\\n    leaf droopy"';
+  ok("142 lick reads an indented outline into a tree, numbers as numbers, and writes it back the same",
+    val('lick read ' + outline + ' @ 1 kids @ 2 kids @ 1 words') === "[droopy]" && val('lick read ' + outline + ' @ 1 kids @ 1 words') === "[9, sprouts]" && val('lick write (lick read ' + outline + ') = ' + outline) === "true" && logs.length === 0, logs);
 }
 
 // ---------------- keys that repeat while held (decision 126)
@@ -7906,6 +7916,29 @@ const JSON_MODULE = record(["read", "write", "pretty"], [
 ]);
 S.globals.json = JSON_MODULE;
 
+// ===================================================================== lick (decision 142): little trees of data, after
+// the data language of _why's Potion. lick read text: an indented outline into a list of nodes [name, words, kids], a
+// word that is a number read as one, "--" lines left out; lick write nodes: the outline again, two spaces a level
+function lickRead(t) {
+  const top = { kids: [] }, open = [{ depth: -1, node: top }];
+  for (const raw of t.split(/\r?\n/)) {
+    const line = raw.trim(); if (!line || line.startsWith("--")) continue;
+    const depth = raw.length - raw.trimStart().length, [name, ...words] = line.split(/\s+/);
+    while (open[open.length - 1].depth >= depth) open.pop();
+    const node = { name, words: words.map(w => /^-?\d+(\.\d+)?$/.test(w) ? Number(w) : w), kids: [] };
+    open[open.length - 1].node.kids.push(node); open.push({ depth, node });
+  }
+  const toCell = n => record(["name", "words", "kids"], [n.name, list(n.words), list(n.kids.map(toCell))]);
+  return list(top.kids.map(toCell));
+}
+const lickField = (n, k) => { const v = isCell(n) ? n.field(k) : UNSET; return v === UNSET ? false : v; };
+const lickWrite = (nodes, depth) => items(nodes).map(n => "  ".repeat(depth) + [lickField(n, "name"), ...(isCell(lickField(n, "words")) ? items(lickField(n, "words")) : [])].map(w => formatValue(w)).join(" ")
+  + (isCell(lickField(n, "kids")) && items(lickField(n, "kids")).length ? "\n" + lickWrite(lickField(n, "kids"), depth + 1) : "")).join("\n");
+S.globals.lick = record(["read", "write"], [
+  new I.Native("read", t => typeof t === "string" ? lickRead(t) : notUnderstood(t, "lick read")),
+  new I.Native("write", v => isCell(v) ? lickWrite(v, 0) : notUnderstood(v, "lick write")),
+]);
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -9090,10 +9123,15 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
   { name: "write", inputs: "", about: ["a value as JSON text"], examples: ['json write [name : "Ada", due : 2026-11-20, tags : ["x"]] → {"name":"Ada","due":"2026-11-20","tags":["x"]}'] },
   { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ['json pretty [a : 1] → {\\n  "a": 1\\n}'] },
 ] });
+// lick is written in JavaScript too, in words.js (decision 142), after the data language of _why's Potion
+MODULES.push({ name: "lick", intro: ["lick: little trees of data written as an indented outline, after the data language of _why's Potion. Each line is a name and its words (a word that is a number reads as one); the lines indented under it are its kids."], words: [
+  { name: "read", inputs: "", about: ["an outline into a list of nodes, each [name, words, kids]"], examples: ['lick read "garden\\n  pip 9\\n  bud 2" @ 1 kids @ 2 → [name : bud, words : [2], kids : []]'] },
+  { name: "write", inputs: "", about: ["nodes back into an outline, two spaces a level"], examples: ['lick write (lick read "a\\n  b c") → a\\n  b c'] },
+] });
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
+  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],

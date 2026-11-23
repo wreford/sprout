@@ -486,6 +486,14 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     && val('"hi" center [6, "*"]') === "**hi**" && val('"aaabbbc" squeeze') === "abc" && val('["az" succ, "a9" succ, "zz" succ]') === "[ba, b0, aaa]" && val('5 then [n | n * 2]') === "10" && val('5 tap [n | n * 100]') === "5" && logs.length === 0);
 }
 
+// ---------------- Potion's licks (decision 142)
+{
+  logs.length = 0;
+  const outline = '"garden\\n  pip 9 sprouts\\n  bud 2\\n    leaf droopy"';
+  ok("142 lick reads an indented outline into a tree, numbers as numbers, and writes it back the same",
+    val('lick read ' + outline + ' @ 1 kids @ 2 kids @ 1 words') === "[droopy]" && val('lick read ' + outline + ' @ 1 kids @ 1 words') === "[9, sprouts]" && val('lick write (lick read ' + outline + ') = ' + outline) === "true" && logs.length === 0, logs);
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));

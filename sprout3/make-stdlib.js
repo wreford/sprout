@@ -57,10 +57,15 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
   { name: "write", inputs: "", about: ["a value as JSON text"], examples: ['json write [name : "Ada", due : 2026-11-20, tags : ["x"]] → {"name":"Ada","due":"2026-11-20","tags":["x"]}'] },
   { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ['json pretty [a : 1] → {\\n  "a": 1\\n}'] },
 ] });
+// lick is written in JavaScript too, in words.js (decision 142), after the data language of _why's Potion
+MODULES.push({ name: "lick", intro: ["lick: little trees of data written as an indented outline, after the data language of _why's Potion. Each line is a name and its words (a word that is a number reads as one); the lines indented under it are its kids."], words: [
+  { name: "read", inputs: "", about: ["an outline into a list of nodes, each [name, words, kids]"], examples: ['lick read "garden\\n  pip 9\\n  bud 2" @ 1 kids @ 2 → [name : bud, words : [2], kids : []]'] },
+  { name: "write", inputs: "", about: ["nodes back into an outline, two spaces a level"], examples: ['lick write (lick read "a\\n  b c") → a\\n  b c'] },
+] });
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
+  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
