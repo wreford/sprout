@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 675 pass, 366 for the language and 309 for the games.
+- **Tests:** 684 pass, 366 for the language and 318 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (366)
-node game-tests.js    # game tests (309)
+node game-tests.js    # game tests (318)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 675 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 684 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -900,6 +900,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 142. **Licks, after _why's Potion (Claude, 23 Nov; the library, from Troy's ask for the influence of _why's Potion).** Potion, _why's small language, came with a little data language of its own. Sprout's `lick` is in that spirit: data written as an indented outline, one name and its words a line, the lines indented under it its kids (`lick read "garden\n  pip 9 sprouts\n  bud 2"` gives nodes [name, words, kids], a word that is a number read as one), and `lick write` turns the nodes back into the outline, two spaces a level, so a level, a recipe, a menu or a quest can be written by hand and read in one word. Potion's other gifts, everything a small object and code that is data, Sprout had already (decisions 102 and 37).
 
 143. **Portrait screens, and taps on the screen (Claude, 23 Nov; the host, from Troy's ask for a portrait slot game that uses much more of the screen).** A game can bring a screen of its own size: `"screen": [240, 400]` in its registry entry (or `screen` to `Eight.start`), in any tier's colours. A screen taller than wide gets a tall handheld: the screen takes the body's whole width and nearly all its height, at any size rather than whole pixels, and the D-pad, the brand and the buttons sit in one low row beneath; on a phone the screen fills the width (about two thirds of an iPhone's height). And a tap on the screen now reaches the game as a touch at the screen's own pixels, through the frame's `tapped`, `touching`, `touch-x` and `touch-y`, so a game can be played with a finger on what it shows; the boot screen lets touches through. `examples/test-card-tall.sp` is the tall test card, and a browser check taps it.
+
+144. **Fathom, a portrait slot roguelike, and bag, shop and focus (Claude, 23 Nov; a game and the library, from Troy's ask for a new portrait slot game with much more depth).** Fathom (`examples/fathom.sp`, at `/fathom/`, on its own frozen Sprout) is a diving bell's slot machine on SPROUT·16's tall 240 by 400 screen (decision 143). Dive by dive the bell goes down, and the ship wants its air bill at the end of each (15, 31, 53, 81…); paying early turns each pull left into coins, and missing the bill snaps the line. The 5 by 4 reels are drawn from a bag of symbols you own and pay on 23 lines from a line's start (rows, columns, slants, four Vs and six zigzags), with pattern bonuses for four corners, a cross and a full column. Coral lifts each fish beside it, jellyfish make the cells beside them glow, anglers are wild, anchors stick for a pull, three chests anywhere pay 30, squid ink spoils a cell and kraken eyes eat coins; each dive has a lucky symbol, gilded symbols multiply a win, and a tap on a reel holds it. Every three dives the zone deepens through sunlight, twilight, midnight, abyss and trench, the water darkening, and each zone ends in a boss dive (the Inky Squid, the Rusted Reel, the Undertow, the Kraken, the Trench). Between dives a hermit crab's salvage shop sells 26 relics in four rarities (six held, sold back for half), five things to use once and services to add, scrap and gild symbols; rerolls cost more each time and coins earn interest. The deepest dive is kept, each zone reached unlocks more relics for later runs, and reaching the trench opens two harder pressures. Everything works by tapping as well as by the arrows and buttons. Its handheld is a copper diving helmet with a brass porthole, rivets and red valve-wheel buttons (`skins/fathom.css`). The library gained `bag` (a slot game's reels built from a bag of symbols, drawn by seed, added to, scrapped and gilded), `shop` (offers drawn by rarity from a seed, prices that grow with depth, rerolls, selling for half, interest) and `focus` (boxes on a screen that a tap hits or the arrows move between, so a screen works by touch and keys alike).
 ````
 
 ---
@@ -7408,6 +7410,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/fathom/">Fathom</a><span>A portrait 16-bit slot roguelike on SPROUT·16: your reels are a bag of symbols you build, a monster every third dive, twenty-six relics and a hermit crab's salvage shop.</span></li>
 <li><a href="/starlane/">Starlane 2025</a><span>The first SPROUT·256 game: surf a glowing lane into a striped sunset, with four buttons in an arc to boost, jump, spin and bomb.</span></li>
 <li><a href="/tide-machine/">Tide Machine</a><span>A 16-bit slot-machine roguelike on SPROUT·16: lines of three or more pay, the sea wants its coins each tide, and a gull in a captain's hat sells charms that bend the rules.</span></li>
 <li><a href="/headstrong/">Headstrong</a><span>A 16-bit platform game on SPROUT·16: you are a big head with tiny feet, bouncing on bubbles, riding soap bars and head-butting cracked tiles through three bathroom rooms to a warm towel.</span></li>
@@ -9208,9 +9211,9 @@ const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
   ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
-  ["Touch and sound", ["pad", "menu", "gesture", "music"]],
+  ["Touch and sound", ["pad", "menu", "focus", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
-  ["Chance", ["seeded", "dice", "cards", "piles", "reels"]],
+  ["Chance", ["seeded", "dice", "cards", "piles", "reels", "bag", "shop"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],
 ];
