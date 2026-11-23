@@ -920,6 +920,8 @@ Proposed, for Troy to settle (grammar, so not built):
 - The compiler may remove a boundary (inline a block, skip making a thunk) only where nothing can tell: the code is pure (no effects, no outside reads such as random or the clock) and the value is certainly consumed at once, or the expression is a constant. Effects keep their order; an effect inside a thunk happens when the thunk is forced.
 - Cells describe computation, and the runtime and library decide how to run it. Columns (decision 82), fusion (79) and spork kernels on WebAssembly SIMD and WebGPU already follow this rule, and it becomes the rule for every control word: `each`, `keep`, `drop` and `fold` may choose scalar, column, SIMD or GPU execution from the size and shape of the work, the cost of the cell and the hardware, inside the library, never in the program. Whatever they choose must give the same answers bit for bit (sums added in the same order), and the same effects in the same order.
 - Open for Troy: whether `fold` should get a plainer name (perhaps `combine [start, [total item | ...]]`), and whether a thunk's `kind` should say "later" before it is forced or force it.
+
+150. **Graphs, sets and automata: improvements 1 to 25 of 200 (Claude, 23 Nov; the library, decisions 105 and 112, from Troy's ask to improve Sprout 200 times; no change to the language).** Three new modules and four new words, each with a checked example. `graph` is things joined by arrows: a graph is a list of edges, `[from, to]` or `[from, to, cost]`, and a node is any text or number. `nodes`, `next`, `reach` and `reached-by` say what a node leads to and what it waits on, and `starts` gives the nodes nothing leads to. `order` gives an order where each node comes after everything that leads to it, or false when a loop makes that impossible, and `loop` names that loop. `path` gives the way with the fewest arrows, `cheapest` the cheapest way along costed edges, and `longest` the heaviest way through a graph with no loops, each node weighted by a cell (a project's critical path); the last two answer `[way, total]`. It is kept general so that ACE's atoms can lean on it. `sets` treats lists as sets, keeping the first list's order: `union`, `both`, `minus`, `toggle`, `inside` and `same`, and `picks` and `orders` for every choice of n things and every order of them. `automata` works on grids of true and false: `step` is any Life-like rule given its born and stay counts, `caves` grows a roguelike cave from a seed by the 4-5 rule, and `next-row` is an elementary one-row rule (30, 90, 110). Four words the games had been writing by hand are now in the library: `seeded triangle [low, likely, high, seed]` (a three-point estimate, from ace-schedule and ace-risk) and `vec wrap-angle`, `angle-gap` and `turn-toward` (from silvereye, silvereye-2d and swarm). The library now has 67 modules and 598 words.
 ````
 
 ---
@@ -2765,9 +2767,12 @@ class WorkAhead {
       else if (stage.word === "each") {
         // host words called for each item that passed, in order, each under the tests that lead to it
         const cell = fn(stage); this.pathCondition = passes; this.hostCalls = [];
-        try { this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
+        let answer;
+        try { answer = this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
         const calls = this.hostCalls; this.hostCalls = null;
         if (!calls.length) this.giveUp("each does nothing here a host word doesn't do");
+        // each gives the list of what its cell gave (decision 149): here false for every item, so the loop counts them
+        if (!this.isFalse(answer)) this.giveUp("each's cell gives something other than false here");
         return this.emitKernel("each", [passes.id], null, calls);
       }
       else if (stage.word === "keep") {
@@ -2907,7 +2912,8 @@ function runSpork(s, xs) {
 const NOT_FUSED = { fuse: "no" };
 // hostWords: the host words the loop calls, read when the program loaded, as the steps as written read them
 // (each game has its own circle, so looking it up by name now could find another game's)
-function runFusedLoop(xs, fusedKernels, caps, hostWords) {
+// answerUnused: the loop is a line whose answer nobody reads, so an each needn't give its list (decision 149)
+function runFusedLoop(xs, fusedKernels, caps, hostWords, answerUnused) {
   if (!internals.fast()) return NOT_FUSED;
   let kernel, n, inputs = null, columns = null, recordShape = null;
   if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
@@ -2934,7 +2940,10 @@ function runFusedLoop(xs, fusedKernels, caps, hostWords) {
       if (!(h instanceof Native)) return NOT_FUSED;
       hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
-    return f(n, inputs, columns, recordShape, outsideValues, hostCallers, null) === NOT_FUSED ? NOT_FUSED : false;
+    const passed = f(n, inputs, columns, recordShape, outsideValues, hostCallers, null);
+    if (passed === NOT_FUSED) return NOT_FUSED;
+    // what each gives: false for every item that passed, as its cell gave
+    return answerUnused ? false : makeList(new Array(passed).fill(false));
   }
   const outputs = kernel.outputs.slice(1).map(() => new Float64Array(n)), keptRows = kernel.kind === "rows" ? new Uint32Array(n) : null;
   const m = f(n, inputs, columns, recordShape, outsideValues, outputs, keptRows);
@@ -2969,8 +2978,9 @@ function fusedLoopFunction(kernel) {
   const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return NOT_FUSED;" : "";
   let source;
   if (kernel.kind === "fold") source = beforeLoop + "let acc=" + ref(kernel.outputs[0]) + ";" + loopOverItems(loopBody + checks + "acc=" + ref(kernel.outputs[1]) + ";") + "return acc";
-  else if (kernel.kind === "each") source = beforeLoop + "const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
-    "if(" + ref(kernel.outputs[0]) + "){" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return false";
+  // each: the host words called for every item that passes, and the number that passed
+  else if (kernel.kind === "each") source = beforeLoop + "let m=0;const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
+    "if(" + ref(kernel.outputs[0]) + "){m++;" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return m";
   else source = beforeLoop + "let m=0;" + (kernel.outputs.length > 1 ? "const " + kernel.outputs.slice(1).map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" : "") + loopOverItems(loopBody + checks + "if(" + ref(kernel.outputs[0]) + "){" +
     kernel.outputs.slice(1).map((o, j) => "outputs" + j + "[m]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("") + (kernel.kind === "rows" ? "keptRows[m]=i;" : "") + "m++}") + "return m";
   const compiled = new Function("noiseHash", "NOT_FUSED", "n", "inputs", "columns", "recordShape", "outsideValues", "outputs", "keptRows", source);
@@ -3211,7 +3221,7 @@ function wrapFusedLoop(gen, run, ordinary) {
   gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
   gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
   const hostWords = workAhead.hostWordsUsed.size ? "{" + [...workAhead.hostWordsUsed].map(word => JSON.stringify(word) + ":" + gen.globalCode(word)).join(",") + "}" : "null";
-  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "," + !!run.answerUnused + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
 core.install({

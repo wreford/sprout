@@ -531,9 +531,12 @@ class WorkAhead {
       else if (stage.word === "each") {
         // host words called for each item that passed, in order, each under the tests that lead to it
         const cell = fn(stage); this.pathCondition = passes; this.hostCalls = [];
-        try { this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
+        let answer;
+        try { answer = this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
         const calls = this.hostCalls; this.hostCalls = null;
         if (!calls.length) this.giveUp("each does nothing here a host word doesn't do");
+        // each gives the list of what its cell gave (decision 149): here false for every item, so the loop counts them
+        if (!this.isFalse(answer)) this.giveUp("each's cell gives something other than false here");
         return this.emitKernel("each", [passes.id], null, calls);
       }
       else if (stage.word === "keep") {
@@ -673,7 +676,8 @@ function runSpork(s, xs) {
 const NOT_FUSED = { fuse: "no" };
 // hostWords: the host words the loop calls, read when the program loaded, as the steps as written read them
 // (each game has its own circle, so looking it up by name now could find another game's)
-function runFusedLoop(xs, fusedKernels, caps, hostWords) {
+// answerUnused: the loop is a line whose answer nobody reads, so an each needn't give its list (decision 149)
+function runFusedLoop(xs, fusedKernels, caps, hostWords, answerUnused) {
   if (!internals.fast()) return NOT_FUSED;
   let kernel, n, inputs = null, columns = null, recordShape = null;
   if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
@@ -700,7 +704,10 @@ function runFusedLoop(xs, fusedKernels, caps, hostWords) {
       if (!(h instanceof Native)) return NOT_FUSED;
       hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
-    return f(n, inputs, columns, recordShape, outsideValues, hostCallers, null) === NOT_FUSED ? NOT_FUSED : false;
+    const passed = f(n, inputs, columns, recordShape, outsideValues, hostCallers, null);
+    if (passed === NOT_FUSED) return NOT_FUSED;
+    // what each gives: false for every item that passed, as its cell gave
+    return answerUnused ? false : makeList(new Array(passed).fill(false));
   }
   const outputs = kernel.outputs.slice(1).map(() => new Float64Array(n)), keptRows = kernel.kind === "rows" ? new Uint32Array(n) : null;
   const m = f(n, inputs, columns, recordShape, outsideValues, outputs, keptRows);
@@ -735,8 +742,9 @@ function fusedLoopFunction(kernel) {
   const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return NOT_FUSED;" : "";
   let source;
   if (kernel.kind === "fold") source = beforeLoop + "let acc=" + ref(kernel.outputs[0]) + ";" + loopOverItems(loopBody + checks + "acc=" + ref(kernel.outputs[1]) + ";") + "return acc";
-  else if (kernel.kind === "each") source = beforeLoop + "const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
-    "if(" + ref(kernel.outputs[0]) + "){" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return false";
+  // each: the host words called for every item that passes, and the number that passed
+  else if (kernel.kind === "each") source = beforeLoop + "let m=0;const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
+    "if(" + ref(kernel.outputs[0]) + "){m++;" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return m";
   else source = beforeLoop + "let m=0;" + (kernel.outputs.length > 1 ? "const " + kernel.outputs.slice(1).map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" : "") + loopOverItems(loopBody + checks + "if(" + ref(kernel.outputs[0]) + "){" +
     kernel.outputs.slice(1).map((o, j) => "outputs" + j + "[m]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("") + (kernel.kind === "rows" ? "keptRows[m]=i;" : "") + "m++}") + "return m";
   const compiled = new Function("noiseHash", "NOT_FUSED", "n", "inputs", "columns", "recordShape", "outsideValues", "outputs", "keptRows", source);
@@ -977,7 +985,7 @@ function wrapFusedLoop(gen, run, ordinary) {
   gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
   gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
   const hostWords = workAhead.hostWordsUsed.size ? "{" + [...workAhead.hostWordsUsed].map(word => JSON.stringify(word) + ":" + gen.globalCode(word)).join(",") + "}" : "null";
-  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "," + !!run.answerUnused + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
 core.install({

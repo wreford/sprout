@@ -105,7 +105,7 @@ function rolesOf(tokens, line, knownWords) {
     if (next && next.kind === "colon") return "define";
     if (word === "true" || word === "false" || word === "!") return "constant";
     if (isModule(word)) return "module";
-    if (before && isModule(before) && moduleWords(before).has(word)) return "module-word";
+    if (before && moduleWords(before).has(word)) return "module-word";
     if (HOST_WORDS.has(word)) return "host";
     if (known.has(word)) return "known";
     return "";
@@ -139,6 +139,7 @@ function inputTokens(tokens, line) {
 
 // ===================================================================== library modules and kits
 // A module's words are the names its source binds at the start of a line. Wrapped libraries (libs.js) are modules too.
+// The stdlib's modules are read from their sources, never through Sprout's globals, which would compile them.
 let moduleWordLists = null;
 function moduleSources() {
   const stdlib = (sprout() && sprout().stdlib) || {};
@@ -150,11 +151,25 @@ function moduleWords(name) {
     for (const sources of moduleSources()) for (const module of Object.keys(sources))
       moduleWordLists.set(module, new Set([...sources[module].matchAll(/^([a-z][\w?!-]*)\s*:/gim)].map(match => match[1])));
   }
-  return moduleWordLists.get(name) || new Set();
+  if (!moduleWordLists.has(name)) moduleWordLists.set(name, globalCellWords(name));
+  return moduleWordLists.get(name);
+}
+// a word of Sprout's own that is a record of words, as lick (read, write), stack and json are: its fields
+function globalCellWords(name) {
+  const libraries = sprout() && sprout().libraries;
+  if (libraries && Object.prototype.hasOwnProperty.call(libraries.LIBRARIES, name)) return wrappedLibraryWords(libraries.LIBRARIES[name]);
+  const globals = sprout() && sprout().globals;
+  if (!name || !globals || !Object.prototype.hasOwnProperty.call(globals, name)) return new Set();
+  try { const value = globals[name]; return new Set(value && typeof value.fieldNames === "function" ? value.fieldNames() : []); } catch (e) { return new Set(); }
+}
+// a wrapped library's words, asked of a stand-in for the library: reading its global would load it, or log that it is
+// still loading
+function wrappedLibraryWords(library) {
+  try { return new Set(Object.keys(library.words(new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) })))); } catch (e) { return new Set(); }
 }
 function isModule(word) {
   if (moduleWordLists === null) moduleWords("");
-  if (moduleWordLists.has(word)) return true;
+  if (moduleSources().some(sources => Object.prototype.hasOwnProperty.call(sources, word))) return true;
   const libraries = sprout() && sprout().libraries;
   return !!(libraries && Object.prototype.hasOwnProperty.call(libraries.LIBRARIES, word));
 }
