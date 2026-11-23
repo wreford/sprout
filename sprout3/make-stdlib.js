@@ -65,10 +65,10 @@ MODULES.push({ name: "lick", intro: ["lick: little trees of data written as an i
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
+  ["Apps and data", ["stack", "calendar", "finance", "tabular", "graph", "sets", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "focus", "gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "automata", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles", "reels", "bag", "shop"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],

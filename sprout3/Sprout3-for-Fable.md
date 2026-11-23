@@ -1263,7 +1263,8 @@ class CodeGen {
     return "unknownWord(" + JSON.stringify(name) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
-  genChain(chain, tail) {
+  // answerUnused: the chain is a line of a cell whose answer nobody reads, so an each at its end needn't build a list
+  genChain(chain, tail, answerUnused) {
     const terms = chain.terms;
     if (!terms.length) return "false";
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
@@ -1286,6 +1287,12 @@ class CodeGen {
       if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
       if (term.type === "word") {
         const word = term.value;
+        // xs each [...] as a line whose answer nobody reads (a drawing loop): the same runs, with no list built (decision 149)
+        if (word === "each" && answerUnused && i === terms.length - 2 && !this.lookup("each")) {
+          if (run) run.answerUnused = true;
+          code = "eachForEffect(" + code + "," + this.genTerm(terms[++i], false) + "," + (term.line || 0) + ")";
+          continue;
+        }
         if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           const nextTerm = terms[++i];
           // x with [a : ..., b : ...]: fields worked out now and laid over x, with no cell built (merge forces them anyway)
@@ -1374,7 +1381,7 @@ class CodeGen {
     items.forEach((item, index) => {
       const last = index === items.length - 1;
       if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); if (item.pattern) this.bindPattern(frame.names, item.pattern, js); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
-      else parts.push((last ? "return " : "") + this.genChain(item) + ";");
+      else parts.push((last ? "return " : "") + this.genChain(item, false, !last) + ";");
     });
     frame.names = saved;
     const temps = this.tempScopes.pop(); if (temps.length) parts.unshift("let " + temps.join(",") + ";");
@@ -1396,7 +1403,9 @@ class CodeGen {
         out.push("const " + js + "=" + valueCode + ";");
         if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
-        const valueCode = this.genChain(item, last && tail);
+        // a line's answer is read only when it is the last line, or the last part before the bindings that end the cell
+        const answerUnused = cell.items.slice(i + 1).some(later => later.type !== "bind");
+        const valueCode = this.genChain(item, last && tail, answerUnused);
         if (last) out.push("return " + valueCode + ";");
         else { const js = "p" + shapeNumber + "_" + i; out.push("const " + js + "=" + valueCode + ";"); lastPartCode = js; }
       }
@@ -1969,7 +1978,14 @@ function callCell(cell, item) {
 }
 // a cell with one named input is run straight through its code (the commonest case, and the quickest)
 const runsDirectly = cell => cell instanceof Cell && cell.shape.names.length === 1;
-function each(list, cell) {
+// each (decision 149): the cell runs with every item, in order, and each gives the list of what it gave, so collecting
+// is implied; collect is the older name for the same thing
+function each(list, cell) { return collect(list, cell); }
+// an each whose answer nobody reads (a line that only draws, say): the same runs in the same order, with no list built.
+// The compiler writes it for such a line (decision 149). A value with an each of its own (a record's each field, an
+// endless list) is sent each as usual.
+function eachForEffect(list, cell, line) {
+  if (methodsOf(list).each !== CELL_METHODS.each || hasOwnOperator(list, "each")) return send(sendWord(list, "each", null, line), cell);
   const direct = runsDirectly(cell), code = direct ? cell.runCode : null, left = direct ? cell.left : undefined;
   if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) direct ? finishTailCalls(code(left, false, i)) : callCell(cell, i); return false; }
   const items = partsOf(list);
@@ -2162,7 +2178,7 @@ function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(v
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
 const quoted = () => logMiss("quote needs the standard words (words.js)");
 const RUNTIME = { quoted, unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor, eachForEffect };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
 
@@ -9233,10 +9249,10 @@ MODULES.push({ name: "lick", intro: ["lick: little trees of data written as an i
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
+  ["Apps and data", ["stack", "calendar", "finance", "tabular", "graph", "sets", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "focus", "gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "automata", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles", "reels", "bag", "shop"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],
@@ -9753,6 +9769,16 @@ weighted : [items weights seed |
   marks : weights scan [0, [t w | t + w]] rest
   items @ (marks find-index [m | m > target])
 ]
+
+-- a number from low to high, most often near likely: a three-point guess at how long a task will take
+-- e.g. seeded triangle [2, 3, 8, 42] → 6.3817927252
+-- e.g. seeded triangle [5, 5, 5, 42] → 5
+triangle : [low likely high seed |
+  u : noise [seed, 0.909]
+  (high = low) [low] else [
+    (u < (likely - low / (high - low))) [low + (u * (high - low) * (likely - low) sqrt)] else [high - (1 - u * (high - low) * (high - likely) sqrt)]
+  ]
+]
 ````
 
 ## lib/shape.sp
@@ -9984,6 +10010,19 @@ aim : [from to speed | gap : to - from, far : size gap, (far = 0) [0x0] else [ga
 -- n copies of a velocity fanned out across an angle (radians), for a spread of shots
 -- e.g. vec fan [10x0, 3, pi] collect [v | vec round v] → [0x-10, 10x0, 0x10]
 fan : [v n spread | (n = 1) [[v]] else [range n collect [k | rotate [v, k - 1 / (n - 1) - 0.5 * spread]]]]
+
+-- an angle (radians) brought round to between -pi and pi, so two headings can be compared
+-- e.g. vec wrap-angle 7 → 0.7168146928
+wrap-angle : [turn | turn + pi % (2 * pi) - pi]
+
+-- the shortest turn from one heading to another, in radians from -pi to pi
+-- e.g. vec angle-gap [3, -3] → 0.2831853072
+angle-gap : [from to | wrap-angle (to - from)]
+
+-- a heading turned toward another by at most step, the short way round (a turret tracking, a ship steering)
+-- e.g. vec turn-toward [0, 2, 0.5] → 0.5
+-- e.g. vec turn-toward [3, -3, 0.5] → 3.2831853072
+turn-toward : [from to step | gap : angle-gap [from, to], (gap abs <= step) [from + gap] else [from + (gap sign * step)]]
 ````
 
 ## editor-tools.js

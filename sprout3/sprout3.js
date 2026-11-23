@@ -330,7 +330,8 @@ class CodeGen {
     return "unknownWord(" + JSON.stringify(name) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
-  genChain(chain, tail) {
+  // answerUnused: the chain is a line of a cell whose answer nobody reads, so an each at its end needn't build a list
+  genChain(chain, tail, answerUnused) {
     const terms = chain.terms;
     if (!terms.length) return "false";
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
@@ -353,6 +354,12 @@ class CodeGen {
       if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
       if (term.type === "word") {
         const word = term.value;
+        // xs each [...] as a line whose answer nobody reads (a drawing loop): the same runs, with no list built (decision 149)
+        if (word === "each" && answerUnused && i === terms.length - 2 && !this.lookup("each")) {
+          if (run) run.answerUnused = true;
+          code = "eachForEffect(" + code + "," + this.genTerm(terms[++i], false) + "," + (term.line || 0) + ")";
+          continue;
+        }
         if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           const nextTerm = terms[++i];
           // x with [a : ..., b : ...]: fields worked out now and laid over x, with no cell built (merge forces them anyway)
@@ -441,7 +448,7 @@ class CodeGen {
     items.forEach((item, index) => {
       const last = index === items.length - 1;
       if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); if (item.pattern) this.bindPattern(frame.names, item.pattern, js); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
-      else parts.push((last ? "return " : "") + this.genChain(item) + ";");
+      else parts.push((last ? "return " : "") + this.genChain(item, false, !last) + ";");
     });
     frame.names = saved;
     const temps = this.tempScopes.pop(); if (temps.length) parts.unshift("let " + temps.join(",") + ";");
@@ -463,7 +470,9 @@ class CodeGen {
         out.push("const " + js + "=" + valueCode + ";");
         if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
-        const valueCode = this.genChain(item, last && tail);
+        // a line's answer is read only when it is the last line, or the last part before the bindings that end the cell
+        const answerUnused = cell.items.slice(i + 1).some(later => later.type !== "bind");
+        const valueCode = this.genChain(item, last && tail, answerUnused);
         if (last) out.push("return " + valueCode + ";");
         else { const js = "p" + shapeNumber + "_" + i; out.push("const " + js + "=" + valueCode + ";"); lastPartCode = js; }
       }
@@ -1036,7 +1045,14 @@ function callCell(cell, item) {
 }
 // a cell with one named input is run straight through its code (the commonest case, and the quickest)
 const runsDirectly = cell => cell instanceof Cell && cell.shape.names.length === 1;
-function each(list, cell) {
+// each (decision 149): the cell runs with every item, in order, and each gives the list of what it gave, so collecting
+// is implied; collect is the older name for the same thing
+function each(list, cell) { return collect(list, cell); }
+// an each whose answer nobody reads (a line that only draws, say): the same runs in the same order, with no list built.
+// The compiler writes it for such a line (decision 149). A value with an each of its own (a record's each field, an
+// endless list) is sent each as usual.
+function eachForEffect(list, cell, line) {
+  if (methodsOf(list).each !== CELL_METHODS.each || hasOwnOperator(list, "each")) return send(sendWord(list, "each", null, line), cell);
   const direct = runsDirectly(cell), code = direct ? cell.runCode : null, left = direct ? cell.left : undefined;
   if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) direct ? finishTailCalls(code(left, false, i)) : callCell(cell, i); return false; }
   const items = partsOf(list);
@@ -1229,7 +1245,7 @@ function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(v
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
 const quoted = () => logMiss("quote needs the standard words (words.js)");
 const RUNTIME = { quoted, unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor, eachForEffect };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
 

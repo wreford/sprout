@@ -46,3 +46,13 @@ weighted : [items weights seed |
   marks : weights scan [0, [t w | t + w]] rest
   items @ (marks find-index [m | m > target])
 ]
+
+-- a number from low to high, most often near likely: a three-point guess at how long a task will take
+-- e.g. seeded triangle [2, 3, 8, 42] → 6.3817927252
+-- e.g. seeded triangle [5, 5, 5, 42] → 5
+triangle : [low likely high seed |
+  u : noise [seed, 0.909]
+  (high = low) [low] else [
+    (u < (likely - low / (high - low))) [low + (u * (high - low) * (likely - low) sqrt)] else [high - (1 - u * (high - low) * (high - likely) sqrt)]
+  ]
+]

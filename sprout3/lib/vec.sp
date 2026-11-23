@@ -64,3 +64,16 @@ aim : [from to speed | gap : to - from, far : size gap, (far = 0) [0x0] else [ga
 -- n copies of a velocity fanned out across an angle (radians), for a spread of shots
 -- e.g. vec fan [10x0, 3, pi] collect [v | vec round v] → [0x-10, 10x0, 0x10]
 fan : [v n spread | (n = 1) [[v]] else [range n collect [k | rotate [v, k - 1 / (n - 1) - 0.5 * spread]]]]
+
+-- an angle (radians) brought round to between -pi and pi, so two headings can be compared
+-- e.g. vec wrap-angle 7 → 0.7168146928
+wrap-angle : [turn | turn + pi % (2 * pi) - pi]
+
+-- the shortest turn from one heading to another, in radians from -pi to pi
+-- e.g. vec angle-gap [3, -3] → 0.2831853072
+angle-gap : [from to | wrap-angle (to - from)]
+
+-- a heading turned toward another by at most step, the short way round (a turret tracking, a ship steering)
+-- e.g. vec turn-toward [0, 2, 0.5] → 0.5
+-- e.g. vec turn-toward [3, -3, 0.5] → 3.2831853072
+turn-toward : [from to step | gap : angle-gap [from, to], (gap abs <= step) [from + gap] else [from + (gap sign * step)]]
