@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (363)
-node game-tests.js    # game tests (304)
+node game-tests.js    # game tests (309)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 667 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 672 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -817,6 +817,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 137. **HyperTalk's chunks and stacks (Claude, 23 Nov; the language and the library, from Troy's ask for HyperTalk's influence).** Text understands HyperTalk's chunk words: `"the quick brown fox" word 2` is quick, and `t line 3 word 1`, `t item 2` (comma items, trimmed) and `t char 1` read the same way, from 1, from the end when negative (`t item (-1)`), and empty text past either end, as HyperTalk gives. And `stack` (card, go, find, put, add) makes an app a HyperCard stack: cards that are records with a name and fields, a stack that knows which one is showing, going next, previous, first, last or by name, finding words on any card after this one, putting a value into a field, adding a card. HyperTalk's English grammar (`put x into field "name"`) would be a syntax change, so it is a proposal for Troy, not built.
 
 138. **Sprout's illustrated guide (Claude, 23 Nov; the ecosystem, from Troy's ask for the influence of _why's (poignant) guide to Ruby).** `guide.html`, "A Slightly Soggy Guide to Sprout", is the first chapter of a storybook way into Sprout: a rambling, illustrated lesson with its own cast of two pixel-art seedlings, Pip and the sleepy Bud, and Mrs. Spout, a watering can who grumbles about nearly everything. It teaches sending words to values left to right (and why `1 + 2 * 3` is 9), cells as little pots, records and lists that never change (`with` grows a new one), `collect` and `keep` chained along a garden, and a whole game in about twenty lines that runs on the page, where tapping waters a seedling until it blooms. It has comic strips, sidebars and digressions, all its own. Every answer on the page was worked out by Sprout before the page was made, by a generator that stops if any sample fails or says anything.
+
+139. **SPROUT·256, the handheld 1995 drew for 2025, and Starlane 2025 (Claude, 23 Nov; the host and a game, from Troy's asks for a retro-futuristic handheld with amazing 256-bit graphics, 1995 + 30 years, and for the Neo Geo's influence).** `Eight.start({ bits: 256 })`, or `"bits": 256` in a registry entry, makes the console its third tier: a 480 by 270 screen in true colour (colours kept exactly, rgba ones too); after each frame the bright parts are shrunk to a quarter and an eighth and laid back with light added, so whatever shines blooms, under faint scanlines and a visor sheen; sprites take any scale, and a seventh value turns one about its middle, in whole turns (`sprite [art, x, y, ink, flip, scale, turn]`). After the big arcade machines of the 1990s it has four buttons in an arc, one to four in red, yellow, green and blue, from Z X C V (or J K L ;), a controller's first four buttons, or touch, reaching the frame like one and two (held, pressed, released and repeated all work); a boot screen where a big chrome logo zooms in over a turning starburst to an arpeggio; and a MEMORY light that flashes when a game saves. Its own handheld is smoky purple plastic over gold circuit traces, chrome trim, a curved visor bezel, a holographic 256-BIT sticker and a ball-top joystick. Starlane 2025 (`examples/starlane.sp`, at `/starlane/`) shows it off: surf a glowing three-lane track toward a striped sunset drawn with the `retro` kit, as orbs, stars, gates and spinning mines rush at you, zooming as they come; 1 boosts, 2 jumps, 3 spins through gates and smashes mines, 4 bombs the lane; three shields, three bombs, the best score kept.
 ````
 
 ---
@@ -7302,6 +7304,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/starlane/">Starlane 2025</a><span>The first SPROUT·256 game: surf a glowing lane into a striped sunset, with four buttons in an arc to boost, jump, spin and bomb.</span></li>
 <li><a href="/tide-machine/">Tide Machine</a><span>A 16-bit slot-machine roguelike on SPROUT·16: lines of three or more pay, the sea wants its coins each tide, and a gull in a captain's hat sells charms that bend the rules.</span></li>
 <li><a href="/headstrong/">Headstrong</a><span>A 16-bit platform game on SPROUT·16: you are a big head with tiny feet, bouncing on bubbles, riding soap bars and head-butting cracked tiles through three bathroom rooms to a warm towel.</span></li>
 <li><a href="/basketball-legends/">Basketball Legends 8</a><span>The 8-bit side of Basketball Legend, in an arcade cabinet: one on one from 1960 to forever, jump shots let go at the top of the jump, dunks, crossovers and blocks, a legend for every decade.</span></li>

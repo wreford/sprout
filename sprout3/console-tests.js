@@ -145,6 +145,26 @@ server.listen(0, async () => {
       ok("SPROUT·16: no errors on the page", serr.length === 0, serr);
       await ctx.close();
     }
+    // SPROUT·256 (decision 134): a 480x270 screen in true colour with a glow, four buttons in an arc, the boot screen, and
+    // the third and fourth buttons reaching the game; Starlane 2025 on it
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 } }), sp = await ctx.newPage(), serr = [];
+      sp.on("pageerror", e => serr.push(e.message)); sp.on("console", m => { if (m.type() === "error") serr.push(m.text()); });
+      const base = new URL(url).origin + "/sprout3/", runtime = ["sprout3.js", "words.js", "parse.js", "stdlib.js", "libs.js", "kernels.js", "live3.js", "eight.js"];
+      await sp.goto(base + "index.html");
+      await sp.setContent(`<!doctype html><html><head><meta charset="utf-8"><base href="${base}"></head><body>${runtime.map(f => `<script src="${f}"></script>`).join("")}<script>window.E = Eight.start({ game: "examples/starlane.sp", title: "Starlane", key: "starlane-test", bits: 256 });</script></body></html>`);
+      const booted = await sp.evaluate(() => !!document.querySelector(".boot.hyper em"));
+      await sp.waitForTimeout(3200);
+      await sp.keyboard.press("z"); await sp.waitForTimeout(300);
+      await sp.keyboard.down("c"); await sp.waitForTimeout(120); await sp.keyboard.up("c"); await sp.waitForTimeout(200);
+      const st = await sp.evaluate(() => { const c = document.querySelector(".screen canvas"), d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let lit = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 60) lit++;
+        const g = E.game.state; return { w: c.width, h: c.height, bits: Eight.bits, snap: Eight.snap("#123456"), buttons: document.querySelectorAll(".btns.arc .btn").length, mem: !!document.querySelector(".led .mem"),
+          mode: g.field("mode"), spun: g.field("spin-until") > 0, lit }; });
+      ok("SPROUT·256: a 480 by 270 screen in true colour, four buttons in an arc, a MEMORY light and the boot screen", st.w === 480 && st.h === 270 && st.bits === 256 && st.snap === "#123456" && st.buttons === 4 && st.mem && booted, st);
+      ok("SPROUT·256: button 1 starts Starlane and button 3 (the C key) spins", st.mode === "run" && st.spun && st.lit > 30000, st);
+      ok("SPROUT·256: no errors on the page", serr.length === 0, serr);
+      await ctx.close();
+    }
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");

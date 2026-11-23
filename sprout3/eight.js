@@ -13,6 +13,10 @@
 // SPROUT·16 (decision 125): Eight.start({ bits: 16 }) makes the same console a 16-bit one: a 320x224 screen, colours
 // snapped to 512 (eight levels of red, green and blue), and songs played with a warmer sawtooth lead through a filter,
 // with a little echo. Everything else is the same, so a game moves up by changing one number.
+// SPROUT·256 (decision 134): Eight.start({ bits: 256 }) is the handheld a 1995 designer drew for 2025: a 480x270 screen in
+// true colour (rgba colours too), every bright pixel glowing (a bloom the shell adds), faint scanlines, sprites that turn
+// and zoom (sprite [art, x, y, ink, flip, scale, turn], the turn in whole turns), four buttons in an arc (one, two,
+// three and four: Z X C V), a boot screen with a big logo and a jingle, and a MEMORY light that shows when the game saves.
 (function (root) {
 "use strict";
 const S = root.Sprout3, LIVE = root.Sprout3Live;
@@ -98,6 +102,43 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
 #e8 .btns.ball .btn{--seam:#24100a;text-shadow:0 0 3px #000,0 0 3px #000;background:radial-gradient(circle at 34% 28%,#ffffff66,transparent 38%),
   linear-gradient(90deg,#0000 calc(50% - 1.5px),var(--seam) 0 calc(50% + 1.5px),#0000 0),linear-gradient(#0000 calc(50% - 1.5px),var(--seam) 0 calc(50% + 1.5px),#0000 0),
   radial-gradient(circle at -22% 50%,#0000 57%,var(--seam) 0 calc(57% + 3px),#0000 0),radial-gradient(circle at 122% 50%,#0000 57%,var(--seam) 0 calc(57% + 3px),#0000 0),var(--btn)}
+/* SPROUT·256 (decision 134): smoky purple plastic over its circuits, chrome trim, a visor bezel with scanlines, a
+   holographic sticker and four buttons in an arc, red, yellow, green and blue */
+#e8 .gb.hyper{background:radial-gradient(120% 90% at 50% 0%,#ffffff22,#0000 55%),
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23e0b04a' stroke-opacity='.28' stroke-width='1.5'%3E%3Cpath d='M0 20h40l10 10h30l10-10h30M0 60h20l10 10h50M120 90H90l-10 10H40M60 0v20M100 30v40l-10 10M20 120V90l10-10h20'/%3E%3C/g%3E%3Cg fill='%23e0b04a' fill-opacity='.35'%3E%3Ccircle cx='40' cy='20' r='2.5'/%3E%3Ccircle cx='80' cy='70' r='2.5'/%3E%3Ccircle cx='50' cy='80' r='2.5'/%3E%3Ccircle cx='100' cy='30' r='2.5'/%3E%3C/g%3E%3C/svg%3E"),
+  linear-gradient(165deg,color-mix(in srgb,var(--body) 92%,transparent),color-mix(in srgb,var(--body2) 96%,transparent));
+  box-shadow:inset 0 0 0 3px #d9dce6,inset 0 0 0 5px #6d7184,inset 0 3px 0 5px #ffffff55,inset 0 -8px 18px #000a,0 0 60px color-mix(in srgb,var(--s1) 30%,transparent),0 24px 60px #000c}
+#e8 .gb.hyper .bezel{border-radius:40px 40px 18px 18px / 30px 30px 18px 18px;background:linear-gradient(180deg,#1a1030,var(--bezel) 30%);box-shadow:inset 0 0 0 2px #c9ccd8,inset 0 2px 10px #000,0 0 18px color-mix(in srgb,var(--s2) 35%,transparent)}
+#e8 .gb.hyper .screen::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:2px;
+  background:repeating-linear-gradient(180deg,#00000038 0 1px,#0000 1px 3px),linear-gradient(160deg,#ffffff1c,#0000 38%),radial-gradient(130% 120% at 50% 50%,#0000 62%,#0007)}
+#e8 .led .mem{display:block;width:7px;height:7px;border-radius:50%;background:#3a2a10;margin-top:6px}
+#e8 .led .mem.on{background:#ffc23a;box-shadow:0 0 8px #ffc23a}
+#e8 .btns.arc{transform:none;gap:10px;align-items:flex-start}
+#e8 .btns.arc .btn{width:46px;height:46px;font-size:10px;margin:0}
+#e8 .btns.arc .btn.one{margin-top:34px;--btn:#ff3344}#e8 .btns.arc .btn.two{margin-top:12px;--btn:#ffd21f;--btn-ink:#3a2a00}
+#e8 .btns.arc .btn.three{margin-top:0;--btn:#2fd36b}#e8 .btns.arc .btn.four{margin-top:4px;--btn:#3b7bff}
+#e8 .holo{position:absolute;right:7%;top:12px;padding:3px 8px;border-radius:4px;font:italic 9px "Press Start 2P",monospace;color:#1a0f2e;pointer-events:none;
+  background:linear-gradient(115deg,#ff9de2,#9fe8ff,#c6ffb3,#ffe49b,#ff9de2);background-size:300% 100%;animation:e8holo 4s linear infinite;box-shadow:0 0 0 1px #ffffff99,0 2px 6px #0008}
+@keyframes e8holo{to{background-position:300% 0}}
+#e8 .boot.hyper{flex-direction:column;gap:14px;background:radial-gradient(circle at 50% 50%,#2a0f4a,#06030d 70%);overflow:hidden}
+#e8 .boot.hyper::before{content:"";position:absolute;inset:-50%;background:repeating-conic-gradient(from 0deg,#ffffff0d 0 6deg,#0000 6deg 12deg);animation:e8spin 6s linear infinite}
+#e8 .boot.hyper span{position:relative;font:italic 900 48px/1 var(--brand),system-ui,sans-serif;letter-spacing:4px;color:#fff;
+  background:linear-gradient(180deg,#ffffff,#b9c3ff 45%,#5b3fd6 52%,#ff7ad9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 14px #ff3fb4) drop-shadow(0 0 30px #38e8ff);animation:e8zoom 1.2s cubic-bezier(.2,.9,.2,1) both}
+#e8 .boot.hyper em{position:relative;font:12px "Press Start 2P",monospace;color:#38e8ff;font-style:normal;letter-spacing:3px;animation:e8fade .5s .9s both}
+#e8 .boot.hyper small{position:relative;font:9px "Press Start 2P",monospace;color:#ffc23a;letter-spacing:4px;animation:e8fade .5s 1.3s both}
+@keyframes e8zoom{from{transform:scale(7);opacity:0;filter:blur(8px)}to{transform:none;opacity:1}}
+@keyframes e8fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes e8spin{to{transform:rotate(360deg)}}
+#e8 .gb.hyper .led{left:10px;font-size:5px}
+#e8 .gb.wide.hyper .bezel,#e8 .gb.hyper .bezel{padding-left:58px}
+@media (max-width:560px){
+  #e8 .btns.arc{gap:6px}#e8 .btns.arc .btn{width:38px;height:38px;font-size:9px}
+  #e8 .btns.arc .btn.one{margin-top:28px}#e8 .btns.arc .btn.two{margin-top:9px}
+  #e8 .gb.hyper .brand .logo{font-size:calc(var(--logo-size) * 0.78)}#e8 .gb.hyper .brand .mascot{width:34px;height:34px}
+  #e8 .holo{top:auto;right:auto;left:16px;bottom:34px}
+  #e8 .gb.hyper .bezel,#e8.touch .gb.hyper .bezel{padding-left:46px}
+}
 @media (orientation:landscape) and (min-height:561px){
   #e8 .gb.wide{width:min(96vw,calc((100vh - 64px) * 1.8));aspect-ratio:18/10;border-radius:46% 46% 46% 46% / 22% 22% 30% 30%;padding:0 0 16px;
     grid-template-columns:1fr auto 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top top top" "dpad bezel btns" "pills brand ."}
@@ -122,6 +163,10 @@ html,body{margin:0;height:100%;background:#09090c;color:#d9d9e0;overflow:hidden;
 const PLAIN16 = { shape: "wide", logo: "SPROUT·16", badge: "SPROUT·16", tagline: "16-BIT COLOUR", page: "#050507", page2: "#1a1a22", body: "#1b1b1f", body2: "#0c0c0e",
   ink: "#8d8d96", bezel: "#0a0a0c", bezelInk: "#6c6c74", stripe1: "#e8202c", stripe2: "#f2f2f2", logoColour: "#f2f2f2", subColour: "#e8202c",
   button: "#2b2b31", buttonInk: "#e8202c", dpad: "#0e0e10", pill: "#2b2b31", hint: "#6c6c74" };
+// the look SPROUT·256 has when a game brings none: the future as 1995 saw it, smoky purple plastic over its circuits
+const PLAIN256 = { shape: "hyper", dpadShape: "stick", logo: "SPROUT·256", sub: "HYPER 256-BIT", badge: "SPROUT·256 · 1995 + 30", tagline: "HYPER 256-BIT · TRUE COLOUR",
+  page: "#06030d", page2: "#2a0f4a", body: "#3b1b63", body2: "#140726", ink: "#d9c8ff", bezel: "#05030b", bezelInk: "#8f7ab8", stripe1: "#ff3fb4", stripe2: "#38e8ff",
+  logoColour: "#e9ecff", subColour: "#38e8ff", logoStyle: "italic", button: "#ff3344", buttonInk: "#ffffff", stick: "#ff3344", dpad: "#0b0614", pill: "#2a1747", hint: "#8f7ab8", plate: "#0b0614" };
 // the look a game gets when it brings none: the SPROUT·8 console's own
 const PLAIN = { logo: "SPROUT·8", sub: "", badge: "SPROUT·8", tagline: "8-BIT COLOUR", page: "#09090c", page2: "#1c1c24", body: "#2e2e35", body2: "#202026",
   ink: "#9a9aa5", bezel: "#17171c", bezelInk: "#77777f", stripe1: "#e83a3a", stripe2: "#2f5fd0", logoColour: "#e83a3a", subColour: "#9a9aa5",
@@ -136,13 +181,19 @@ function snap(c) {
   if (s === undefined) {
     let hex = t.trim();
     if (/^#[0-9a-f]{3}$/i.test(hex)) hex = "#" + hex.slice(1).split("").map(h => h + h).join("");
+    if (!LEVELS) { snapped.set(t, t.trim()); return t.trim(); }
     const step = 255 / (LEVELS - 1);
     s = /^#[0-9a-f]{6}/i.test(hex) ? "#" + [1, 3, 5].map(i => Math.round(Math.round(parseInt(hex.slice(i, i + 2), 16) / step) * step).toString(16).padStart(2, "0")).join("") : t;
     snapped.set(t, s);
   }
   return s;
 }
-const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+// a colour's red, green and blue: #rrggbb, #rgb, or rgb(...) and rgba(...) on SPROUT·256
+const rgbOf = c => {
+  if (/^#[0-9a-f]{6}/i.test(c)) return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  if (/^#[0-9a-f]{3}$/i.test(c)) return [1, 2, 3].map(i => parseInt(c[i] + c[i], 16));
+  const m = /rgba?\(([^)]*)\)/.exec(c); return m ? m[1].split(",").slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(+v) || 0))) : [255, 255, 255];
+};
 
 // ---------------------------------------------------------------- pixel art, drawn once and kept
 const NOINK = {}, arts = new WeakMap(), maps = new WeakMap();
@@ -250,7 +301,10 @@ function readSong(rec) {
 function start(opts) {
   opts = opts || {};
   if (opts.bits === 16) { W = 320; H = 224; LEVELS = 8; BITS = 16; snapped.clear(); }
-  const skin = Object.assign({}, PLAIN, BITS === 16 ? PLAIN16 : {}, opts.skin || {});
+  if (opts.bits === 256) { W = 480; H = 270; LEVELS = 0; BITS = 256; snapped.clear(); }
+  const skin = Object.assign({}, PLAIN, BITS === 16 ? PLAIN16 : BITS === 256 ? PLAIN256 : {}, opts.skin || {});
+  // the buttons: two, or four in an arc on SPROUT·256
+  const BUTTONS = BITS === 256 ? ["one", "two", "three", "four"] : ["one", "two"];
   const style = document.createElement("style");
   style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "");
   document.head.appendChild(style);
@@ -264,17 +318,18 @@ function start(opts) {
     btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint, stick: skin.stick || skin.button };
   for (const k in vars) box.style.setProperty("--" + k, vars[k]);
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  box.innerHTML = `<div class="gb${skin.shape === "wide" || skin.shape === "cabinet" ? " " + skin.shape : ""}">
+  box.innerHTML = `<div class="gb${skin.shape === "wide" || skin.shape === "cabinet" ? " " + skin.shape : skin.shape === "hyper" ? " wide hyper" : ""}">
   <div class="top"><i></i><span>${esc(skin.badge)}</span><i></i></div>
-  <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
+  <div class="bezel"><div class="lines"><i></i><span>${esc(skin.tagline)}</span><i></i></div><div class="led"><i></i>POWER${BITS === 256 ? '<b class="mem"></b>MEMORY' : ""}</div><div class="screen"><canvas width="${W}" height="${H}"></canvas></div></div>
   <div class="brand${skin.plate ? " plate" : ""}"><span class="logo">${esc(skin.logo)}</span><span class="sub">${esc(skin.sub)}</span><canvas class="mascot" width="16" height="16"></canvas></div>
   <div class="dpad${skin.dpadShape === "disc" || skin.dpadShape === "stick" ? " " + skin.dpadShape : ""}"><i class="h"></i><i class="v"></i><i class="c"></i></div>
-  <div class="btns${skin.buttonRow ? " row" : ""}${skin.buttonStyle === "ball" ? " ball" : ""}"><div class="btn one">1</div><div class="btn two">2</div></div>
+  <div class="btns${skin.buttonRow ? " row" : ""}${skin.buttonStyle === "ball" ? " ball" : ""}${BITS === 256 ? " arc" : ""}">${BUTTONS.map((b, i) => `<div class="btn ${b}">${i + 1}</div>`).join("")}</div>
+  ${BITS === 256 ? '<div class="holo">256-BIT</div>' : ""}
   <div class="pills"><div class="pill mute2"><b></b><span>SOUND</span></div><div class="pill pause"><b></b><span>PAUSE</span></div></div>
   <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 </div>
-<div class="below"><span>ARROWS MOVE &nbsp; Z 1 &nbsp; X 2 &nbsp; ENTER PAUSE</span><button class="mute">SOUND ON</button><button class="full">FULL SCREEN</button></div>
-<div class="boot"><span>${esc(skin.logo)}</span></div>`;
+<div class="below"><span>ARROWS MOVE &nbsp; Z 1 &nbsp; X 2${BITS === 256 ? " &nbsp; C 3 &nbsp; V 4" : ""} &nbsp; ENTER PAUSE</span><button class="mute">SOUND ON</button><button class="full">FULL SCREEN</button></div>
+<div class="boot${BITS === 256 ? " hyper" : ""}"><span>${esc(skin.logo)}</span>${BITS === 256 ? `<em>${esc(skin.sub || "HYPER 256-BIT")}</em><small>1995 + 30</small>` : ""}</div>`;
   document.body.appendChild(box);
   document.body.style.background = skin.page;
   if (skin.pattern === "zebra") {
@@ -308,7 +363,9 @@ function start(opts) {
   const toggleFull = () => { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); };
   $(".mute").onclick = toggleMute; $(".mute2").addEventListener("pointerdown", e => { e.preventDefault(); toggleMute(); });
   $(".full").onclick = toggleFull;
-  setTimeout(() => { const b = $(".boot"); if (b) { b.style.opacity = 0; setTimeout(() => b.remove(), 600); } }, 1500);
+  setTimeout(() => { const b = $(".boot"); if (b) { b.style.opacity = 0; setTimeout(() => b.remove(), 600); } }, BITS === 256 ? 2600 : 1500);
+  // SPROUT·256's boot jingle, when the page may already make sound
+  if (BITS === 256) setTimeout(() => { if (audio() && AC.state === "running") { const t = AC.currentTime + 0.05; [72, 76, 79, 84, 88, 91].forEach((n, i) => warm(hz(n), 0.16, t + i * 0.07, sfxBus, 0.07, 3400)); warm(hz(96), 0.7, t + 0.45, sfxBus, 0.06, 4200); } }, 700);
 
   // the screen as big as the bezel lets it be: whole pixels from three times up, else as big as it goes
   function fit() {
@@ -327,6 +384,7 @@ function start(opts) {
   // a press is latched until the next frame has seen it, so a tap quicker than a frame still counts (decision 120)
   const KEYS = new Set(), TOUCH = new Set(), PADKEYS = new Set(), LATCH = new Set();
   const KEYNAME = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", z: "one", j: "one", c: "one", x: "two", k: "two", " ": "two" };
+  if (BITS === 256) Object.assign(KEYNAME, { c: "three", l: "three", v: "four", ";": "four" });
   let paused = false;
   const setPaused = p => { paused = p; if (musicBus) musicBus.gain.value = p ? 0.08 : 0.3; };
   addEventListener("keydown", e => {
@@ -350,7 +408,7 @@ function start(opts) {
   dpad.addEventListener("pointermove", e => { if (dirOf.has(e.pointerId)) dpadSet(e.pointerId, e); });
   const dpadUp = e => { dirOf.delete(e.pointerId); refreshPad(); };
   dpad.addEventListener("pointerup", dpadUp); dpad.addEventListener("pointercancel", dpadUp);
-  for (const name of ["one", "two"]) {
+  for (const name of BUTTONS) {
     const b = $(".btn." + name), on = new Set();
     b.addEventListener("pointerdown", e => { e.preventDefault(); audio(); b.setPointerCapture(e.pointerId); on.add(e.pointerId); TOUCH.add(name); LATCH.add(name); b.classList.add("down"); if (navigator.vibrate) navigator.vibrate(8); });
     const lift = e => { on.delete(e.pointerId); if (!on.size) { TOUCH.delete(name); b.classList.remove("down"); } };
@@ -367,7 +425,8 @@ function start(opts) {
       const b = i => p.buttons[i] && p.buttons[i].pressed, ax = i => p.axes[i] || 0;
       if (b(14) || ax(0) < -0.45) PADKEYS.add("left"); if (b(15) || ax(0) > 0.45) PADKEYS.add("right");
       if (b(12) || ax(1) < -0.45) PADKEYS.add("up"); if (b(13) || ax(1) > 0.45) PADKEYS.add("down");
-      if (b(0)) PADKEYS.add("two"); if (b(1) || b(2)) PADKEYS.add("one");
+      if (BITS === 256) { ["one", "two", "three", "four"].forEach((name, i) => { if (b(i)) PADKEYS.add(name); }); }
+      else { if (b(0)) PADKEYS.add("two"); if (b(1) || b(2)) PADKEYS.add("one"); }
       if (b(9) && !padStart) setPaused(!paused); padStart = b(9);
     }
   }
@@ -389,6 +448,22 @@ function start(opts) {
     const x = Math.round(align === "left" ? a[1] : align === "right" ? a[1] - w : a[1] - w / 2), y = Math.round(a[2] - h / 2);
     g.drawImage(bm, x, y, w, h);
   }
+  // SPROUT·256's glow: the bright part of the frame, made small and soft at a quarter and an eighth of the size, laid
+  // back over it with light added, so whatever shines blooms (decision 134)
+  let glowA = null, glowB = null;
+  function bloom() {
+    const small = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    if (!glowA) { glowA = small(W / 4, Math.ceil(H / 4)); glowB = small(W / 8, Math.ceil(H / 8)); }
+    const ga = glowA.getContext("2d", { willReadFrequently: true }), gb = glowB.getContext("2d");
+    ga.imageSmoothingEnabled = true; ga.globalCompositeOperation = "copy"; ga.drawImage(canvas, 0, 0, glowA.width, glowA.height);
+    const img = ga.getImageData(0, 0, glowA.width, glowA.height), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { const lit = Math.max(d[i], d[i + 1], d[i + 2]), k = lit > 140 ? (lit - 140) / 115 : 0; d[i] *= k; d[i + 1] *= k; d[i + 2] *= k; }
+    ga.putImageData(img, 0, 0);
+    gb.imageSmoothingEnabled = true; gb.globalCompositeOperation = "copy"; gb.drawImage(glowA, 0, 0, glowB.width, glowB.height);
+    g.save(); g.imageSmoothingEnabled = true; g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.55; g.drawImage(glowA, 0, 0, W, H); g.globalAlpha = 0.75; g.drawImage(glowB, 0, 0, W, H);
+    g.restore(); g.imageSmoothingEnabled = false;
+  }
   let warned = false;
   function paint(list) {
     for (const [name, a] of list) {
@@ -400,8 +475,11 @@ function start(opts) {
       else if (name === "sprite") {
         if (!a[0] || typeof a[0] !== "object") { if (!warned) { warned = true; console.warn("sprite wants a list of rows, not " + S.format(a[0])); } continue; }
         // a sixth value, a whole number, draws it that many times bigger (decision 120)
-        const bm = bitmap(a[0], a[3]), x = Math.round(a[1]), y = Math.round(a[2]), k = Math.max(1, Math.round(+a[5] || 1)), w = bm.width * k, h = bm.height * k;
-        if (a[4] === true || a[4] === -1) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(bm, 0, 0, w, h); g.restore(); } else g.drawImage(bm, x, y, w, h);
+        // on SPROUT·256 the scale can be any size, and a seventh value turns it about its middle, in whole turns (decision 134)
+        const bm = bitmap(a[0], a[3]), x = Math.round(a[1]), y = Math.round(a[2]), k = BITS === 256 ? Math.max(0.05, +a[5] || 1) : Math.max(1, Math.round(+a[5] || 1)), w = bm.width * k, h = bm.height * k;
+        const flip = a[4] === true || a[4] === -1, turn = +a[6] || 0;
+        if (turn) { g.save(); g.translate(x + w / 2, y + h / 2); g.rotate(turn * Math.PI * 2); if (flip) g.scale(-1, 1); g.drawImage(bm, -w / 2, -h / 2, w, h); g.restore(); }
+        else if (flip) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(bm, 0, 0, w, h); g.restore(); } else g.drawImage(bm, x, y, w, h);
       }
       else if (name === "tiles") g.drawImage(tileCanvas(a[0], a[1], a[2]), Math.round(a[3]), Math.round(a[4]));
     }
@@ -474,10 +552,11 @@ function start(opts) {
         shake *= 0.86;
         paint(list);
         g.restore();
+        if (BITS === 256) bloom();
         if (paused) { g.fillStyle = "#000000aa"; g.fillRect(0, 0, W, H); words8(["PAUSE", W / 2, H / 2, 16, "#ffffff"]); words8([touch ? "TAP TO PLAY" : "ENTER TO PLAY", W / 2, H / 2 + 20, 8, "#aaaaaa"]); }
         const st = game.state;
         if (AC) { setSong(st.fieldNames().includes("song") ? st.field("song") : false); pumpSong(); }
-        if (++frames % 30 === 0 && st.fieldNames().includes("keep")) { const k = JSON.stringify(S.libraries.toJS(st.field("keep"))); if (k !== saved) { saved = k; store.set(saveKey, JSON.parse(k)); } }
+        if (++frames % 30 === 0 && st.fieldNames().includes("keep")) { const k = JSON.stringify(S.libraries.toJS(st.field("keep"))); if (k !== saved) { const first = saved === ""; saved = k; store.set(saveKey, JSON.parse(k)); const m = $(".mem"); if (m && !first) { m.classList.add("on"); setTimeout(() => m.classList.remove("on"), 900); } } }
       } catch (e) { fail(e); }
     }
     requestAnimationFrame(frame);
