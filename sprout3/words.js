@@ -67,6 +67,9 @@ const pathOf = p => isCell(p) ? partsOf(p) : [p];
 const updateIn = (value, path, change) => { if (!path.length) return change(value); const [key, ...rest] = path; return putAt(value, key, updateIn(step(value, key), rest, change)); };
 
 const LIST_WORDS = {
+  // Ruby's (decision 141): sliding windows of n, and the least and the most together
+  "each-cons": one((xs, n) => { const k = wholeNumber(n, "each-cons") || 1, p = items(xs), out = []; for (let i = 0; i + k <= p.length; i++) out.push(list(p.slice(i, i + k))); return list(out); }),
+  minmax: none(xs => { const p = items(xs); if (!p.length) return list([]); let lo = p[0], hi = p[0]; for (const v of p) { if (v < lo) lo = v; if (v > hi) hi = v; } return list([lo, hi]); }),
   second: none(xs => xs.part(2)),
   rest: none(xs => list(items(xs).slice(1))),
   "all-but-last": none(xs => list(items(xs).slice(0, -1))),
@@ -121,6 +124,21 @@ const LIST_WORDS = {
 const textArgument = (v, word) => typeof v === "string" ? v : (notUnderstood(v, word), "");
 // Lua's sub: positions from 1, negative ones from the end, both ends included
 const position = (n, length) => n < 0 ? length + n + 1 : n;
+// Ruby's succ for text (decision 141): the next text in counting order, carrying left through letters and digits
+// ("az" to "ba", "a9" to "b0", "zz" to "aaa")
+function textSucc(t) {
+  const cs = Array.from(t), alnum = c => /[A-Za-z0-9]/.test(c);
+  let k = cs.length - 1; while (k >= 0 && !alnum(cs[k])) k--;
+  if (k < 0) return t;
+  for (;;) {
+    const c = cs[k];
+    if (c !== "z" && c !== "Z" && c !== "9") { cs[k] = String.fromCharCode(c.charCodeAt(0) + 1); return cs.join(""); }
+    cs[k] = c === "9" ? "0" : c === "z" ? "a" : "A";
+    let j = k - 1; while (j >= 0 && !alnum(cs[j])) j--;
+    if (j < 0) { cs.splice(k, 0, c === "9" ? "1" : c === "z" ? "a" : "A"); return cs.join(""); }
+    k = j;
+  }
+}
 // HyperTalk's chunks (decision 137): the nth word, line, comma item or character, from the end when negative; past
 // either end, empty text, as HyperTalk gives
 const chunk = (parts, n, word) => { const k = typeof n === "number" && Number.isFinite(n) ? Math.trunc(n) : (notUnderstood(n, word), 0), i = k < 0 ? parts.length + k : k - 1; return i >= 0 && i < parts.length ? parts[i] : ""; };
@@ -130,6 +148,10 @@ const TEXT_WORDS = {
   item: one((t, n) => chunk(t.split(",").map(p => p.trim()), n, "item")),
   char: one((t, n) => chunk(Array.from(t), n, "char")),
   split: one((t, sep) => list(t.split(textArgument(sep, "split")))),
+  // Ruby's (decision 141): centred in a width, runs of a letter squeezed to one, and the next text in counting order
+  center: one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2), w = wholeNumber(width, "center"), c = typeof char === "string" && char ? char : " ", total = Math.max(0, w - t.length), before = Math.floor(total / 2); return c.repeat(before).slice(0, before) + t + c.repeat(total - before).slice(0, total - before); }),
+  squeeze: none(t => t.replace(/(.)\1+/gsu, "$1")),
+  succ: none(textSucc),
   lines: none(t => list(t.split(/\r?\n/))),
   words: none(t => list(t.split(/\s+/).filter(w => w))),
   chars: none(t => list(Array.from(t))),
@@ -155,6 +177,8 @@ const NUMBER_WORDS = {
   // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
   atan2: one((y, x) => Math.atan2(y, I.requireNumber(x))), fixed: one((n, places) => n.toFixed(Math.max(0, Math.min(20, wholeNumber(places, "fixed"))))),
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
+  // Ruby's (decision 141): the next whole number, and the digits of the whole part in reading order
+  succ: none(a => a + 1), digits: none(a => list(String(Math.trunc(Math.abs(a))).split("").map(Number))),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
   // 5 pad-left [2, "0"] is "05", as for text; 75 clock is "1:15" (minutes and seconds, for a game's timer)
@@ -172,7 +196,11 @@ const kindOf = v => typeof v === "number" ? "number" : typeof v === "string" ? "
 const messageNames = v => { const names = new Set(isCell(v) ? v.fieldNames() : []); for (let o = I.methodsOf(v); o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.keys(o)) names.add(k); return names; };
 const EVERY_WORDS = { kind: none(kindOf),
   messages: none(v => list([...messageNames(v)].sort((a, b) => (/^[a-z]/i.test(b) - /^[a-z]/i.test(a)) || (a < b ? -1 : a > b ? 1 : 0)))),
-  "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))) };
+  "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))),
+  // Ruby's then and tap (decision 141): a value handed to a cell, giving what the cell gives, or giving the value back
+  then: one((v, f) => callCell(f, v)), tap: one((v, f) => (callCell(f, v), v)) };
+// Ruby's name for frequencies (decision 141)
+LIST_WORDS.tally = LIST_WORDS.frequencies;
 
 S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
 

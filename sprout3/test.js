@@ -478,6 +478,14 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     val('3 responds-to "pow"') === "true" && val('"hi" responds-to "pow"') === "false" && val('[name : "Pip"] responds-to "name"') === "true" && val('[name : "Pip"] messages first') === "all" && logs.length === 0, val('[name : "Pip"] messages first'));
 }
 
+// ---------------- Ruby's words (decision 141)
+{
+  logs.length = 0;
+  ok("141 each-cons, minmax, tally, succ, digits, center, squeeze, then and tap, as in Ruby",
+    val('[1, 2, 3, 4] each-cons 2') === "[[1, 2], [2, 3], [3, 4]]" && val('[3, 9, 1] minmax') === "[1, 9]" && val('["a", "b", "a"] tally') === "[a : 2, b : 1]" && val('41 succ') === "42" && val('1907 digits') === "[1, 9, 0, 7]"
+    && val('"hi" center [6, "*"]') === "**hi**" && val('"aaabbbc" squeeze') === "abc" && val('["az" succ, "a9" succ, "zz" succ]') === "[ba, b0, aaa]" && val('5 then [n | n * 2]') === "10" && val('5 tap [n | n * 100]') === "5" && logs.length === 0);
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));

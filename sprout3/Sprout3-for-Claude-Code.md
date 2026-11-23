@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (364)
+node test.js          # language tests (365)
 node game-tests.js    # game tests (309)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 673 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 674 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -821,6 +821,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 139. **SPROUT·256, the handheld 1995 drew for 2025, and Starlane 2025 (Claude, 23 Nov; the host and a game, from Troy's asks for a retro-futuristic handheld with amazing 256-bit graphics, 1995 + 30 years, and for the Neo Geo's influence).** `Eight.start({ bits: 256 })`, or `"bits": 256` in a registry entry, makes the console its third tier: a 480 by 270 screen in true colour (colours kept exactly, rgba ones too); after each frame the bright parts are shrunk to a quarter and an eighth and laid back with light added, so whatever shines blooms, under faint scanlines and a visor sheen; sprites take any scale, and a seventh value turns one about its middle, in whole turns (`sprite [art, x, y, ink, flip, scale, turn]`). After the big arcade machines of the 1990s it has four buttons in an arc, one to four in red, yellow, green and blue, from Z X C V (or J K L ;), a controller's first four buttons, or touch, reaching the frame like one and two (held, pressed, released and repeated all work); a boot screen where a big chrome logo zooms in over a turning starburst to an arpeggio; and a MEMORY light that flashes when a game saves. Its own handheld is smoky purple plastic over gold circuit traces, chrome trim, a curved visor bezel, a holographic 256-BIT sticker and a ball-top joystick. Starlane 2025 (`examples/starlane.sp`, at `/starlane/`) shows it off: surf a glowing three-lane track toward a striped sunset drawn with the `retro` kit, as orbs, stars, gates and spinning mines rush at you, zooming as they come; 1 boosts, 2 jumps, 3 spins through gates and smashes mines, 4 bombs the lane; three shields, three bombs, the best score kept.
 
 140. **Smalltalk's reflection (Claude, 23 Nov; the language, from Troy's ask for Smalltalk's influence).** Every value can now be asked about itself, as in Smalltalk: `v messages` is the list of messages it understands, words first and then operators, a record's own fields among them, and `v responds-to "pow"` says whether it understands one (`3 responds-to "pow"` is true, `"hi" responds-to "pow"` false). Sprout already sends one message at a time to a value and says "doesn't know" when it can't answer, which is Smalltalk's doesNotUnderstand; now a program, an editor or a browser can ask before it sends. Smalltalk's keyword messages and cascades would be grammar, so they stay proposals for Troy.
+
+141. **Ruby's words (Claude, 23 Nov; the language, from Troy's ask for Ruby's influence).** Values learned some of Ruby's best-loved words: `then` (a value handed to a cell, giving what the cell gives: `5 then [n | n * 2]` is 10) and `tap` (the cell runs, and the value comes back, for a look along a chain); lists `each-cons` (sliding windows), `minmax` and `tally` (Ruby's name for frequencies); numbers `succ` and `digits` (in reading order: `1907 digits` is [1, 9, 0, 7]); and text `center`, `squeeze` and `succ`, the next text in counting order (`"az" succ` is ba, `"zz" succ` is aaa), for naming rows and files. Ruby's blocks were already Sprout's cells; its `?` and `!` names and `method_missing` would be grammar or deep changes, so they stay proposals for Troy.
 ````
 
 ---
@@ -4199,6 +4201,14 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     val('3 responds-to "pow"') === "true" && val('"hi" responds-to "pow"') === "false" && val('[name : "Pip"] responds-to "name"') === "true" && val('[name : "Pip"] messages first') === "all" && logs.length === 0, val('[name : "Pip"] messages first'));
 }
 
+// ---------------- Ruby's words (decision 141)
+{
+  logs.length = 0;
+  ok("141 each-cons, minmax, tally, succ, digits, center, squeeze, then and tap, as in Ruby",
+    val('[1, 2, 3, 4] each-cons 2') === "[[1, 2], [2, 3], [3, 4]]" && val('[3, 9, 1] minmax') === "[1, 9]" && val('["a", "b", "a"] tally') === "[a : 2, b : 1]" && val('41 succ') === "42" && val('1907 digits') === "[1, 9, 0, 7]"
+    && val('"hi" center [6, "*"]') === "**hi**" && val('"aaabbbc" squeeze') === "abc" && val('["az" succ, "a9" succ, "zz" succ]') === "[ba, b0, aaa]" && val('5 then [n | n * 2]') === "10" && val('5 tap [n | n * 100]') === "5" && logs.length === 0);
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
@@ -7428,6 +7438,9 @@ const pathOf = p => isCell(p) ? partsOf(p) : [p];
 const updateIn = (value, path, change) => { if (!path.length) return change(value); const [key, ...rest] = path; return putAt(value, key, updateIn(step(value, key), rest, change)); };
 
 const LIST_WORDS = {
+  // Ruby's (decision 141): sliding windows of n, and the least and the most together
+  "each-cons": one((xs, n) => { const k = wholeNumber(n, "each-cons") || 1, p = items(xs), out = []; for (let i = 0; i + k <= p.length; i++) out.push(list(p.slice(i, i + k))); return list(out); }),
+  minmax: none(xs => { const p = items(xs); if (!p.length) return list([]); let lo = p[0], hi = p[0]; for (const v of p) { if (v < lo) lo = v; if (v > hi) hi = v; } return list([lo, hi]); }),
   second: none(xs => xs.part(2)),
   rest: none(xs => list(items(xs).slice(1))),
   "all-but-last": none(xs => list(items(xs).slice(0, -1))),
@@ -7482,6 +7495,21 @@ const LIST_WORDS = {
 const textArgument = (v, word) => typeof v === "string" ? v : (notUnderstood(v, word), "");
 // Lua's sub: positions from 1, negative ones from the end, both ends included
 const position = (n, length) => n < 0 ? length + n + 1 : n;
+// Ruby's succ for text (decision 141): the next text in counting order, carrying left through letters and digits
+// ("az" to "ba", "a9" to "b0", "zz" to "aaa")
+function textSucc(t) {
+  const cs = Array.from(t), alnum = c => /[A-Za-z0-9]/.test(c);
+  let k = cs.length - 1; while (k >= 0 && !alnum(cs[k])) k--;
+  if (k < 0) return t;
+  for (;;) {
+    const c = cs[k];
+    if (c !== "z" && c !== "Z" && c !== "9") { cs[k] = String.fromCharCode(c.charCodeAt(0) + 1); return cs.join(""); }
+    cs[k] = c === "9" ? "0" : c === "z" ? "a" : "A";
+    let j = k - 1; while (j >= 0 && !alnum(cs[j])) j--;
+    if (j < 0) { cs.splice(k, 0, c === "9" ? "1" : c === "z" ? "a" : "A"); return cs.join(""); }
+    k = j;
+  }
+}
 // HyperTalk's chunks (decision 137): the nth word, line, comma item or character, from the end when negative; past
 // either end, empty text, as HyperTalk gives
 const chunk = (parts, n, word) => { const k = typeof n === "number" && Number.isFinite(n) ? Math.trunc(n) : (notUnderstood(n, word), 0), i = k < 0 ? parts.length + k : k - 1; return i >= 0 && i < parts.length ? parts[i] : ""; };
@@ -7491,6 +7519,10 @@ const TEXT_WORDS = {
   item: one((t, n) => chunk(t.split(",").map(p => p.trim()), n, "item")),
   char: one((t, n) => chunk(Array.from(t), n, "char")),
   split: one((t, sep) => list(t.split(textArgument(sep, "split")))),
+  // Ruby's (decision 141): centred in a width, runs of a letter squeezed to one, and the next text in counting order
+  center: one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2), w = wholeNumber(width, "center"), c = typeof char === "string" && char ? char : " ", total = Math.max(0, w - t.length), before = Math.floor(total / 2); return c.repeat(before).slice(0, before) + t + c.repeat(total - before).slice(0, total - before); }),
+  squeeze: none(t => t.replace(/(.)\1+/gsu, "$1")),
+  succ: none(textSucc),
   lines: none(t => list(t.split(/\r?\n/))),
   words: none(t => list(t.split(/\s+/).filter(w => w))),
   chars: none(t => list(Array.from(t))),
@@ -7516,6 +7548,8 @@ const NUMBER_WORDS = {
   // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
   atan2: one((y, x) => Math.atan2(y, I.requireNumber(x))), fixed: one((n, places) => n.toFixed(Math.max(0, Math.min(20, wholeNumber(places, "fixed"))))),
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
+  // Ruby's (decision 141): the next whole number, and the digits of the whole part in reading order
+  succ: none(a => a + 1), digits: none(a => list(String(Math.trunc(Math.abs(a))).split("").map(Number))),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
   // 5 pad-left [2, "0"] is "05", as for text; 75 clock is "1:15" (minutes and seconds, for a game's timer)
@@ -7533,7 +7567,11 @@ const kindOf = v => typeof v === "number" ? "number" : typeof v === "string" ? "
 const messageNames = v => { const names = new Set(isCell(v) ? v.fieldNames() : []); for (let o = I.methodsOf(v); o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.keys(o)) names.add(k); return names; };
 const EVERY_WORDS = { kind: none(kindOf),
   messages: none(v => list([...messageNames(v)].sort((a, b) => (/^[a-z]/i.test(b) - /^[a-z]/i.test(a)) || (a < b ? -1 : a > b ? 1 : 0)))),
-  "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))) };
+  "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))),
+  // Ruby's then and tap (decision 141): a value handed to a cell, giving what the cell gives, or giving the value back
+  then: one((v, f) => callCell(f, v)), tap: one((v, f) => (callCell(f, v), v)) };
+// Ruby's name for frequencies (decision 141)
+LIST_WORDS.tally = LIST_WORDS.frequencies;
 
 S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
 
