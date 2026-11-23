@@ -471,6 +471,13 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     val('"the quick brown fox" word 2') === "quick" && val('"one\\ntwo\\nthree" line 3 word 1') === "three" && val('"red, green, blue" item (-1)') === "blue" && val('"Sprout" char 1') === "S" && val('"short" word 9') === "" && logs.length === 0);
 }
 
+// ---------------- Smalltalk's reflection (decision 140)
+{
+  logs.length = 0;
+  ok("140 a value says what messages it understands, words before operators, a record's fields among them",
+    val('3 responds-to "pow"') === "true" && val('"hi" responds-to "pow"') === "false" && val('[name : "Pip"] responds-to "name"') === "true" && val('[name : "Pip"] messages first') === "all" && logs.length === 0, val('[name : "Pip"] messages first'));
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));

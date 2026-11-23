@@ -1262,7 +1262,7 @@ api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS,
   fast: () => fastPathsOn,
   // for the standard words (words.js): the pieces its methods are made of
   PROTOTYPES, methodTakingNothing, methodTakingOne, partsOf, fieldsOf, merge, callCell, finishTailCalls, makeRecord, valuesEqual, logMiss, notUnderstood, lint, UNSET, BANG, ANY,
-  sendWord, send, sortList, keep, fold, each, describe, requireNumber,
+  sendWord, send, sortList, keep, fold, each, describe, requireNumber, methodsOf,
   muteEffects: on => { effectsMuted += on ? 1 : -1; }, randomSource: () => randomSource };
 if (typeof module !== "undefined") {
   module.exports = api;

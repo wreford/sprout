@@ -167,7 +167,12 @@ const NUMBER_WORDS = {
 // ===================================================================== every value
 const kindOf = v => typeof v === "number" ? "number" : typeof v === "string" ? "text" : typeof v === "boolean" ? "true or false" :
   v instanceof Endless ? "endless list" : v && v.kind ? v.kind : v instanceof I.Native ? "host word" : isCell(v) ? (v instanceof I.Cell && v.takesInput() ? "cell" : isRecord(v) ? "record" : "list") : "value";
-const EVERY_WORDS = { kind: none(kindOf) };
+// Smalltalk's reflection (decision 140): the messages a value understands, sorted, a record's own fields among them,
+// and whether it understands one, so a value can be asked about itself
+const messageNames = v => { const names = new Set(isCell(v) ? v.fieldNames() : []); for (let o = I.methodsOf(v); o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.keys(o)) names.add(k); return names; };
+const EVERY_WORDS = { kind: none(kindOf),
+  messages: none(v => list([...messageNames(v)].sort((a, b) => (/^[a-z]/i.test(b) - /^[a-z]/i.test(a)) || (a < b ? -1 : a > b ? 1 : 0)))),
+  "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))) };
 
 S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
 
