@@ -121,7 +121,14 @@ const LIST_WORDS = {
 const textArgument = (v, word) => typeof v === "string" ? v : (notUnderstood(v, word), "");
 // Lua's sub: positions from 1, negative ones from the end, both ends included
 const position = (n, length) => n < 0 ? length + n + 1 : n;
+// HyperTalk's chunks (decision 137): the nth word, line, comma item or character, from the end when negative; past
+// either end, empty text, as HyperTalk gives
+const chunk = (parts, n, word) => { const k = typeof n === "number" && Number.isFinite(n) ? Math.trunc(n) : (notUnderstood(n, word), 0), i = k < 0 ? parts.length + k : k - 1; return i >= 0 && i < parts.length ? parts[i] : ""; };
 const TEXT_WORDS = {
+  word: one((t, n) => chunk(t.split(/\s+/).filter(w => w), n, "word")),
+  line: one((t, n) => chunk(t.split(/\r?\n/), n, "line")),
+  item: one((t, n) => chunk(t.split(",").map(p => p.trim()), n, "item")),
+  char: one((t, n) => chunk(Array.from(t), n, "char")),
   split: one((t, sep) => list(t.split(textArgument(sep, "split")))),
   lines: none(t => list(t.split(/\r?\n/))),
   words: none(t => list(t.split(/\s+/).filter(w => w))),

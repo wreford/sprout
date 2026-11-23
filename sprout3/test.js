@@ -464,6 +464,13 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
 }
 
+// ---------------- HyperTalk's chunks (decision 137)
+{
+  logs.length = 0;
+  ok("137 a text's word, line, item and char, counted from 1, from the end when negative, empty past either end",
+    val('"the quick brown fox" word 2') === "quick" && val('"one\\ntwo\\nthree" line 3 word 1') === "three" && val('"red, green, blue" item (-1)') === "blue" && val('"Sprout" char 1') === "S" && val('"short" word 9') === "" && logs.length === 0);
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));

@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 666 pass, 362 for the language and 304 for the games.
+- **Tests:** 667 pass, 363 for the language and 304 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (362)
+node test.js          # language tests (363)
 node game-tests.js    # game tests (304)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 666 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 667 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -886,6 +886,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 133. **Tide Machine, and reels (Claude, 23 Nov; a game and the library, from Troy's ask for a 16-bit slot-machine roguelike in CloverPit's genre, made original).** Tide Machine (`examples/tide-machine.sp`, at `/tide-machine/`, on its own frozen Sprout) is a lighthouse keeper's slot machine on a stormy night, on SPROUT·16: a 5 by 3 grid of shells, fish, anchors, pearls, lanterns and storm clouds, and lines of three or more alike from a line's start pay, across, down and slanting (fourteen lines). Each tide gives six pulls and the sea wants its coins (12, 30, 54, 84…); a storm cloud eats a coin, a lucky symbol each tide pays double, and paying early gives five coins for each pull saved. Miss the sea and the light goes out. Between tides a gull in a captain's hat sells charms that bend the rules (Pearl Diver, Spare Tide, Storm Glass, Crossed Oars, Old Compass, Lucky Star, Lantern Oil, Sea Salt, Brass Bell, Fish Net). It keeps the most tides kept. Its handheld is a brass ship's instrument with rivets, a porthole round the screen and a compass-rose pad (`skins/tide-machine.css`), its logo in Cinzel. The library gained `reels` (spin, at, lines, wins, tally, pay, same, stopped, blur): a slot machine's grid drawn by weight from a seed, its paylines, the wins on them, what a table of pays gives, and how many reels have stopped since a pull, for the animation.
 
 136. **The blog (Claude, 23 Nov; the ecosystem, from Troy's ask for a Sprout blog updated with each change, short).** `sprout3/blog.html` holds a short post for every change to Sprout, its library, its consoles and its games, newest first, with an Atom feed (`blog.xml`). A post is a small file, `blog/YYYY-MM-DD-name.md`: a title line, then a few short paragraphs with `code` and links, so builders working side by side each add their own. `node blog.js` builds both, and every push runs it.
+
+137. **HyperTalk's chunks and stacks (Claude, 23 Nov; the language and the library, from Troy's ask for HyperTalk's influence).** Text understands HyperTalk's chunk words: `"the quick brown fox" word 2` is quick, and `t line 3 word 1`, `t item 2` (comma items, trimmed) and `t char 1` read the same way, from 1, from the end when negative (`t item (-1)`), and empty text past either end, as HyperTalk gives. And `stack` (card, go, find, put, add) makes an app a HyperCard stack: cards that are records with a name and fields, a stack that knows which one is showing, going next, previous, first, last or by name, finding words on any card after this one, putting a value into a field, adding a card. HyperTalk's English grammar (`put x into field "name"`) would be a syntax change, so it is a proposal for Troy, not built.
 ````
 
 ---
@@ -4250,6 +4252,13 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("121 a game reads a key pressed as it reads one held", S.format(S.load('i : fresh-input with [pressed : [one : true]]\nresult : [i pressed "one", i pressed "two"]').field("result")) === "[true, false]");
 }
 
+// ---------------- HyperTalk's chunks (decision 137)
+{
+  logs.length = 0;
+  ok("137 a text's word, line, item and char, counted from 1, from the end when negative, empty past either end",
+    val('"the quick brown fox" word 2') === "quick" && val('"one\\ntwo\\nthree" line 3 word 1') === "three" && val('"red, green, blue" item (-1)') === "blue" && val('"Sprout" char 1') === "S" && val('"short" word 9') === "" && logs.length === 0);
+}
+
 // ---------------- keys that repeat while held (decision 126)
 {
   const keysOf = names => S.valueCellOf([], new Map(names.map(n => [n, true])));
@@ -7531,7 +7540,14 @@ const LIST_WORDS = {
 const textArgument = (v, word) => typeof v === "string" ? v : (notUnderstood(v, word), "");
 // Lua's sub: positions from 1, negative ones from the end, both ends included
 const position = (n, length) => n < 0 ? length + n + 1 : n;
+// HyperTalk's chunks (decision 137): the nth word, line, comma item or character, from the end when negative; past
+// either end, empty text, as HyperTalk gives
+const chunk = (parts, n, word) => { const k = typeof n === "number" && Number.isFinite(n) ? Math.trunc(n) : (notUnderstood(n, word), 0), i = k < 0 ? parts.length + k : k - 1; return i >= 0 && i < parts.length ? parts[i] : ""; };
 const TEXT_WORDS = {
+  word: one((t, n) => chunk(t.split(/\s+/).filter(w => w), n, "word")),
+  line: one((t, n) => chunk(t.split(/\r?\n/), n, "line")),
+  item: one((t, n) => chunk(t.split(",").map(p => p.trim()), n, "item")),
+  char: one((t, n) => chunk(Array.from(t), n, "char")),
   split: one((t, sep) => list(t.split(textArgument(sep, "split")))),
   lines: none(t => list(t.split(/\r?\n/))),
   words: none(t => list(t.split(/\s+/).filter(w => w))),
@@ -9092,7 +9108,7 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
 // the modules by what you're making, each group in the order you'd reach for them
 const GROUPS = [
   ["Words and numbers", ["format", "prose", "integers", "span", "measure", "stats"]],
-  ["Apps and data", ["calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
+  ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
