@@ -21,6 +21,8 @@
 "use strict";
 const S = root.Sprout3, LIVE = root.Sprout3Live;
 let W = 256, H = 192, LEVELS = 4, BITS = 8;
+// SPROUT·NOW (decision 145): "modern" draws smooth, sharp and in true colour, with no handheld round the screen
+let STYLE = "retro";
 const STEP = 1 / 60;
 
 // ---------------------------------------------------------------- the console's look
@@ -178,6 +180,22 @@ const PLAIN16 = { shape: "wide", logo: "SPROUT·16", badge: "SPROUT·16", taglin
 const PLAIN256 = { shape: "hyper", dpadShape: "stick", logo: "SPROUT·256", sub: "HYPER 256-BIT", badge: "SPROUT·256 · 1995 + 30", tagline: "HYPER 256-BIT · TRUE COLOUR",
   page: "#06030d", page2: "#2a0f4a", body: "#3b1b63", body2: "#140726", ink: "#d9c8ff", bezel: "#05030b", bezelInk: "#8f7ab8", stripe1: "#ff3fb4", stripe2: "#38e8ff",
   logoColour: "#e9ecff", subColour: "#38e8ff", logoStyle: "italic", button: "#ff3344", buttonInk: "#ffffff", stick: "#ff3344", dpad: "#0b0614", pill: "#2a1747", hint: "#8f7ab8", plate: "#0b0614" };
+// SPROUT·NOW (decision 145): no handheld; the game is the page on a phone, and a phone-shaped glass card on a computer
+const MODERN_CSS = `
+#e8.modern{background:radial-gradient(120% 85% at 50% 0%,var(--page2),var(--page) 75%);gap:12px;padding:0}
+#e8.modern .gb,#e8.modern .below{display:none}
+#e8.modern .card{position:relative;line-height:0;border-radius:42px;overflow:hidden;background:#000;
+  box-shadow:0 40px 90px -20px #000a,0 0 0 1px #ffffff22,inset 0 0 0 1px #ffffff12}
+#e8.modern .card canvas{display:block;touch-action:none}
+#e8.modern .snd{position:absolute;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));width:34px;height:34px;padding:0;border:0;border-radius:50%;
+  background:#ffffff2e;color:#fff;font:800 15px/34px Sora,system-ui,sans-serif;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);opacity:.8;cursor:pointer}
+#e8.modern .snd.off{opacity:.35;text-decoration:line-through}
+#e8.modern .hint{font:800 10px Sora,system-ui,sans-serif;letter-spacing:1px;color:#ffffff70}
+#e8.modern.touch .hint{display:none}
+#e8.modern.touch .card{position:fixed;inset:0;border-radius:0;box-shadow:none;display:flex;align-items:center;justify-content:center;background:var(--page)}
+#e8.modern .boot{background:var(--page)}
+#e8.modern .boot span{font:800 36px Sora,system-ui,sans-serif;letter-spacing:-0.5px;color:#fff;font-style:normal;animation:e8now 1s cubic-bezier(.2,.8,.2,1) both}
+@keyframes e8now{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}`;
 // the look a game gets when it brings none: the SPROUT·8 console's own
 const PLAIN = { logo: "SPROUT·8", sub: "", badge: "SPROUT·8", tagline: "8-BIT COLOUR", page: "#09090c", page2: "#1c1c24", body: "#2e2e35", body2: "#202026",
   ink: "#9a9aa5", bezel: "#17171c", bezelInk: "#77777f", stripe1: "#e83a3a", stripe2: "#2f5fd0", logoColour: "#e83a3a", subColour: "#9a9aa5",
@@ -255,6 +273,20 @@ function wordBitmap(t, colour) {
 
 // ---------------------------------------------------------------- sound: two square-wave voices, a triangle bass and hiss
 let AC = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, muted = false;
+// SPROUT·NOW's sound (decision 145): soft sine and triangle voices in a little room, a reverb made of fading noise
+function roomed(bus, amount) {
+  const len = Math.floor(AC.sampleRate * 1.6), ir = AC.createBuffer(2, len, AC.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+  const conv = AC.createConvolver(), wet = AC.createGain(); conv.buffer = ir; wet.gain.value = amount;
+  bus.connect(conv); conv.connect(wet).connect(master);
+}
+function soft(type, freq, len, when, bus, vol) {
+  const o = AC.createOscillator(), e = AC.createGain(); o.type = type; o.frequency.value = freq;
+  e.gain.setValueAtTime(0.0001, when); e.gain.exponentialRampToValueAtTime(vol, when + 0.012);
+  e.gain.exponentialRampToValueAtTime(0.0001, when + Math.max(0.05, len) + 0.12);
+  o.connect(e).connect(bus); o.start(when); o.stop(when + len + 0.2);
+  return o;
+}
 // SPROUT·16's sound (decision 125): the songs go through a little echo, and the lead is a sawtooth through a filter
 function echoed(into) {
   const delay = AC.createDelay(1), back = AC.createGain(), wet = AC.createGain();
@@ -272,6 +304,7 @@ function audio() {
       master = AC.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(AC.destination);
       sfxBus = AC.createGain(); sfxBus.gain.value = 0.55; sfxBus.connect(master);
       musicBus = AC.createGain(); musicBus.gain.value = 0.3; musicBus.connect(master);
+      if (STYLE === "modern") { roomed(musicBus, 0.32); roomed(sfxBus, 0.22); }
       if (BITS === 16) echoed(musicBus);
     } catch (e) { AC = null; return null; }
   }
@@ -313,20 +346,28 @@ function start(opts) {
   opts = opts || {};
   if (opts.bits === 16) { W = 320; H = 224; LEVELS = 8; BITS = 16; snapped.clear(); }
   if (opts.bits === 256) { W = 480; H = 270; LEVELS = 0; BITS = 256; snapped.clear(); }
+  // SPROUT·NOW (decision 145): true colour, a portrait screen 390 wide by default, and on a phone held upright the
+  // screen as tall as the phone is, so the game fills it edge to edge
+  if (opts.style === "modern") { STYLE = "modern"; LEVELS = 0; snapped.clear(); W = 390; H = 780; }
+  const MODERN = STYLE === "modern";
   // a screen of the game's own size (decision 143), as [width, height]; taller than wide makes a tall handheld
   if (Array.isArray(opts.screen) && opts.screen.length === 2) { W = Math.round(+opts.screen[0]) || W; H = Math.round(+opts.screen[1]) || H; }
-  const TALL = H > W;
+  const coarse = matchMedia("(pointer: coarse)").matches || "ontouchstart" in root;
+  if (MODERN && coarse && innerHeight > innerWidth) H = Math.round(Math.max(W * 1.4, Math.min(W * 2.4, W * innerHeight / innerWidth)));
+  const TALL = H > W && !MODERN;
   const skin = Object.assign({}, PLAIN, BITS === 16 ? PLAIN16 : BITS === 256 ? PLAIN256 : {}, opts.skin || {});
   // the buttons: two, or four in an arc on SPROUT·256
   const BUTTONS = BITS === 256 ? ["one", "two", "three", "four"] : ["one", "two"];
   const style = document.createElement("style");
-  style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "");
+  style.textContent = CSS + (skin.fontFile ? `@font-face{font-family:"${skin.font}";src:url("vendor/fonts/${skin.fontFile}") format("woff2");font-display:swap}` : "")
+    + (MODERN ? '@font-face{font-family:"Sora";font-weight:800;src:url("vendor/fonts/sora-800.woff2") format("woff2");font-display:block}' + MODERN_CSS : "");
   document.head.appendChild(style);
   // the game's own handheld (decision 124): its stylesheet laid over the shell's
   if (opts.css) { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = opts.css; document.head.appendChild(link); }
   const touch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in root;
   const box = document.createElement("div"); box.id = "e8"; if (touch) box.classList.add("touch");
   if (skin.pattern) box.classList.add("pattern-" + skin.pattern);
+  if (MODERN) box.classList.add("modern");
   const vars = { plate: skin.plate || "transparent", page: skin.page, page2: skin.page2, body: skin.body, body2: skin.body2, ink: skin.ink, bezel: skin.bezel, "bezel-ink": skin.bezelInk, s1: skin.stripe1, s2: skin.stripe2,
     logo: skin.logoColour, sub: skin.subColour, brand: `"${skin.font}"`, "logo-size": skin.logoSize, "logo-weight": skin.logoWeight, "logo-style": skin.logoStyle, "logo-track": skin.logoTrack,
     btn: skin.button, "btn-ink": skin.buttonInk, dpad: skin.dpad, pill: skin.pill, hint: skin.hint, stick: skin.stick || skin.button };
@@ -343,7 +384,8 @@ function start(opts) {
   <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 </div>
 <div class="below"><span>ARROWS MOVE &nbsp; Z 1 &nbsp; X 2${BITS === 256 ? " &nbsp; C 3 &nbsp; V 4" : ""} &nbsp; ENTER PAUSE</span><button class="mute">SOUND ON</button><button class="full">FULL SCREEN</button></div>
-<div class="boot${BITS === 256 ? " hyper" : ""}"><span>${esc(skin.logo)}</span>${BITS === 256 ? `<em>${esc(skin.sub || "HYPER 256-BIT")}</em><small>1995 + 30</small>` : ""}</div>`;
+${MODERN ? `<div class="card"><button class="snd" aria-label="sound">♪</button></div><div class="hint">TAP OR CLICK · ARROWS · Z X · ENTER PAUSES · M SOUND</div>` : ""}
+<div class="boot${BITS === 256 ? " hyper" : ""}"><span>${esc(MODERN ? opts.title || skin.logo : skin.logo)}</span>${BITS === 256 ? `<em>${esc(skin.sub || "HYPER 256-BIT")}</em><small>1995 + 30</small>` : ""}</div>`;
   document.body.appendChild(box);
   document.body.style.background = skin.page;
   if (skin.pattern === "zebra") {
@@ -369,20 +411,33 @@ function start(opts) {
   for (const t of ["gesturestart", "gesturechange", "gestureend", "dblclick"]) document.addEventListener(t, e => e.preventDefault(), { passive: false });
   const $ = sel => box.querySelector(sel), canvas = $(".screen canvas"), g = canvas.getContext("2d");
   g.imageSmoothingEnabled = false;
+  // the modern style's screen lies in its glass card, not the handheld's bezel
+  if (MODERN) { $(".card").insertBefore(canvas, $(".snd")); }
   const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
   const saveKey = "eight." + (opts.key || "game");
   muted = store.get("eight.muted", false);
-  const showMute = () => { $(".mute").textContent = muted ? "SOUND OFF" : "SOUND ON"; $(".mute2 span").textContent = muted ? "MUTED" : "SOUND"; if (master) master.gain.value = muted ? 0 : 0.9; if (root.zzfxVolume) root.zzfxVolume(muted ? 0 : 0.3); };
+  const showMute = () => { $(".mute").textContent = muted ? "SOUND OFF" : "SOUND ON"; $(".mute2 span").textContent = muted ? "MUTED" : "SOUND"; if ($(".snd")) $(".snd").classList.toggle("off", muted); if (master) master.gain.value = muted ? 0 : 0.9; if (root.zzfxVolume) root.zzfxVolume(muted ? 0 : 0.3); };
   const toggleMute = () => { muted = !muted; store.set("eight.muted", muted); audio(); showMute(); };
   const toggleFull = () => { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); };
   $(".mute").onclick = toggleMute; $(".mute2").addEventListener("pointerdown", e => { e.preventDefault(); toggleMute(); });
   $(".full").onclick = toggleFull;
+  if ($(".snd")) $(".snd").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); toggleMute(); });
   setTimeout(() => { const b = $(".boot"); if (b) { b.style.opacity = 0; setTimeout(() => b.remove(), 600); } }, BITS === 256 ? 2600 : 1500);
   // SPROUT·256's boot jingle, when the page may already make sound
   if (BITS === 256) setTimeout(() => { if (audio() && AC.state === "running") { const t = AC.currentTime + 0.05; [72, 76, 79, 84, 88, 91].forEach((n, i) => warm(hz(n), 0.16, t + i * 0.07, sfxBus, 0.07, 3400)); warm(hz(96), 0.7, t + 0.45, sfxBus, 0.06, 4200); } }, 700);
 
   // the screen as big as the bezel lets it be: whole pixels from three times up, else as big as it goes
   function fit() {
+    // SPROUT·NOW (decision 145): on a phone held upright, the whole phone; on a computer, a phone-shaped card as tall as
+    // the window allows; drawn at the device's pixel ratio, so it's sharp on any screen
+    if (MODERN) {
+      const dpr = Math.min(2, root.devicePixelRatio || 1), full = coarse && innerHeight > innerWidth;
+      const k = full ? Math.min(innerWidth / W, innerHeight / H) : Math.max(0.3, Math.min((innerHeight - 84) / H, (innerWidth - 32) / W));
+      const cw = W * k, ch = H * k, bw = Math.round(cw * dpr), bh = Math.round(ch * dpr);
+      canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
+      if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
+      return;
+    }
     const bz = $(".bezel"), r = bz.getBoundingClientRect(), cs = getComputedStyle(bz);
     const roomW = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     // a tall screen (decision 143) takes all the width and all the height the controls leave, at any size, not whole pixels
@@ -493,8 +548,42 @@ function start(opts) {
     g.globalAlpha = 0.55; g.drawImage(glowA, 0, 0, W, H); g.globalAlpha = 0.75; g.drawImage(glowB, 0, 0, W, H);
     g.restore(); g.imageSmoothingEnabled = false;
   }
+  // ---- SPROUT·NOW's drawing (decision 145): smooth shapes in true colour, in the screen's own units
+  const clearOf = c => { const t = String(c).trim(); if (/^#[0-9a-f]{6}$/i.test(t)) return t + "00"; if (/^#[0-9a-f]{8}$/i.test(t)) return t.slice(0, 7) + "00"; const m = /^rgba?\(([^,]+),([^,]+),([^,)]+)/i.exec(t); return m ? `rgba(${m[1]},${m[2]},${m[3]},0)` : "rgba(0,0,0,0)"; };
+  function modernText(a) {
+    const size = Math.max(4, +a[3] || 16), align = a[5] === "left" || a[5] === "right" ? a[5] : "center";
+    g.font = `800 ${size}px Sora, system-ui, sans-serif`; g.textAlign = align; g.textBaseline = "middle"; g.fillStyle = snap(a[4] === undefined ? "#ffffff" : a[4]);
+    // a soft shadow under the words, so they read on a light sky as well as a dark one
+    g.save(); g.shadowColor = "rgba(20,10,40,0.28)"; g.shadowBlur = Math.max(6, size * 0.35); g.shadowOffsetY = Math.max(1, size * 0.05);
+    g.fillText(String(a[0]), +a[1], +a[2]); g.restore();
+  }
+  function paintModern(list) {
+    const tau = Math.PI * 2;
+    for (const [name, a] of list) {
+      if (name === "clear") { g.fillStyle = snap(a[0]); g.fillRect(0, 0, W, H); }
+      else if (name === "rect") { g.fillStyle = snap(a[4]); const r = Math.max(0, +a[5] || 0); g.beginPath(); if (r && g.roundRect) g.roundRect(+a[0], +a[1], +a[2], +a[3], r); else g.rect(+a[0], +a[1], +a[2], +a[3]); g.fill(); }
+      else if (name === "circle") { g.fillStyle = snap(a[3]); g.beginPath(); g.arc(+a[0], +a[1], Math.max(0, +a[2]), 0, tau); g.fill(); }
+      else if (name === "line") { g.strokeStyle = snap(a[4]); g.lineWidth = +a[5] || 2; g.lineCap = "round"; g.beginPath(); g.moveTo(+a[0], +a[1]); g.lineTo(+a[2], +a[3]); g.stroke(); }
+      else if (name === "ring") { const from = a[5] === undefined ? 0 : +a[5], to = a[6] === undefined ? 1 : +a[6]; g.strokeStyle = snap(a[3]); g.lineWidth = +a[4] || 2; g.lineCap = "round"; g.beginPath(); g.arc(+a[0], +a[1], Math.max(0, +a[2]), from * tau, to * tau); g.stroke(); }
+      else if (name === "glow") { const x = +a[0], y = +a[1], r = Math.max(1, +a[2]), c = snap(a[3]), gr = g.createRadialGradient(x, y, 0, x, y, r);
+        gr.addColorStop(0, c); gr.addColorStop(1, clearOf(c)); g.save(); g.globalCompositeOperation = "lighter"; g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); g.restore(); }
+      else if (name === "gradient") { const gr = g.createLinearGradient(0, +a[1], 0, +a[1] + +a[3]); gr.addColorStop(0, snap(a[4])); gr.addColorStop(1, snap(a[5] === undefined ? a[4] : a[5])); g.fillStyle = gr; g.fillRect(+a[0], +a[1], +a[2], +a[3]); }
+      else if (name === "text") modernText(a);
+      else if (name === "sprite" && a[0] && typeof a[0] === "object") {
+        const bm = bitmap(a[0], a[3]), k = Math.max(0.05, +a[5] || 1), w = bm.width * k, h = bm.height * k, turn = +a[6] || 0, flip = a[4] === true || a[4] === -1;
+        g.save(); g.imageSmoothingEnabled = false; g.translate(+a[1] + w / 2, +a[2] + h / 2); if (turn) g.rotate(turn * tau); if (flip) g.scale(-1, 1); g.drawImage(bm, -w / 2, -h / 2, w, h); g.restore();
+      }
+      else if (name === "tiles") { g.save(); g.imageSmoothingEnabled = false; g.drawImage(tileCanvas(a[0], a[1], a[2]), +a[3], +a[4]); g.restore(); }
+    }
+  }
+  // the modern words on the retro screens: drawn plainly, in their colours
+  function pixelRing(cx, cy, r, colour, from, to) {
+    g.fillStyle = colour; const steps = Math.max(12, Math.round(r * 6.3)), a0 = from * Math.PI * 2, a1 = to * Math.PI * 2;
+    for (let i = 0; i <= steps; i++) { const t = a0 + (a1 - a0) * i / steps; g.fillRect(Math.round(cx + Math.cos(t) * r), Math.round(cy + Math.sin(t) * r), 1, 1); }
+  }
   let warned = false;
   function paint(list) {
+    if (MODERN) return paintModern(list);
     for (const [name, a] of list) {
       if (name === "clear") { g.fillStyle = snap(a[0]); g.fillRect(0, 0, W, H); }
       else if (name === "rect") { g.fillStyle = snap(a[4]); g.fillRect(Math.round(a[0]), Math.round(a[1]), Math.round(a[2]), Math.round(a[3])); }
@@ -511,6 +600,10 @@ function start(opts) {
         else if (flip) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(bm, 0, 0, w, h); g.restore(); } else g.drawImage(bm, x, y, w, h);
       }
       else if (name === "tiles") g.drawImage(tileCanvas(a[0], a[1], a[2]), Math.round(a[3]), Math.round(a[4]));
+      else if (name === "ring") pixelRing(+a[0], +a[1], Math.max(0, +a[2]), snap(a[3]), a[5] === undefined ? 0 : +a[5], a[6] === undefined ? 1 : +a[6]);
+      else if (name === "glow") disc(a[0], a[1], Math.max(1, (+a[2] || 0) / 4), snap(a[3]));
+      else if (name === "gradient") { const bands = 8, top = Math.round(+a[1]), tall = Math.round(+a[3]);
+        for (let i = 0; i < bands; i++) { g.fillStyle = snap(i < bands / 2 ? a[4] : a[5] === undefined ? a[4] : a[5]); g.fillRect(Math.round(+a[0]), top + Math.round(tall * i / bands), Math.round(+a[2]), Math.ceil(tall / bands)); } }
     }
   }
 
@@ -537,7 +630,9 @@ function start(opts) {
       if (at > horizon) return;
       if (at >= AC.currentTime - 0.02) {
         const dur = Math.max(0.03, ev.beats * spb * 0.92);
-        if (ev.voice === "drums") drum(String(ev.note), at);
+        if (ev.voice === "drums" && STYLE === "modern") { const k = String(ev.note); if (k === "kick") soft("sine", 70, 0.18, at, musicBus, 0.3); else hiss(k === "hat" ? 0.03 : 0.1, k === "hat" ? 8000 : 2400, at, musicBus, 0.12); }
+        else if (ev.voice === "drums") drum(String(ev.note), at);
+        else if (typeof ev.note === "number" && STYLE === "modern") soft(ev.voice === "lead" ? "sine" : "triangle", hz(ev.note), dur, at, musicBus, ev.voice === "bass" ? 0.2 : ev.voice === "harmony" ? 0.07 : 0.12);
         else if (typeof ev.note === "number" && BITS === 16 && ev.voice !== "bass") warm(hz(ev.note), dur, at, musicBus, ev.voice === "harmony" ? 0.05 : 0.08, ev.voice === "harmony" ? 1500 : 2600);
         else if (typeof ev.note === "number") tone(ev.voice === "bass" ? "triangle" : "square", hz(ev.note), dur, at, musicBus, ev.voice === "bass" ? 0.16 : ev.voice === "harmony" ? 0.035 : 0.055);
       }
@@ -546,16 +641,19 @@ function start(opts) {
   }
   function onEffect([name, a]) {
     if (name === "shake") { shake = Math.max(shake, +a[0] || 4); return; }
+    // buzz (decision 145): a short tap of the phone's vibration, where there is one and sound isn't muted
+    if (name === "buzz") { if (!muted && navigator.vibrate) try { navigator.vibrate(Math.max(1, Math.min(200, Math.round(+a[0] || 10)))); } catch (e) {} return; }
     if (!audio()) return;
     const now = AC.currentTime;
-    if (name === "beep") tone("square", +a[0] || 440, Math.max(0.02, +a[1] || 0.08), now, sfxBus, 0.12);
+    if (name === "beep" && MODERN) soft("sine", +a[0] || 440, Math.max(0.04, +a[1] || 0.1), now, sfxBus, 0.2);
+    else if (name === "beep") tone("square", +a[0] || 440, Math.max(0.02, +a[1] || 0.08), now, sfxBus, 0.12);
     else if (name === "hiss") hiss(Math.max(0.02, +a[0] || 0.1), +a[1] || 2000, now, sfxBus, 0.6);
   }
   function fail(e) { g.fillStyle = "#000"; g.fillRect(0, 0, W, H); words8(["CAN'T START", W / 2, 80, 8, "#ff5555"]); words8([String(e && e.message || e).slice(0, 30).toUpperCase(), W / 2, 100, 8, "#aaaaaa"]); console.error(e); }
 
   async function boot() {
     try {
-      if (document.fonts && document.fonts.load) await Promise.race([document.fonts.load('8px "Press Start 2P"'), new Promise(r => setTimeout(r, 2500))]);
+      if (document.fonts && document.fonts.load) await Promise.race([Promise.all([document.fonts.load('8px "Press Start 2P"'), MODERN ? document.fonts.load('800 20px Sora') : null]), new Promise(r => setTimeout(r, 2500))]);
       const src = await (await fetch(opts.game, { cache: "no-cache" })).text();
       if (S.libraries) { S.libraries.setBase(""); const missing = S.libraries.missing(src); if (missing.length) await S.libraries.load(missing); }
       const keep = store.get(saveKey, null);
@@ -577,13 +675,15 @@ function start(opts) {
       try {
         if (!paused) { acc += dt; let n = 0; while (acc >= STEP && n < 4) { game.tick(STEP, heldCell()); LATCH.clear(); acc -= STEP; n++; } if (n === 4) acc = 0; }
         const list = game.draw();
+        if (MODERN) { g.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0); g.imageSmoothingEnabled = true; }
         g.save();
         if (shake > 0.3 && !paused) g.translate(Math.round((Math.random() * 2 - 1) * shake), Math.round((Math.random() * 2 - 1) * shake));
         shake *= 0.86;
         paint(list);
         g.restore();
         if (BITS === 256) bloom();
-        if (paused) { g.fillStyle = "#000000aa"; g.fillRect(0, 0, W, H); words8(["PAUSE", W / 2, H / 2, 16, "#ffffff"]); words8([touch ? "TAP TO PLAY" : "ENTER TO PLAY", W / 2, H / 2 + 20, 8, "#aaaaaa"]); }
+        if (paused && MODERN) { g.fillStyle = "#0a0a1a88"; g.fillRect(0, 0, W, H); modernText(["Paused", W / 2, H / 2 - 10, 30, "#ffffff"]); modernText([touch ? "Tap to play" : "Enter to play", W / 2, H / 2 + 28, 15, "#ffffffbb"]); }
+        else if (paused) { g.fillStyle = "#000000aa"; g.fillRect(0, 0, W, H); words8(["PAUSE", W / 2, H / 2, 16, "#ffffff"]); words8([touch ? "TAP TO PLAY" : "ENTER TO PLAY", W / 2, H / 2 + 20, 8, "#aaaaaa"]); }
         const st = game.state;
         if (AC) { setSong(st.fieldNames().includes("song") ? st.field("song") : false); pumpSong(); }
         if (++frames % 30 === 0 && st.fieldNames().includes("keep")) { const k = JSON.stringify(S.libraries.toJS(st.field("keep"))); if (k !== saved) { const first = saved === ""; saved = k; store.set(saveKey, JSON.parse(k)); const m = $(".mem"); if (m && !first) { m.classList.add("on"); setTimeout(() => m.classList.remove("on"), 900); } } }
@@ -595,5 +695,5 @@ function start(opts) {
   return { get game() { return game; } };
 }
 
-root.Eight = { start, snap, get W() { return W; }, get H() { return H; }, get bits() { return BITS; } };
+root.Eight = { start, snap, get W() { return W; }, get H() { return H; }, get bits() { return BITS; }, get style() { return STYLE; } };
 })(window);

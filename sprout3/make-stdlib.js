@@ -68,7 +68,7 @@ const GROUPS = [
   ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "focus", "gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles", "reels", "bag", "shop"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],

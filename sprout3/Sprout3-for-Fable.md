@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 684 pass, 366 for the language and 318 for the games.
+- **Tests:** 690 pass, 366 for the language and 324 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (366)
-node game-tests.js    # game tests (318)
+node game-tests.js    # game tests (324)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 684 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 690 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -902,6 +902,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 143. **Portrait screens, and taps on the screen (Claude, 23 Nov; the host, from Troy's ask for a portrait slot game that uses much more of the screen).** A game can bring a screen of its own size: `"screen": [240, 400]` in its registry entry (or `screen` to `Eight.start`), in any tier's colours. A screen taller than wide gets a tall handheld: the screen takes the body's whole width and nearly all its height, at any size rather than whole pixels, and the D-pad, the brand and the buttons sit in one low row beneath; on a phone the screen fills the width (about two thirds of an iPhone's height). And a tap on the screen now reaches the game as a touch at the screen's own pixels, through the frame's `tapped`, `touching`, `touch-x` and `touch-y`, so a game can be played with a finger on what it shows; the boot screen lets touches through. `examples/test-card-tall.sp` is the tall test card, and a browser check taps it.
 
 144. **Fathom, a portrait slot roguelike, and bag, shop and focus (Claude, 23 Nov; a game and the library, from Troy's ask for a new portrait slot game with much more depth).** Fathom (`examples/fathom.sp`, at `/fathom/`, on its own frozen Sprout) is a diving bell's slot machine on SPROUT·16's tall 240 by 400 screen (decision 143). Dive by dive the bell goes down, and the ship wants its air bill at the end of each (15, 31, 53, 81…); paying early turns each pull left into coins, and missing the bill snaps the line. The 5 by 4 reels are drawn from a bag of symbols you own and pay on 23 lines from a line's start (rows, columns, slants, four Vs and six zigzags), with pattern bonuses for four corners, a cross and a full column. Coral lifts each fish beside it, jellyfish make the cells beside them glow, anglers are wild, anchors stick for a pull, three chests anywhere pay 30, squid ink spoils a cell and kraken eyes eat coins; each dive has a lucky symbol, gilded symbols multiply a win, and a tap on a reel holds it. Every three dives the zone deepens through sunlight, twilight, midnight, abyss and trench, the water darkening, and each zone ends in a boss dive (the Inky Squid, the Rusted Reel, the Undertow, the Kraken, the Trench). Between dives a hermit crab's salvage shop sells 26 relics in four rarities (six held, sold back for half), five things to use once and services to add, scrap and gild symbols; rerolls cost more each time and coins earn interest. The deepest dive is kept, each zone reached unlocks more relics for later runs, and reaching the trench opens two harder pressures. Everything works by tapping as well as by the arrows and buttons. Its handheld is a copper diving helmet with a brass porthole, rivets and red valve-wheel buttons (`skins/fathom.css`). The library gained `bag` (a slot game's reels built from a bag of symbols, drawn by seed, added to, scrapped and gilded), `shop` (offers drawn by rarity from a seed, prices that grow with depth, rerolls, selling for half, interest) and `focus` (boxes on a screen that a tap hits or the arrows move between, so a screen works by touch and keys alike).
+
+145. **SPROUT·NOW, a modern style, and Orbit Garden (Claude, 23 Nov; the host and a game, from Troy's ask for a game that looks modern).** `"style": "modern"` in a registry entry (or `style: "modern"` to `Eight.start`) drops the handheld and the colour snapping. On a phone held upright the game is the whole page, edge to edge; on a computer it sits in a phone-shaped glass card on a soft gradient, under a line of key hints. It draws in the screen's own units at the device's pixel ratio (up to 2), so it is sharp on a retina screen, with smooth shapes, colours taken exactly, alpha included (`#rrggbbaa`, `rgba [...]`), and text in Sora with a soft shadow. New drawing words work on every console (the retro screens draw them plainly): `rect` takes a sixth value, a corner radius, and `line` a sixth, a width; `ring [x, y, r, colour, width, from, to]` is an outline circle or an arc of one, in turns; `glow [x, y, r, colour]` is a soft pool of added light; `gradient [x, y, w, h, top, bottom]` fills from one colour to another. `buzz [ms]` taps the phone's vibration, and songs and beeps use soft sine and triangle voices in a small reverb. Orbit Garden (`examples/orbit-garden.sp`, at `/orbit-garden/`) shows it off: a seed of light rides a turning ring; tap and it flies straight out to land on whatever ring it meets; climb as high as you can, gather motes of light, and leave before a stone rolling the other way reaches you, while the sky turns from dawn through day and dusk to a starry night. The library gained `orbit` (point, turn-of, outward, along, near, gap, apart, spun), the maths of things going round, for orbit games, clocks, radial menus and wheels.
 ````
 
 ---
@@ -3209,10 +3211,13 @@ const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
 // the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
 // sprite and tiles (decision 113) are pixel art for 8-bit pages: [art, x, y, ink, flip] and [map, tile-set, ink, x, y]
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7, sprite: 5, tiles: 5 };
+// ring, glow and gradient (decision 145) are for SPROUT·NOW's smooth look: an outline circle (or an arc of one), a soft
+// pool of light, and a fill from one colour at the top to another at the bottom; the retro screens draw them plainly
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7, sprite: 5, tiles: 5, ring: 5, glow: 4, gradient: 6 };
 // hiss [length, pitch] is the noise channel of an 8-bit sound chip, beside beep's square wave (noise is taken: it's
 // the smooth random function)
-const SOUND = { beep: 2, shake: 1, sound: 1, hiss: 2 };
+// buzz [milliseconds] (decision 145): a short tap of the phone's vibration, for a modern game's feel
+const SOUND = { beep: 2, shake: 1, sound: 1, hiss: 2, buzz: 1 };
 
 function makeGame(src, opts) {
   opts = opts || {};
@@ -7410,6 +7415,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="/orbit-garden/">Orbit Garden</a><span>A calm, modern one-thumb climber: tap to hop a seed of light between turning orbits as the sky turns from dawn to night. SPROUT·NOW's first game.</span></li>
 <li><a href="/fathom/">Fathom</a><span>A portrait 16-bit slot roguelike on SPROUT·16: your reels are a bag of symbols you build, a monster every third dive, twenty-six relics and a hermit crab's salvage shop.</span></li>
 <li><a href="/starlane/">Starlane 2025</a><span>The first SPROUT·256 game: surf a glowing lane into a striped sunset, with four buttons in an arc to boost, jump, spin and bomb.</span></li>
 <li><a href="/tide-machine/">Tide Machine</a><span>A 16-bit slot-machine roguelike on SPROUT·16: lines of three or more pay, the sea wants its coins each tide, and a gull in a captain's hat sells charms that bend the rules.</span></li>
@@ -9212,7 +9218,7 @@ const GROUPS = [
   ["Apps and data", ["stack", "calendar", "finance", "tabular", "fuzzy", "validate", "undo", "csv", "json", "lick"]],
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "focus", "gesture", "music"]],
-  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
+  ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "orbit", "layout", "matrix", "geo"]],
   ["Chance", ["seeded", "dice", "cards", "piles", "reels", "bag", "shop"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],

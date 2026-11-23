@@ -21,6 +21,8 @@ for (const f of RUNTIME) copy(path.join(HERE, f), path.join(out, f));
 const skin = meta.skin || {};
 const fonts = ["press-start-2p.woff2", "PRESS-START-2P-LICENSE", "README.md"];
 if (skin.fontFile) fonts.push(skin.fontFile, skin.fontFile.replace(/-\d+\.woff2$/, "").toUpperCase() + "-LICENSE");
+// SPROUT·NOW (decision 145) writes in Sora
+if (meta.style === "modern" && !fonts.includes("sora-800.woff2")) fonts.push("sora-800.woff2", "SORA-LICENSE");
 for (const f of fonts) copy(path.join(HERE, "vendor/fonts", f), path.join(out, "vendor/fonts", f));
 const libs = S.libraries.mentions(src);
 for (const lib of libs) copyDir(path.join(HERE, path.dirname(S.libraries.LIBRARIES[lib].file)), path.join(out, path.dirname(S.libraries.LIBRARIES[lib].file)));
@@ -41,7 +43,7 @@ fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="${esc(meta.title)}">
-<title>${esc(meta.title)} · SPROUT·${meta.bits || 8}</title>
+<title>${esc(meta.title)} · SPROUT·${meta.style === "modern" ? "NOW" : meta.bits || 8}</title>
 <link rel="apple-touch-icon" href="/icons/${name}-180.png">
 <link rel="manifest" href="/${name}/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/icons/${name}-64.png">
@@ -49,7 +51,7 @@ fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html>
 <base href="/${name}/sprout/">
 </head><body>
 ${RUNTIME.map(f => `<script src="${f}?v=${stamp}"></script>`).join("\n")}
-<script>Eight.start({ game: "game.sp?v=${stamp}", title: ${JSON.stringify(meta.title)}, key: ${JSON.stringify(name)}, skin: ${JSON.stringify(skin)}${hasCss ? `, css: "skin.css?v=${stamp}"` : ""}${meta.bits ? `, bits: ${meta.bits}` : ""}${meta.screen ? `, screen: ${JSON.stringify(meta.screen)}` : ""} });
+<script>Eight.start({ game: "game.sp?v=${stamp}", title: ${JSON.stringify(meta.title)}, key: ${JSON.stringify(name)}, skin: ${JSON.stringify(skin)}${hasCss ? `, css: "skin.css?v=${stamp}"` : ""}${meta.bits ? `, bits: ${meta.bits}` : ""}${meta.screen ? `, screen: ${JSON.stringify(meta.screen)}` : ""}${meta.style ? `, style: ${JSON.stringify(meta.style)}` : ""} });
 // a local web app: its own service worker keeps every file it needs, so it opens and plays with no connection
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/${name}/sw.js", { scope: "/${name}/" }).catch(() => {}));</script>
 </body></html>

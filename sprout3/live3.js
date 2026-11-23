@@ -9,10 +9,13 @@ const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
 // the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
 // sprite and tiles (decision 113) are pixel art for 8-bit pages: [art, x, y, ink, flip] and [map, tile-set, ink, x, y]
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7, sprite: 5, tiles: 5 };
+// ring, glow and gradient (decision 145) are for SPROUT·NOW's smooth look: an outline circle (or an arc of one), a soft
+// pool of light, and a fill from one colour at the top to another at the bottom; the retro screens draw them plainly
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2, beam: 7, sprite: 5, tiles: 5, ring: 5, glow: 4, gradient: 6 };
 // hiss [length, pitch] is the noise channel of an 8-bit sound chip, beside beep's square wave (noise is taken: it's
 // the smooth random function)
-const SOUND = { beep: 2, shake: 1, sound: 1, hiss: 2 };
+// buzz [milliseconds] (decision 145): a short tap of the phone's vibration, for a modern game's feel
+const SOUND = { beep: 2, shake: 1, sound: 1, hiss: 2, buzz: 1 };
 
 function makeGame(src, opts) {
   opts = opts || {};

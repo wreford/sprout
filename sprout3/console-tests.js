@@ -180,6 +180,23 @@ server.listen(0, async () => {
       ok("a tall screen: no errors on the page", terr.length === 0, terr);
       await ctx.close();
     }
+    // SPROUT·NOW (decision 145): no handheld, the game the whole phone, drawn sharp at the phone's pixel ratio, and a tap
+    // on it reaching the game
+    {
+      const ctx = await browser.newContext(devices["iPhone 13"]), mp = await ctx.newPage(), merr = [];
+      mp.on("pageerror", e => merr.push(e.message)); mp.on("console", m => { if (m.type() === "error") merr.push(m.text()); });
+      const base = new URL(url).origin + "/sprout3/", runtime = ["sprout3.js", "words.js", "parse.js", "stdlib.js", "libs.js", "kernels.js", "live3.js", "eight.js"];
+      await mp.goto(base + "index.html");
+      await mp.setContent(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><base href="${base}"></head><body>${runtime.map(f => `<script src="${f}"></script>`).join("")}<script>Eight.start({ game: "examples/orbit-garden.sp", title: "Orbit Garden", key: "orbit-now", style: "modern", screen: [390, 780] });</script></body></html>`);
+      await mp.waitForFunction(() => window.Eight && Eight.game && !document.querySelector("#e8 .boot"), null, { timeout: 15000 }).catch(() => {});
+      const box = await (await mp.$(".card canvas")).boundingBox();
+      await mp.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await mp.waitForFunction(() => Sprout3.format(Eight.game.state.field("mode")) === "play", null, { timeout: 8000 }).catch(() => {});
+      const st = await mp.evaluate(() => { const c = document.querySelector(".card canvas"); return { style: Eight.style, sharp: c.width === Math.round(parseFloat(c.style.width) * Math.min(2, devicePixelRatio)) && devicePixelRatio > 1, handheld: getComputedStyle(document.querySelector("#e8 .gb")).display, full: Math.abs(c.getBoundingClientRect().width - innerWidth) < 2, mode: Sprout3.format(Eight.game.state.field("mode")) }; });
+      ok("SPROUT·NOW: no handheld, the whole phone's width, sharp at its pixel ratio, and a tap begins the game", st.style === "modern" && st.sharp && st.handheld === "none" && st.full && st.mode === "play", st);
+      ok("SPROUT·NOW: no errors on the page", merr.length === 0, merr);
+      await ctx.close();
+    }
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
   console.log(pass + " passed, " + fail + " failed");
