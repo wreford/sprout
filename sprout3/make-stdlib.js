@@ -64,7 +64,7 @@ const GROUPS = [
   ["Time and motion", ["ease", "motion", "arc", "platform", "spring", "keyframes", "flipbook", "steer", "daytime"]],
   ["Touch and sound", ["pad", "menu", "gesture", "music"]],
   ["Space", ["vec", "shape", "segment", "spline", "collide", "grid", "tilemap", "runs", "piece", "hex", "iso", "camera", "parallax", "layout", "matrix", "geo"]],
-  ["Chance", ["seeded", "dice", "cards", "piles"]],
+  ["Chance", ["seeded", "dice", "cards", "piles", "reels"]],
   ["Play", ["combat", "waves", "particles", "rewards", "story", "wordplay", "league", "economy", "needs"]],
   ["Colour", ["palette"]],
 ];
