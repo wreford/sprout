@@ -9,11 +9,20 @@ const { methodTakingNothing: none, methodTakingOne: one, partsOf, fieldsOf, call
 const formatValue = S.format;
 const list = parts => makeList(parts);
 const record = (keys, values) => new ValueCell(EMPTY, shapeFor(keys), values);
-const truthy = (answer, word) => answer === true ? true : answer === false ? false : (notUnderstood(answer, word), false);
+// messages say what was expected and what came instead (decision 149)
+const shown = I.shownInMessage;
+const truthy = (answer, word) => answer === true ? true : answer === false ? false : (I.testGaveNeither(answer, word), false);
+// a test given to drop or count: a cell that takes input, a host word, or a method waiting for its right side, as (5 <);
+// anything else is a value (decision 149)
+const isTest = v => (v instanceof I.Cell && v.takesInput()) || v instanceof I.Native || v instanceof I.WaitingMethod;
+// what a -by word goes by: a cell's answer for each item, or, given a name ("score"), that field of each item, or
+// that word sent to it ("length") (decision 149)
+const readerFor = key => typeof key === "string" ? item => I.sendWord(item, key, null, 0) : item => callCell(key, item);
+const randomNumber = () => I.randomSource()();
 const argumentsOf = (value, count) => isCell(value) ? Array.from({ length: count }, (_, i) => value.part(i + 1)) : [value];
 const isRecord = v => isCell(v) && v.fieldNames().length > 0 && v.count() === 0;
 const keyText = v => typeof v === "string" ? v : formatValue(v);
-const wholeNumber = (n, word) => { if (typeof n !== "number" || !Number.isFinite(n)) { notUnderstood(n, word); return 0; } return Math.max(0, Math.floor(n)); };
+const wholeNumber = (n, word) => { if (typeof n !== "number" || !Number.isFinite(n)) { logMiss(word + " needs a whole number, but was given " + shown(n)); return 0; } return Math.max(0, Math.floor(n)); };
 
 // ===================================================================== endless lists (Clojure's lazy sequences)
 // An endless list works out its items only when they are read, and keeps them. collect, keep and drop give endless lists;
@@ -38,7 +47,8 @@ const ENDLESS_METHODS = Object.assign(Object.create(I.PROTOTYPES.cell), {
   each: one(noEnd("each")), fold: one(noEnd("fold")), spork: one(noEnd("spork")), with: one(noEnd("with")), "..": one(noEnd("..")),
   collect: one((xs, f) => { const next = xs.cursor(); return endlessFrom(() => callCell(f, next())); }),
   keep: one((xs, test) => { const next = xs.cursor(); return endlessFrom(() => { for (;;) { const item = next(); if (truthy(callCell(test, item), "keep")) return item; } }); }),
-  drop: one((xs, n) => { const next = xs.cursor(); let skip = wholeNumber(n, "drop"); return endlessFrom(() => { while (skip > 0) { next(); skip--; } return next(); }); }),
+  drop: one((xs, n) => { if (isTest(n)) { const next = xs.cursor(); return endlessFrom(() => { for (;;) { const item = next(); if (!truthy(callCell(n, item), "drop")) return item; } }); }
+    const next = xs.cursor(); let skip = wholeNumber(n, "drop"); return endlessFrom(() => { while (skip > 0) { next(); skip--; } return next(); }); }),
   "drop-while": one((xs, test) => { const next = xs.cursor(); let dropping = true; return endlessFrom(() => { for (;;) { const item = next(); if (dropping && truthy(callCell(test, item), "drop-while")) continue; dropping = false; return item; } }); }),
   zip: one((xs, other) => { const next = xs.cursor(); if (other instanceof Endless) { const nextOther = other.cursor(); return endlessFrom(() => list([next(), nextOther()])); } return list(partsOf(other).map(item => list([next(), item]))); }),
   numbered: none(xs => { const next = xs.cursor(); let n = 0; return endlessFrom(() => list([++n, next()])); }),
@@ -53,8 +63,18 @@ const ENDLESS_METHODS = Object.assign(Object.create(I.PROTOTYPES.cell), {
 
 // ===================================================================== lists and records (Clojure's sequence library)
 const items = xs => partsOf(xs);
-const numbersOf = (xs, word) => { const parts = items(xs); for (const v of parts) if (typeof v !== "number") { notUnderstood(v, word); return null; } return parts; };
-const byKey = (xs, f, word) => items(xs).map(item => [callCell(f, item), item]);
+const numbersOf = (xs, word) => { const parts = items(xs); for (let k = 0; k < parts.length; k++) if (typeof parts[k] !== "number") { logMiss(word + " works on numbers, but item " + (k + 1) + " is " + shown(parts[k])); return null; } return parts; };
+const byKey = (xs, f) => { const read = readerFor(f); return items(xs).map(item => [read(item), item]); };
+// Lua's sub, for lists and text alike: positions from 1, negative ones from the end, both ends included
+const sliceOf = (parts, fromTo, word) => {
+  const [from, to] = argumentsOf(fromTo, 2), length = parts.length;
+  if (typeof from !== "number" || (to !== undefined && to !== false && typeof to !== "number")) { logMiss(word + " takes [from, to], positions from 1, but was given " + shown(fromTo)); return parts; }
+  const start = position(from, length), end = to === false || to === undefined ? length : position(to, length);
+  return parts.slice(Math.max(0, start - 1), Math.max(0, end));
+};
+// the characters of a text, each emoji one
+const charactersOf = t => Array.from(t);
+const MOST_ITEMS_TO_MAKE = 10000000;
 const less = (a, b) => typeof a === "number" && typeof b === "number" ? a < b : typeof a === "string" && typeof b === "string" ? a < b : formatValue(a) < formatValue(b);
 const groupInto = (xs, keyOf, add) => { const keys = [], groups = new Map(); for (const item of items(xs)) { const key = keyText(keyOf(item)); if (!groups.has(key)) { groups.set(key, add(undefined, item)); keys.push(key); } else groups.set(key, add(groups.get(key), item)); } return [keys, groups]; };
 // a path into nested records and lists: [name, name, 2]
@@ -74,10 +94,32 @@ const LIST_WORDS = {
   rest: none(xs => list(items(xs).slice(1))),
   "all-but-last": none(xs => list(items(xs).slice(0, -1))),
   reverse: none(xs => list(items(xs).slice().reverse())),
-  "distinct-by": one((xs, f) => { const out = [], seen = []; for (const v of items(xs)) { const k = callCell(f, v); if (!seen.some(o => valuesEqual(o, k))) { seen.push(k); out.push(v); } } return list(out); }),
+  "distinct-by": one((xs, f) => { const out = [], seen = [], read = readerFor(f); for (const v of items(xs)) { const k = read(v); if (!seen.some(o => valuesEqual(o, k))) { seen.push(k); out.push(v); } } return list(out); }),
   "find-index": one((xs, test) => { const k = items(xs).findIndex(v => truthy(callCell(test, v), "find-index")); return k < 0 ? false : k + 1; }),
   "has-field": one((r, name) => isCell(r) && r.field(keyText(name)) !== UNSET),
-  distinct: none(xs => { const out = []; for (const v of items(xs)) if (!out.some(o => valuesEqual(o, v))) out.push(v); return list(out); }),
+  // numbers, text and true or false are remembered in a Set, one look per item (decision 149); other values are
+  // compared as = compares them. NaN is never equal to itself, so each one stays.
+  distinct: none(xs => {
+    const out = [], seenSimple = new Set(), seenOthers = [];
+    for (const v of items(xs)) {
+      if (typeof v === "number" && v !== v) out.push(v);
+      else if (v === null || typeof v !== "object") { if (!seenSimple.has(v)) { seenSimple.add(v); out.push(v); } }
+      else if (!seenOthers.some(o => valuesEqual(o, v))) { seenOthers.push(v); out.push(v); }
+    }
+    return list(out);
+  }),
+  // decision 149: words the games kept writing by hand
+  "is-empty": none(xs => xs.count() === 0 && xs.fieldNames().length === 0 && !(xs instanceof I.Cell && xs.takesInput())),
+  // atoms index-by "id": a record from each item's key (as text) to the item, the last with a key winning, to look
+  // things up by id in a graph
+  "index-by": one((xs, key) => { const read = readerFor(key), byKeyText = new Map(); for (const item of items(xs)) byKeyText.set(keyText(read(item)), item); return record([...byKeyText.keys()], [...byKeyText.values()]); }),
+  "sum-by": one((xs, key) => { const read = readerFor(key); let total = 0; for (const item of items(xs)) { const n = read(item); if (typeof n !== "number") { logMiss("sum-by adds numbers, but for " + shown(item) + " it got " + shown(n)); return false; } total += n; } return total; }),
+  slice: one((xs, fromTo) => list(sliceOf(items(xs), fromTo, "slice"))),
+  repeat: one((xs, n) => { const parts = items(xs), times = wholeNumber(n, "repeat"), out = []; if (parts.length * times > MOST_ITEMS_TO_MAKE) return logMiss("repeat would make " + parts.length * times + " items, too many to hold"); for (let k = 0; k < times; k++) out.push(...parts); return list(out); }),
+  // a random item, and the items in a random order, from the random numbers rand uses (a game records them, so a
+  // replay is the same)
+  pick: none(xs => { const parts = items(xs); return parts.length ? parts[Math.floor(randomNumber() * parts.length)] : false; }),
+  shuffle: none(xs => { const parts = items(xs).slice(); for (let k = parts.length - 1; k > 0; k--) { const j = Math.floor(randomNumber() * (k + 1)); [parts[k], parts[j]] = [parts[j], parts[k]]; } return list(parts); }),
   sum: none(xs => { const ns = numbersOf(xs, "sum"); return ns ? ns.reduce((a, b) => a + b, 0) : false; }),
   product: none(xs => { const ns = numbersOf(xs, "product"); return ns ? ns.reduce((a, b) => a * b, 1) : false; }),
   mean: none(xs => { const ns = numbersOf(xs, "mean"); return ns && ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : false; }),
@@ -85,7 +127,9 @@ const LIST_WORDS = {
   smallest: none(xs => { const ns = numbersOf(xs, "smallest"); return ns && ns.length ? ns.reduce((a, b) => b < a ? b : a) : false; }),
   flatten: none(xs => { const out = []; const walk = v => { if (isCell(v) && !isRecord(v) && !(v instanceof Endless)) partsOf(v).forEach(walk); else out.push(v); }; items(xs).forEach(walk); return list(out); }),
   take: one((xs, n) => list(items(xs).slice(0, wholeNumber(n, "take")))),
-  drop: one((xs, n) => list(items(xs).slice(wholeNumber(n, "drop")))),
+  // drop a number: that many from the front; drop a test: the items it matches (decision 149), as keep keeps them
+  drop: one((xs, n) => typeof n === "number" ? list(items(xs).slice(wholeNumber(n, "drop"))) : isTest(n) ? list(items(xs).filter(v => !truthy(callCell(n, v), "drop")))
+    : (logMiss("drop takes a number, or a test such as [n | n < 0], but was given " + shown(n)), list(items(xs).slice()))),
   "take-while": one((xs, test) => { const out = []; for (const v of items(xs)) { if (!truthy(callCell(test, v), "take-while")) break; out.push(v); } return list(out); }),
   "drop-while": one((xs, test) => { const parts = items(xs); let k = 0; while (k < parts.length && truthy(callCell(test, parts[k]), "drop-while")) k++; return list(parts.slice(k)); }),
   find: one((xs, test) => { for (const v of items(xs)) if (truthy(callCell(test, v), "find")) return v; return false; }),
@@ -93,11 +137,12 @@ const LIST_WORDS = {
   has: one((xs, v) => items(xs).some(o => valuesEqual(o, v))),
   any: one((xs, test) => items(xs).some(v => truthy(callCell(test, v), "any"))),
   all: one((xs, test) => items(xs).every(v => truthy(callCell(test, v), "all"))),
-  count: one((xs, test) => items(xs).filter(v => truthy(callCell(test, v), "count")).length),
+  // count a test: the items it matches; count a value: the items equal to it (decision 149)
+  count: one((xs, what) => isTest(what) ? items(xs).filter(v => truthy(callCell(what, v), "count")).length : items(xs).filter(v => valuesEqual(v, what)).length),
   "sort-by": one((xs, f) => list(byKey(xs, f).map((pair, k) => [pair, k]).sort((a, b) => less(a[0][0], b[0][0]) ? -1 : less(b[0][0], a[0][0]) ? 1 : a[1] - b[1]).map(x => x[0][1]))),
   "largest-by": one((xs, f) => { let best = false, bestKey; for (const [key, v] of byKey(xs, f)) if (best === false || less(bestKey, key)) { best = v; bestKey = key; } return best; }),
   "smallest-by": one((xs, f) => { let best = false, bestKey; for (const [key, v] of byKey(xs, f)) if (best === false || less(key, bestKey)) { best = v; bestKey = key; } return best; }),
-  "group-by": one((xs, f) => { const [keys, groups] = groupInto(xs, item => callCell(f, item), (group, item) => (group || []).concat([item])); return record(keys, keys.map(k => list(groups.get(k)))); }),
+  "group-by": one((xs, f) => { const [keys, groups] = groupInto(xs, readerFor(f), (group, item) => (group || []).concat([item])); return record(keys, keys.map(k => list(groups.get(k)))); }),
   frequencies: none(xs => { const [keys, groups] = groupInto(xs, item => item, (n, item) => (n || 0) + 1); return record(keys, keys.map(k => groups.get(k))); }),
   partition: one((xs, n) => { const size = wholeNumber(n, "partition") || 1, parts = items(xs), out = []; for (let k = 0; k + size <= parts.length; k += size) out.push(list(parts.slice(k, k + size))); return list(out); }),
   chunks: one((xs, n) => { const size = wholeNumber(n, "chunks") || 1, parts = items(xs), out = []; for (let k = 0; k < parts.length; k += size) out.push(list(parts.slice(k, k + size))); return list(out); }),
@@ -106,7 +151,7 @@ const LIST_WORDS = {
   numbered: none(xs => list(items(xs).map((v, k) => list([k + 1, v])))),
   interpose: one((xs, sep) => { const out = []; items(xs).forEach((v, k) => { if (k) out.push(sep); out.push(v); }); return list(out); }),
   "collect-flat": one((xs, f) => { const out = []; for (const v of items(xs)) { const r = callCell(f, v); if (isCell(r)) out.push(...partsOf(r)); else out.push(r); } return list(out); }),
-  scan: one((xs, startAndCell) => { if (!isCell(startAndCell)) return notUnderstood(startAndCell, "scan"); let total = startAndCell.part(1); const f = startAndCell.part(2), out = [total]; for (const v of items(xs)) { total = callCell(f, list([total, v])); out.push(total); } return list(out); }),
+  scan: one((xs, startAndCell) => { if (!isCell(startAndCell) || startAndCell.count() < 2) return I.foldGivenWrongShape(startAndCell, "scan"); let total = startAndCell.part(1); const f = startAndCell.part(2), out = [total]; for (const v of items(xs)) { total = callCell(f, list([total, v])); out.push(total); } return list(out); }),
   join: one((xs, sep) => items(xs).map(formatValue).join(formatValue(sep))),
   // records: Clojure's keys, vals, select-keys, dissoc, update, get-in, assoc-in and update-in
   keys: none(r => list(r.fieldNames().slice())),
@@ -121,7 +166,14 @@ const LIST_WORDS = {
 };
 
 // ===================================================================== text (Lua's string library, and more)
-const textArgument = (v, word) => typeof v === "string" ? v : (notUnderstood(v, word), "");
+const textArgument = (v, word) => typeof v === "string" ? v : (logMiss(word + " needs text, but was given " + shown(v)), "");
+// padded with char to width characters, each emoji one (decision 149); padding with empty text leaves it as it is
+const padText = (t, width, char, atStart) => {
+  const fill = typeof char === "string" ? char : " ", missing = width - I.textLength(t);
+  if (!fill || missing <= 0) return t;
+  const padding = charactersOf(fill.repeat(Math.ceil(missing / I.textLength(fill)))).slice(0, missing).join("");
+  return atStart ? padding + t : t + padding;
+};
 // Lua's sub: positions from 1, negative ones from the end, both ends included
 const position = (n, length) => n < 0 ? length + n + 1 : n;
 // Ruby's succ for text (decision 141): the next text in counting order, carrying left through letters and digits
@@ -149,7 +201,7 @@ const TEXT_WORDS = {
   char: one((t, n) => chunk(Array.from(t), n, "char")),
   split: one((t, sep) => list(t.split(textArgument(sep, "split")))),
   // Ruby's (decision 141): centred in a width, runs of a letter squeezed to one, and the next text in counting order
-  center: one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2), w = wholeNumber(width, "center"), c = typeof char === "string" && char ? char : " ", total = Math.max(0, w - t.length), before = Math.floor(total / 2); return c.repeat(before).slice(0, before) + t + c.repeat(total - before).slice(0, total - before); }),
+  center: one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2), w = wholeNumber(width, "center"), c = typeof char === "string" && char ? char : " ", total = Math.max(0, w - I.textLength(t)), before = Math.floor(total / 2); return padText(padText(t, I.textLength(t) + before, c, true), w, c, false); }),
   squeeze: none(t => t.replace(/(.)\1+/gsu, "$1")),
   succ: none(textSucc),
   lines: none(t => list(t.split(/\r?\n/))),
@@ -159,19 +211,39 @@ const TEXT_WORDS = {
   "starts-with": one((t, s) => t.startsWith(textArgument(s, "starts-with"))),
   "ends-with": one((t, s) => t.endsWith(textArgument(s, "ends-with"))),
   has: one((t, s) => t.includes(textArgument(s, "has"))),
-  "index-of": one((t, s) => { const k = t.indexOf(textArgument(s, "index-of")); return k < 0 ? false : k + 1; }),
-  slice: one((t, fromTo) => { const [from, to] = argumentsOf(fromTo, 2); const a = position(from, t.length), b = to === false || to === undefined ? t.length : position(to, t.length); return t.slice(Math.max(0, a - 1), Math.max(0, b)); }),
+  "index-of": one((t, s) => { const k = t.indexOf(textArgument(s, "index-of")); return k < 0 ? false : I.textLength(t.slice(0, k)) + 1; }),
+  slice: one((t, fromTo) => sliceOf(charactersOf(t), fromTo, "slice").join("")),
+  // text reads like a list of its characters (decision 149): first, last, take, drop, count, is-empty
+  first: none(t => I.textCharacterAt(t, 1)), last: none(t => I.textCharacterAt(t, I.textLength(t))),
+  take: one((t, n) => charactersOf(t).slice(0, wholeNumber(n, "take")).join("")),
+  drop: one((t, n) => isTest(n) ? charactersOf(t).filter(c => !truthy(callCell(n, c), "drop")).join("") : charactersOf(t).slice(wholeNumber(n, "drop")).join("")),
+  count: one((t, what) => isTest(what) ? charactersOf(t).filter(c => truthy(callCell(what, c), "count")).length : textArgument(what, "count") ? t.split(what).length - 1 : 0),
+  "is-empty": none(t => t.length === 0),
   repeat: one((t, n) => t.repeat(wholeNumber(n, "repeat"))),
   reverse: none(t => Array.from(t).reverse().join("")),
   number: none(t => { const n = Number(t.trim()); return t.trim() !== "" && Number.isFinite(n) ? n : false; }),
   code: none(t => t.length ? t.codePointAt(0) : false),
-  "pad-left": one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2); return t.padStart(wholeNumber(width, "pad-left"), typeof char === "string" ? char : " "); }),
-  "pad-right": one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2); return t.padEnd(wholeNumber(width, "pad-right"), typeof char === "string" ? char : " "); }),
+  "pad-left": one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2); return padText(t, wholeNumber(width, "pad-left"), char, true); }),
+  "pad-right": one((t, widthAndChar) => { const [width, char] = argumentsOf(widthAndChar, 2); return padText(t, wholeNumber(width, "pad-right"), char, false); }),
   capitalize: none(t => t.charAt(0).toUpperCase() + t.slice(1)),
 };
 
 // ===================================================================== numbers
-const padNumber = (a, widthAndChar, how) => { const [width, char] = argumentsOf(widthAndChar, 2); return String(a)[how](wholeNumber(width, how === "padStart" ? "pad-left" : "pad-right"), typeof char === "string" ? char : " "); };
+const padNumber = (a, widthAndChar, how) => { const [width, char] = argumentsOf(widthAndChar, 2), atStart = how === "padStart"; return padText(String(a), wholeNumber(width, atStart ? "pad-left" : "pad-right"), char, atStart); };
+// 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down; 0 to [10, 5] steps by 5; toward an end that never comes, as in
+// 1 to (1 / 0), an endless list (decision 149; it used to never finish)
+function countTo(from, endAndStep) {
+  const [end, stepGiven] = argumentsOf(endAndStep, 2);
+  if (typeof end !== "number") return logMiss("to counts to a number, but was given " + shown(end));
+  const step = stepGiven === undefined || stepGiven === false ? 1 : stepGiven;
+  if (typeof step !== "number" || !Number.isFinite(step) || step === 0) return logMiss("to steps by a number other than 0, but was given " + shown(step));
+  const stepBy = end >= from ? Math.abs(step) : -Math.abs(step);
+  if (end === Infinity || end === -Infinity) { let k = 0; return endlessFrom(() => from + stepBy * k++); }
+  // a little room, so 0 to [1, 0.1] reaches 1 despite rounding
+  const count = Math.floor((end - from) / stepBy + 1e-9) + 1;
+  if (count > MOST_ITEMS_TO_MAKE) return logMiss(from + " to " + end + " would make " + count + " numbers, too many to hold; range or an endless list reads them as needed");
+  return list(Array.from({ length: count > 0 ? count : 0 }, (_, k) => from + stepBy * k));
+}
 const NUMBER_WORDS = {
   pow: one((a, b) => Math.pow(a, I.requireNumber(b))), exp: none(Math.exp), atan: none(Math.atan), sign: none(Math.sign),
   // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
@@ -185,7 +257,7 @@ const NUMBER_WORDS = {
   "pad-left": one((a, widthAndChar) => padNumber(a, widthAndChar, "padStart")),
   "pad-right": one((a, widthAndChar) => padNumber(a, widthAndChar, "padEnd")),
   clock: none(a => { const t = Math.max(0, Math.floor(a)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }),
-  to: one((a, b) => { if (typeof b !== "number") return notUnderstood(b, "to"); const out = [], stepBy = b >= a ? 1 : -1; for (let n = a; stepBy > 0 ? n <= b : n >= b; n += stepBy) out.push(n); return list(out); }),
+  to: one(countTo),
 };
 
 // ===================================================================== every value
@@ -198,11 +270,24 @@ const EVERY_WORDS = { kind: none(kindOf),
   messages: none(v => list([...messageNames(v)].sort((a, b) => (/^[a-z]/i.test(b) - /^[a-z]/i.test(a)) || (a < b ? -1 : a > b ? 1 : 0)))),
   "responds-to": one((v, name) => messageNames(v).has(textArgument(name, "responds-to"))),
   // Ruby's then and tap (decision 141): a value handed to a cell, giving what the cell gives, or giving the value back
-  then: one((v, f) => callCell(f, v)), tap: one((v, f) => (callCell(f, v), v)) };
+  then: one((v, f) => callCell(f, v)), tap: one((v, f) => (callCell(f, v), v)),
+  // x in xs: whether xs has x, the other way round, so a test reads in order: g mode in ["won", "lost"] (decision 149)
+  in: one((v, container) => isCell(container) ? LIST_WORDS.has.run(container, v) : typeof container === "string" ? TEXT_WORDS.has.run(container, v)
+    : logMiss("in looks in a list or text, but was given " + shown(container))) };
+// x settle [step]: step runs on x, then on what it gave, until it gives back what it was given (a fixed point), to work
+// a graph out until nothing more changes (decision 149). It is a word of lists, records, numbers, text and true or
+// false, not of every value, so a cell named settle can still be handed to a method waiting for it.
+const SETTLE_LIMIT = 100000;
+const SETTLE_WORDS = { settle: one((start, step) => {
+  let current = start;
+  for (let k = 0; k < SETTLE_LIMIT; k++) { const next = callCell(step, current); if (valuesEqual(next, current)) return next; current = next; }
+  logMiss("settle ran " + SETTLE_LIMIT + " steps and the answer was still changing; it gives the last one");
+  return current;
+}) };
 // Ruby's name for frequencies (decision 141)
 LIST_WORDS.tally = LIST_WORDS.frequencies;
 
-S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
+S.install({ methods: { cell: Object.assign(LIST_WORDS, SETTLE_WORDS), text: Object.assign(TEXT_WORDS, SETTLE_WORDS), number: Object.assign(NUMBER_WORDS, SETTLE_WORDS), bool: SETTLE_WORDS, every: EVERY_WORDS } });
 
 // ===================================================================== Rebol's literals (decision 100)
 // Each kind is a small value with its own methods: math that makes sense for it, and fields to read.

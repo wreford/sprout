@@ -1033,10 +1033,20 @@ function withFields(record, keys, values, cache) {
 }
 function partOf(list, position) {
   if (isCell(list)) return list.part(position);
-  if (typeof list === "string") return position >= 1 && position <= list.length ? list[position - 1] : false;
+  if (typeof list === "string") return textCharacterAt(list, position);
   return notUnderstood(list, "@");
 }
-function lengthOf(value) { if (isCell(value)) return value.count(); if (typeof value === "string") return value.length; return notUnderstood(value, "length"); }
+function lengthOf(value) { if (isCell(value)) return value.count(); if (typeof value === "string") return textLength(value); return notUnderstood(value, "length"); }
+// text counts characters, as chars does, so an emoji is one though JavaScript keeps it as two halves (decision 149).
+// Most text has no such characters, and then JavaScript's own length and index are right (the quick path).
+const HAS_PAIRED_HALVES = /[\ud800-\udbff][\udc00-\udfff]/;
+function textLength(text) { return HAS_PAIRED_HALVES.test(text) ? Array.from(text).length : text.length; }
+// the character at a position from 1; false past either end, or at a position that isn't whole (as for a list)
+function textCharacterAt(text, position) {
+  if (!Number.isInteger(position) || position < 1) return false;
+  const character = HAS_PAIRED_HALVES.test(text) ? Array.from(text)[position - 1] : text[position - 1];
+  return character === undefined ? false : character;
+}
 
 // ---- calling a cell with each item (collections are methods, decision 55)
 function callCell(cell, item) {
@@ -1278,7 +1288,8 @@ api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS,
   fast: () => fastPathsOn,
   // for the standard words (words.js): the pieces its methods are made of
   PROTOTYPES, methodTakingNothing, methodTakingOne, partsOf, fieldsOf, merge, callCell, finishTailCalls, makeRecord, valuesEqual, logMiss, notUnderstood, lint, UNSET, BANG, ANY,
-  sendWord, send, sortList, keep, fold, each, describe, requireNumber, methodsOf,
+  sendWord, send, sortList, keep, fold, each, describe, requireNumber, methodsOf, WaitingMethod,
+  shownInMessage, testGaveNeither, foldGivenWrongShape, textLength, textCharacterAt,
   muteEffects: on => { effectsMuted += on ? 1 : -1; }, randomSource: () => randomSource };
 if (typeof module !== "undefined") {
   module.exports = api;

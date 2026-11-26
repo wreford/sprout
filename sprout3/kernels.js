@@ -383,7 +383,7 @@ class WorkAhead {
       for (let j = workAhead.length - 2; j >= 0; j--) picked = this.choose(this.boolValue(this.addNode("eq", position.id, this.constantNumber(j + 1).id)), workAhead[j], picked);
       return picked;
     }
-    if (list.kind === "text" && this.isConstantNumber(position)) { const n = this.constantOf(position), s = list.value; return n >= 1 && n <= s.length ? { kind: "text", value: s[n - 1] } : this.FALSE; }
+    if (list.kind === "text" && this.isConstantNumber(position)) { const n = this.constantOf(position), s = list.value; const character = internals.textCharacterAt(s, n); return character === false ? this.FALSE : { kind: "text", value: character }; }
     this.giveUp("it uses @ on something that isn't a list");
   }
 
@@ -415,7 +415,7 @@ class WorkAhead {
     } else if (receiver.kind === "bool") {
       if (word === "not") return this.not(receiver);
     } else if (receiver.kind === "text") {
-      if (word === "length") return this.constantNumber(receiver.value.length);
+      if (word === "length") return this.constantNumber(internals.textLength(receiver.value));
       if (word === "upper") return { kind: "text", value: receiver.value.toUpperCase() };
       if (word === "lower") return { kind: "text", value: receiver.value.toLowerCase() };
     } else if (receiver.kind === "function" || receiver.kind === "builtin") {
