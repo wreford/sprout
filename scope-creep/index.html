@@ -108,6 +108,11 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .fevertxt{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:6;font:800 26px "Barlow Condensed",sans-serif;color:#fff;letter-spacing:2px;text-shadow:0 0 12px #ff3b3b,0 2px 0 #0006;animation:pulse .5s ease-in-out infinite alternate}
 @keyframes pulse{to{transform:translateX(-50%) scale(1.12)}}
 .lesson{border-left:4px solid var(--era);background:var(--soft);border-radius:0 10px 10px 0;padding:8px 10px;margin:6px 0 10px;font-size:15px}
+.staff{display:grid;grid-template-columns:48px 1fr auto;gap:10px;align-items:center;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:10px;margin-bottom:8px}
+.staff.hired{border-color:var(--era)}.staff.locked{opacity:.55}
+.staff .av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--era) 25%,transparent);font:800 20px "Barlow Condensed",sans-serif}
+.staff b{font:700 18px/1.1 "Barlow Condensed",sans-serif}.staff .pips{color:var(--era);letter-spacing:2px;font-size:14px}.staff .does{font-size:13px}.staff .why{font-size:12px;color:var(--mut);font-style:italic;margin-top:3px}
+.staff .btn{min-height:44px;padding:6px 10px;font-size:16px;white-space:nowrap;flex-direction:column;gap:0;line-height:1.05}.staff .btn small{display:block;font:600 11px Barlow,sans-serif}
 .job{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:10px 12px;margin-bottom:8px}
 .job.ready{border-color:var(--era);animation:glow 1s ease-in-out infinite alternate}@keyframes glow{to{box-shadow:0 0 0 4px color-mix(in srgb,var(--era) 35%,transparent)}}
 .job b{font:700 18px "Barlow Condensed",sans-serif}.job .jb{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:6px}.job .jb i{display:block;height:100%;background:var(--era)}
@@ -140,7 +145,7 @@ textarea.code{width:100%;font:12px ui-monospace,monospace;border:2px solid var(-
 <nav class="tabs" role="tablist">
   <button role="tab" data-tab="build" aria-selected="true">Build</button>
   <button role="tab" data-tab="tech" aria-selected="false">Upgrades<span class="dot" id="techDot" hidden></span></button>
-  <button role="tab" data-tab="jobs" aria-selected="false">Jobs<span class="dot" id="jobDot" hidden></span></button>
+  <button role="tab" data-tab="jobs" aria-selected="false">Team<span class="dot" id="jobDot" hidden></span></button>
   <button role="tab" data-tab="goal" aria-selected="false">Goal<span class="dot" id="goalDot" hidden></span></button>
   <button role="tab" data-tab="more" aria-selected="false">More</button>
 </nav>
@@ -197,6 +202,18 @@ const ADVISORS=[
  ['Nova the Swarm Wrangler','fever',.5,'Fever mode lasts 50% longer.'],
  ['The Galactic Senate','all',.25,'Everything earns 25% more. They finally agreed on something.']];
 const advisorSum=(s,kind)=>(s.advisors||[]).reduce((t,i)=>t+(ADVISORS[i]&&ADVISORS[i][1]===kind?ADVISORS[i][2]:0),0);
+// Staff: hired with cash, three levels each, they take busywork off your hands. [id, name, title, unlock era, what each level does, PM lesson]
+const STAFF=[
+ ['cook','Marta','Site cook',0,['Buys team lunch when morale drops below half','Buys lunch at 60%','Buys lunch at 70%, and lunch costs half'],'Looking after the crew is part of the plan, not a perk. Rested, fed people make fewer mistakes.'],
+ ['foreman','Gus','Foreman',1,['Slows the hustle meter\'s drain','Keeps the hustle meter full on his own','Fills it faster, so fever comes round sooner'],'A foreman turns the plan into the day\'s work and keeps the crew moving, so the manager can look ahead.'],
+ ['buyer','Priya','Buyer',2,['Buys the best-value business every 20 seconds, if it\'s cheap next to your cash','Every 10 seconds','Every 5 seconds'],'Procurement gets what the job needs, when it needs it, at the best value. Not the cheapest: the best value.'],
+ ['coordinator','Theo','Job coordinator',2,['Collects finished side jobs for you','Also pays 25% more per job','Pays 50% more per job'],'A project coordinator keeps the paperwork, follow-ups and loose ends moving so nothing finished sits unclaimed.'],
+ ['scout','Ines','Opportunity scout',3,['Catches half the gold bubbles you miss','Catches all of them','Their boosts last 50% longer'],'Opportunities are risks with an upside. The responses are exploit, enhance, share and accept.'],
+ ['risk','Omar','Risk manager',4,['Answers risk cards you don\'t get to, with an okay response','With the best response','Best response, and good calls pay 25% more'],'Every risk needs an owner: the person best placed to watch for it and act when it happens.']];
+const staffLevel=(s,id)=>(s.staff&&s.staff[id])||0;
+// hiring costs a few minutes of income, rising steeply with level
+const staffCost=(s,id,lvl)=>Math.max([60,400,2000][lvl]*(1+STAFF.findIndex(x=>x[0]===id)*.4),[180,1200,6000][lvl]*baseIps(s));
+function hireStaff(s,id){const lvl=staffLevel(s,id),st=STAFF.find(x=>x[0]===id);if(!st||lvl>=3||s.era<st[3])return false;const c=staffCost(s,id,lvl);if(s.cash<c)return false;s.cash-=c;s.staff=s.staff||{};s.staff[id]=lvl+1;return true}
 const TIERS=[1,9,80,700];
 const baseCost=(e,i)=>5*Math.pow(18,e)*TIERS[i];
 const baseIncome=(e,i)=>baseCost(e,i)/(6*Math.pow(1.9,i)*Math.pow(1.6,e));
@@ -213,7 +230,7 @@ const TECH_EFFECT={click:1.6,era:3,all:1.6,morale:1,events:1};
 const milestoneMult=n=>Math.pow(2,[25,50,100,200,300,400].filter(m=>n>=m).length);
 
 function fresh(){return{cash:0,earned:0,era:0,owned:ERAS.map(()=>[0,0,0,0]),techs:{},morale:80,combo:1,lastClick:0,
-  buff:{mult:1,until:0},t:0,advisors:[],legacy:0,feverUntil:0,feverRest:0,maxComboSince:0,feverCount:0,clicks:0,events:{good:0,bad:0},done:false,doneAt:0}}
+  buff:{mult:1,until:0},t:0,advisors:[],staff:{},legacy:0,feverUntil:0,feverRest:0,maxComboSince:0,feverCount:0,clicks:0,events:{good:0,bad:0},done:false,doneAt:0}}
 const hasTech=(s,e,k)=>!!s.techs[e+':'+k];
 function eraMult(s,e){let m=1;ERAS[e].techs.forEach((t,k)=>{if(t[1]==='era'&&hasTech(s,e,k))m*=TECH_EFFECT.era});return m}
 function allMult(s){let m=(1+advisorSum(s,'all'))*(1+.5*(s.legacy||0));ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='all'&&hasTech(s,e,k))m*=TECH_EFFECT.all}));return m}
@@ -232,7 +249,8 @@ const eventsLevel=s=>ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='events
 const moraleDecay=s=>1/6/(1+advisorSum(s,'morale')+.5*ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='morale'&&hasTech(s,e,k)).length,0));
 
 function tick(s,dt){s.t+=dt;const earn=ips(s)*dt;s.cash+=earn;s.earned+=earn;s.morale=Math.max(0,s.morale-moraleDecay(s)*dt);
-  s.combo=Math.max(1,s.combo-dt*.05)}
+  const fm=staffLevel(s,'foreman');s.combo=Math.max(1,Math.min(3,s.combo-dt*.05*(fm>=1?.6:1)+(fm>=2?dt*(fm>=3?.16:.11):0)));
+  if(s.combo>=3&&!feverOn(s)&&s.t>=(s.feverRest||0)){s.feverUntil=s.t+FEVER_LEN(s);s.feverRest=s.feverUntil+50;s.feverCount=(s.feverCount||0)+1}}
 // fever: after six seconds at full combo, taps are worth triple for a while, then it rests for thirty seconds
 const FEVER_LEN=s=>10*(1+advisorSum(s,'fever'));
 // each tap tops up the hustle meter; filling it starts fever, at most about once a minute
@@ -243,15 +261,15 @@ function buyTech(s,e,k){const c=techCost(e,k);if(s.cash<c||hasTech(s,e,k)||e>s.e
 const capstoneCost=s=>CAPSTONE[s.era]*(1-Math.min(.5,advisorSum(s,'capstone')));
 function buyCapstone(s){const c=capstoneCost(s);if(s.cash<c)return false;s.cash-=c;s.advisors=s.advisors||[];if(!s.advisors.includes(s.era))s.advisors.push(s.era);if(s.era===ERAS.length-1){s.done=true;s.doneAt=s.t}else s.era++;s.morale=Math.min(100,s.morale+30);return true}
 // team lunch: costs 20 seconds of income, restores morale
-const lunchCost=s=>Math.max(5,20*baseIps(s));
+const lunchCost=s=>Math.max(5,20*baseIps(s))*(staffLevel(s,'cook')>=3?.5:1);
 function lunch(s){const c=lunchCost(s);if(s.cash<c)return false;s.cash-=c;s.morale=Math.min(100,s.morale+30);return true}
 // an event answered well pays more with better risk management
-function eventReward(s,grade){const lvl=eventsLevel(s),b=baseIps(s);return grade===2?(90+30*lvl)*b*(1+advisorSum(s,'events'))+50:grade===1?(30+10*lvl)*b+10:-30*b}
+function eventReward(s,grade){const lvl=eventsLevel(s),b=baseIps(s);return grade===2?(90+30*lvl)*b*(1+advisorSum(s,'events'))*(staffLevel(s,'risk')>=3?1.25:1)+50:grade===1?(30+10*lvl)*b+10:-30*b}
 
-// a reward worth some seconds of income (quizzes, maths, jobs)
+// a reward worth some seconds of income (quizzes, math, jobs)
 const bonus=(s,secs)=>Math.max(25,secs*baseIps(s));
 const offlineHours=s=>2+advisorSum(s,'offline');
-const api={hustleMult,ADVISORS,advisorSum,feverOn,FEVER_LEN,capstoneCost,bonus,offlineHours,ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
+const api={STAFF,staffLevel,staffCost,hireStaff,hustleMult,ADVISORS,advisorSum,feverOn,FEVER_LEN,capstoneCost,bonus,offlineHours,ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
 if(typeof module!=='undefined')module.exports=api;else window.ECON=api;
 
 // Words for the game: era intros, risk events, opportunities. Kept apart from the rules.
@@ -345,7 +363,7 @@ const JOBS=[
  ['buyCurrent',s=>10,n=>'Buy '+n+' businesses from this era',90],
  ['risk',s=>1,n=>'Handle a risk card well',60],
  ['opp',s=>1,n=>'Catch a gold bubble',45],
- ['calc',s=>1,n=>'Answer a site maths challenge',60],
+ ['calc',s=>1,n=>'Answer a site math question',60],
  ['fever',s=>1,n=>'Hit fever mode',75],
  ['lunch',s=>1,n=>'Buy the crew lunch',30],
  ['tech',s=>1,n=>'Buy a technique',60]];
@@ -366,7 +384,7 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 /* ---------- state and saving ---------- */
 // Saves carry a version. Each update adds what it needs to an older save instead of starting over, so progress
 // always carries across updates. Fields this version doesn't know about are kept untouched.
-const SAVE_VERSION=3;
+const SAVE_VERSION=4;
 const DEFAULTS=()=>Object.assign(E.fresh(),{qty:1,sound:true,achievements:[],savedAt:Date.now(),seenStory:-1,manual:[],jobs:[],jobsDone:0,calcs:{right:0,wrong:0},quizzes:{right:0,wrong:0},wins:0});
 function migrate(rec){const s=Object.assign(DEFAULTS(),rec);const from=rec.v||1;
   if(from<2){// version 1 had no advisors or field manual: hand out what was already earned
@@ -374,6 +392,7 @@ function migrate(rec){const s=Object.assign(DEFAULTS(),rec);const from=rec.v||1;
     for(const key of Object.keys(s.techs||{})){const [e,k]=key.split(':').map(Number);const t=E.ERAS[e]&&E.ERAS[e].techs[k];if(t&&!s.manual.includes('L:'+t[0]))s.manual.push('L:'+t[0])}}
   if(from<3){// version 3 asks for far fewer taps: shrink any tap job already on the board
     for(const j of s.jobs||[])if(j.kind==='taps'){j.target=Math.min(j.target,30+s.era*5);j.progress=Math.min(j.progress,j.target)}}
+  if(from<4)s.staff=s.staff||{};// version 4 adds staff; nobody is hired yet
   s.v=SAVE_VERSION;return s}
 let S=DEFAULTS();S.v=SAVE_VERSION;
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)S=migrate(JSON.parse(raw))}catch(e){}
@@ -428,7 +447,8 @@ function hud(){$('cash').textContent=money(S.cash);$('ips').textContent=money(E.
   const buffOn=S.t<S.buff.until;$('buff').classList.toggle('on',buffOn);if(buffOn){$('buffMult').textContent='×'+S.buff.mult;$('buffName').textContent=S.buff.name||'';$('buffTime').textContent=Math.ceil(S.buff.until-S.t)+'s'}
   const lunchBtn=$('lunchBtn');if(S.morale<60&&!lunchBtn){const b=document.createElement('button');b.className='lunch';b.id='lunchBtn';b.onclick=doLunch;$('scene').appendChild(b)}if(S.morale>=60&&lunchBtn)lunchBtn.remove();
   if($('lunchBtn'))$('lunchBtn').textContent='Team lunch · '+money(E.lunchCost(S));
-  $('techDot').hidden=!affordableTech();$('jobDot').hidden=!jobReady()}
+  $('techDot').hidden=!affordableTech();$('jobDot').hidden=!(jobReady()||staffAffordable())}
+const staffAffordable=()=>E.STAFF.some(st=>S.era>=st[3]&&E.staffLevel(S,st[0])<3&&S.cash>=E.staffCost(S,st[0],E.staffLevel(S,st[0])));
 const jobReady=()=>(S.jobs||[]).some(j=>j.progress>=j.target);
 const affordableTech=()=>{for(let e=0;e<=S.era;e++)for(let k=0;k<3;k++)if(!E.hasTech(S,e,k)&&S.cash>=E.techCost(e,k))return true;return false};
 
@@ -465,25 +485,26 @@ function render(){const P=$('panel');let h='';
     const effect=t=>({click:'Taps ×'+E.TECH_EFFECT.click,era:'This era ×'+E.TECH_EFFECT.era,all:'Everything ×'+E.TECH_EFFECT.all,morale:'Morale lasts longer',events:'Better event rewards'}[t[1]]);
     h+=`<div class="sec">Project management techniques</div>`+(avail.length?avail.map(([e,k,t])=>`<button class="row tech${S.cash>=E.techCost(e,k)?' can':''}" data-e="${e}" data-k="${k}"><span class="ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--hv)" stroke-width="2.4"><path d="M4 18h16M6 14l4-4 3 3 5-6"/></svg></span><span><span class="nm">${esc(t[0])}</span><span class="sub">${effect(t)} · ${esc(t[2])}</span></span><span class="px">${money(E.techCost(e,k))}</span></button>`).join(''):'<p class="small">All bought. Next era brings more.</p>');
     if(owned.length)h+=`<div class="sec">In use</div><p class="small">${owned.map(o=>esc(o[2][0])).join(' · ')}</p>`}
-  else if(tabNow==='jobs'){fillJobs();h+=`<div class="sec">Side jobs</div><p class="small" style="margin:0 2px 8px">Finish a job, then collect it. Three on the board at a time.</p>`+S.jobs.map((j,i)=>`<div class="job${j.progress>=j.target?' ready':''}"><div><b>${esc(jobText(j))}</b><div class="small">${j.progress} of ${j.target} · pays about ${money(E.bonus(S,j.secs))}</div><div class="jb"><i style="width:${j.progress/j.target*100}%"></i></div></div>${j.progress>=j.target?`<button class="btn" data-claim="${i}">Collect</button>`:''}</div>`).join('')+`<p class="small">Jobs done: ${S.jobsDone}</p>`}
+  else if(tabNow==='jobs'){fillJobs();h+=staffHTML()+`<div class="sec">Side jobs</div><p class="small" style="margin:0 2px 8px">Finish a job, then collect it. Three on the board at a time.</p>`+S.jobs.map((j,i)=>`<div class="job${j.progress>=j.target?' ready':''}"><div><b>${esc(jobText(j))}</b><div class="small">${j.progress} of ${j.target} · pays about ${money(E.bonus(S,j.secs))}</div><div class="jb"><i style="width:${j.progress/j.target*100}%"></i></div></div>${j.progress>=j.target?`<button class="btn" data-claim="${i}">Collect</button>`:''}</div>`).join('')+`<p class="small">Jobs done: ${S.jobsDone}</p>`}
   else if(tabNow==='goal'){const era=E.ERAS[S.era],c=E.capstoneCost(S);
     h+=`<div class="cap"><small class="cond" style="letter-spacing:2px;color:var(--mut)">ERA ${S.era+1} OF ${E.ERAS.length} · CAPSTONE PROJECT</small><h2>${esc(era.capstone)}</h2><p>Costs ${money(c)}. Finishing it moves you to the next era. Everything you own keeps earning.</p>
 <div class="capbar"><i id="capFill" style="width:${Math.min(100,S.cash/c*100)}%"></i></div><p class="small" id="capEta">${capEta()}</p><button class="btn wide" id="capBtn"${S.cash<c?' disabled':''}>${S.era===E.ERAS.length-1?'Unite the galaxy':'Complete the project →'}</button></div>
 <div class="timeline">${E.ERAS.map((x,i)=>`<i class="${i<S.era?'done':i===S.era?'now':''}" title="${esc(x.name)}"></i>`).join('')}</div><p class="small">${E.ERAS.map((x,i)=>i<=S.era?esc(x.name):'?').join(' → ')}</p>
 <div class="sec">Story so far</div><p>${esc(STORY[S.era])}</p>`}
-  else{const st=[['Time played',clock(S.t)],['Era',(S.era+1)+' of '+E.ERAS.length],['Earned in total',money(S.earned)],['Taps',S.clicks.toLocaleString()],['Fevers',S.feverCount||0],['Quizzes right',S.quizzes.right+' of '+(S.quizzes.right+S.quizzes.wrong)],['Site maths right',S.calcs.right+' of '+(S.calcs.right+S.calcs.wrong)],['Jobs done',S.jobsDone],['Events handled well',S.events.good],['Events fumbled',S.events.bad]];
+  else{const st=[['Time played',clock(S.t)],['Era',(S.era+1)+' of '+E.ERAS.length],['Earned in total',money(S.earned)],['Taps',S.clicks.toLocaleString()],['Fevers',S.feverCount||0],['Quizzes right',S.quizzes.right+' of '+(S.quizzes.right+S.quizzes.wrong)],['Site math questions right',S.calcs.right+' of '+(S.calcs.right+S.calcs.wrong)],['Jobs done',S.jobsDone],['Events handled well',S.events.good],['Events fumbled',S.events.bad]];
     h+=`<div class="sec">Stats</div><div class="stats">${st.map(s=>`<div><small>${s[0]}</small><b>${s[1]}</b></div>`).join('')}</div>
 <div class="sec">Achievements</div><div class="ach">${ACH.map(a=>`<div class="${S.achievements.includes(a[0])?'on':''}"><b>${esc(a[1])}</b>${esc(a[2])}</div>`).join('')}</div>
 <div class="sec">Advisors (${(S.advisors||[]).length} of ${E.ADVISORS.length})</div><div class="adv">${E.ADVISORS.map((a,i)=>(S.advisors||[]).includes(i)?'<div class="on"><b>'+esc(a[0])+'</b>'+esc(a[3])+'</div>':'<div><b>?</b>Finish era '+(i+1)+' to meet them.</div>').join('')}</div>
-<div class="sec">Field Manual (${S.manual.length} of ${Object.keys(CONTENT.LESSONS).length+CALCS.length})</div><div class="manual">${S.manual.length?S.manual.map(m=>{const k=m.slice(2);if(m[0]==='L'){const L=CONTENT.LESSONS[k];return L?'<details><summary>'+esc(k)+'</summary><p>'+esc(L[0])+'</p></details>':''}const c=CALCS.find(x=>x.key===k);return c?'<details><summary>Formula: '+esc(k)+'</summary><p>'+esc(c.make().explain)+'</p></details>':''}).join(''):'<p class="small">Buy techniques and answer site maths to fill it.</p>'}</div>
+<div class="sec">Field Manual (${S.manual.length} of ${Object.keys(CONTENT.LESSONS).length+CALCS.length+E.STAFF.length})</div><div class="manual">${S.manual.length?S.manual.map(m=>{const k=m.slice(2);if(m[0]==='L'){const L=CONTENT.LESSONS[k];return L?'<details><summary>'+esc(k)+'</summary><p>'+esc(L[0])+'</p></details>':''}if(m[0]==='S'){const st=E.STAFF.find(x=>x[0]===k);return st?'<details><summary>Role: '+esc(st[2])+'</summary><p>'+esc(st[5])+'</p></details>':''}const c=CALCS.find(x=>x.key===k);return c?'<details><summary>Formula: '+esc(k)+'</summary><p>'+esc(c.make().explain)+'</p></details>':''}).join(''):'<p class="small">Buy techniques and answer site math questions to fill it.</p>'}</div>
 <div class="sec">Your save</div><p class="small">Saved automatically in this browser every few seconds, with a second copy kept in case one is cleared. Nothing is sent anywhere. Copy a save code to move to another device.</p>
 <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn alt" id="exportBtn">Copy save code</button><button class="btn alt" id="importBtn">Load a save code</button><button class="btn alt" id="resetBtn">Start over</button></div>
-<div class="sec">How to play</div><p class="small">Tap the big button a few times to fill the hustle meter around it. A full meter doubles all income and drains slowly, so a quick burst every half minute keeps it topped up, and filling it starts fever (income ×3 for ten seconds, about once a minute). Your businesses do the real earning. Buy them on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Site maths pops up now and then: real project formulas, fresh numbers. Every technique comes with a one-minute lesson. Side jobs pay extra. Finish each era's capstone project to move on and meet a new advisor. A busy player takes around five hours to reach the galaxy.</p>`}
+<div class="sec">How to play</div><p class="small">Tap the big button a few times to fill the hustle meter around it. A full meter doubles all income and drains slowly, so a quick burst every half minute keeps it topped up, and filling it starts fever (income ×3 for ten seconds, about once a minute). Your businesses do the real earning. Buy them on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Site math pops up now and then: real project formulas, fresh numbers. Every technique comes with a one-minute lesson. Hire staff on the Team tab and they take over the busywork: lunch, hustle, buying, jobs, bubbles and risk cards. Side jobs pay extra. Finish each era's capstone project to move on and meet a new advisor. A busy player takes around five hours to reach the galaxy.</p>`}
   P.innerHTML=h;
   P.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.qty=b.dataset.q==='max'?'max':+b.dataset.q;render()});
   P.querySelectorAll('.row[data-i]').forEach(r=>r.onclick=()=>buyProducer(+r.dataset.e,+r.dataset.i,r));
   P.querySelectorAll('.row[data-k]').forEach(r=>r.onclick=()=>{const e=+r.dataset.e,k=+r.dataset.k;if(E.buyTech(S,e,k)){SFX.milestone();jobProgress('tech',1);render();hud();checkAch();lessonQuiz(E.ERAS[e].techs[k])}else nope(r)});
   if($('capBtn'))$('capBtn').onclick=finishCapstone;
+  P.querySelectorAll('[data-hire]').forEach(b=>b.onclick=()=>hire(b.dataset.hire,b));
   P.querySelectorAll('[data-claim]').forEach(b=>b.onclick=()=>claimJob(+b.dataset.claim));
   if($('exportBtn')){$('exportBtn').onclick=exportSave;$('importBtn').onclick=importSave;$('resetBtn').onclick=resetGame}}
 function nope(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
@@ -525,11 +546,11 @@ function showEvent(){const pool=EVENTS.filter(ev=>ev[3].includes(S.era));if(!poo
   const close=()=>{if(!sh.isConnected)return;sh.remove();eventOpen=false;scheduleEvent()};
   sh.querySelectorAll('.opt').forEach(b=>b.onclick=()=>finish(+b.dataset.o));
   sh.addEventListener('keydown',e=>{const n=+e.key;if(n>=1&&n<=4){const b=sh.querySelectorAll('.opt')[n-1];if(b&&!b.disabled)b.click()}});
-  const timer=setInterval(()=>{if(!sh.isConnected){clearInterval(timer);return}const left=1-(S.t-t0)/LIMIT;$('evTimer').style.width=Math.max(0,left*100)+'%';if(left<=0&&!done){clearInterval(timer);finish(null)}},100)}
+  const timer=setInterval(()=>{if(!sh.isConnected){clearInterval(timer);return}const left=1-(S.t-t0)/LIMIT;$('evTimer').style.width=Math.max(0,left*100)+'%';if(left<=0&&!done){clearInterval(timer);const p=riskPick(ev);if(p!=null){toast('Omar took that one',ev[2][p][0]);finish(p)}else finish(null)}},100)}
 function showOpp(){const [name,text]=OPPS[Math.floor(Math.random()*OPPS.length)],b=document.createElement('button');b.className='opp';b.textContent=name;b.setAttribute('aria-label','Opportunity: '+name+'. Tap for five times income.');
   const sc=$('scene');b.style.left=(10+Math.random()*60)+'%';b.style.top=(8+Math.random()*30)+'%';sc.appendChild(b);SFX.opp();
-  const gone=setTimeout(()=>b.remove(),9000);
-  b.onclick=e=>{e.stopPropagation();clearTimeout(gone);b.remove();S.buff={mult:5,until:S.t+20,name};SFX.opp();jobProgress('opp',1);toast(name+'!',text+' Everything earns ×5 for 20 seconds.');checkAch()};scheduleOpp()}
+  const gone=setTimeout(()=>{b.remove();if(scoutCatches()){S.buff={mult:5,until:S.t+(E.staffLevel(S,'scout')>=3?30:20),name};SFX.opp();jobProgress('opp',1);toast(name+'!','Ines caught it for you. Everything earns ×5 for a while.')}},9000);
+  b.onclick=e=>{e.stopPropagation();clearTimeout(gone);b.remove();S.buff={mult:5,until:S.t+(E.staffLevel(S,'scout')>=3?30:20),name};SFX.opp();jobProgress('opp',1);toast(name+'!',text+' Everything earns ×5 for 20 seconds.');checkAch()};scheduleOpp()}
 function doLunch(){if(E.lunch(S)){SFX.lunch();jobProgress('lunch',1);toast('Team lunch','Pizza for the crew. Morale is back up.');hud()}else nope($('lunchBtn'))}
 
 /* ---------- lessons: every technique teaches one idea, then asks one question ---------- */
@@ -543,7 +564,7 @@ function lessonQuiz(tech){const L=CONTENT.LESSONS[tech[0]];if(!L)return toast(te
 function sheet(html,labelId){const sh=document.createElement('div');sh.className='sheet';sh.setAttribute('role','dialog');sh.setAttribute('aria-modal','true');if(labelId)sh.setAttribute('aria-labelledby',labelId);sh.style.borderTopColor='var(--era)';sh.innerHTML=html;PH.appendChild(sh);
   sh.addEventListener('keydown',e=>{const n=+e.key;if(n>=1&&n<=4){const b=sh.querySelectorAll('.opt')[n-1];if(b&&!b.disabled)b.click()}});setTimeout(()=>{const f=sh.querySelector('.opt,.btn');if(f)f.focus()},50);return sh}
 
-/* ---------- site maths: real project formulas with fresh numbers each time ---------- */
+/* ---------- site math: real project formulas with fresh numbers each time ---------- */
 const pick=a=>a[Math.floor(Math.random()*a.length)],R5=n=>Math.round(n/5)*5;
 const fmt2=n=>(Math.round(n*100)/100).toString();
 function spread(ans,fmtFn,near){const set=new Set([fmtFn(ans)]);let guard=0;while(set.size<4&&guard++<40)set.add(fmtFn(near()));return [...set]}
@@ -558,7 +579,7 @@ const CALCS=[
  {key:'Estimate at completion',min:4,make(){const bac=pick([400,500,600,800,1000]),cpi=pick([.8,.9,1.25,.75,1.1]),a=bac/cpi;const f=v=>'$'+Math.round(v)+'k';return{q:'Budget $'+bac+'k, CPI '+cpi+'. If the trend continues, what is the EAC?',a:f(a),opts:spread(a,f,()=>pick([bac*cpi,bac,bac+bac*(1-cpi),a+50,a-50])),explain:'EAC = BAC ÷ CPI = '+bac+' ÷ '+cpi+' = '+f(a)+'.'}}}];
 let nextCalc=0;function scheduleCalc(){nextCalc=S.t+100+Math.random()*50}
 function showCalc(){if(eventOpen||document.querySelector('.sheet,.overlay'))return scheduleCalc();const pool=CALCS.filter(c=>c.min<=S.era),c=pick(pool),m=c.make(),opts=m.opts.slice().sort(()=>Math.random()-.5),reward=E.bonus(S,60);eventOpen=true;SFX.event();
-  const sh=sheet('<small class="k" style="color:var(--era-ink);background:var(--era);padding:2px 8px;border-radius:6px">Site maths · '+esc(c.key)+'</small><p class="calcq" id="cq">'+esc(m.q)+'</p><div class="timer"><i id="cTimer" style="width:100%"></i></div>'+opts.map((o,n)=>'<button class="opt" data-v="'+esc(o)+'"><b>'+(n+1)+'</b>'+esc(o)+'</button>').join('')+'<p class="small">Right within 25 seconds: '+money(reward)+'.</p>','cq');
+  const sh=sheet('<small class="k" style="color:var(--era-ink);background:var(--era);padding:2px 8px;border-radius:6px">Site math · '+esc(c.key)+'</small><p class="calcq" id="cq">'+esc(m.q)+'</p><div class="timer"><i id="cTimer" style="width:100%"></i></div>'+opts.map((o,n)=>'<button class="opt" data-v="'+esc(o)+'"><b>'+(n+1)+'</b>'+esc(o)+'</button>').join('')+'<p class="small">Right within 25 seconds: '+money(reward)+'.</p>','cq');
   const t0=S.t;let done=false;
   const finish=v=>{if(done)return;done=true;const ok=v===m.a;sh.querySelectorAll('.opt').forEach(b=>{b.disabled=true;if(b.dataset.v===m.a)b.classList.add('good');else if(b.dataset.v===v)b.classList.add('bad')});
     if(ok){S.cash+=reward;S.earned+=reward;S.calcs.right++;jobProgress('calc',1);SFX.good();confettiSmall()}else{S.calcs.wrong++;SFX.bad()}
@@ -574,7 +595,32 @@ function fillJobs(){while(S.jobs.length<3)S.jobs.push(newJob(S.jobs.map(j=>j.kin
 function jobProgress(kind,n){let changed=false;for(const j of S.jobs)if(j.kind===kind&&j.progress<j.target){j.progress=Math.min(j.target,j.progress+n);changed=true;if(j.progress>=j.target){SFX.opp();toast('Job ready','“'+jobText(j)+'” is done. Collect it on the Jobs tab.')}}
   if(changed&&tabNow==='jobs')render()}
 const jobText=j=>CONTENT.JOBS.find(x=>x[0]===j.kind)[2](j.target);
-function claimJob(i){const j=S.jobs[i];if(!j||j.progress<j.target)return;const r=E.bonus(S,j.secs);S.cash+=r;S.earned+=r;S.jobsDone++;S.jobs.splice(i,1);fillJobs();SFX.milestone();confettiSmall();toast('Job paid',money(r)+'. A new job is on the board.');render();hud();checkAch()}
+function claimJob(i,byStaff){const j=S.jobs[i];if(!j||j.progress<j.target)return;const co=E.staffLevel(S,'coordinator'),r=E.bonus(S,j.secs)*(co>=3?1.5:co>=2?1.25:1);S.cash+=r;S.earned+=r;S.jobsDone++;S.jobs.splice(i,1);fillJobs();SFX.milestone();if(!byStaff)confettiSmall();toast(byStaff?'Theo collected a job':'Job paid',money(r)+'. A new job is on the board.');if(tabNow==='jobs')render();hud();checkAch()}
+
+/* ---------- staff: they take the busywork off your hands ---------- */
+const pips=n=>'●'.repeat(n)+'○'.repeat(3-n);
+function staffHTML(){return '<div class="sec">Your staff</div><p class="small" style="margin:0 2px 8px">Hire people to handle the busywork. Each has three levels.</p>'+E.STAFF.map(st=>{const [id,name,title,era,does,why]=st,lvl=E.staffLevel(S,id);
+  if(S.era<era)return '<div class="staff locked"><span class="av">?</span><span><b>'+esc(title)+'</b><div class="does">Joins in era '+(era+1)+', '+esc(E.ERAS[era].name)+'.</div></span><span></span></div>';
+  const c=lvl<3?E.staffCost(S,id,lvl):0;
+  return '<div class="staff'+(lvl?' hired':'')+'"><span class="av" aria-hidden="true">'+esc(name[0])+'</span><span><b>'+esc(name)+' · '+esc(title)+'</b> <span class="pips" aria-label="level '+lvl+' of 3">'+pips(lvl)+'</span>'+
+    '<div class="does">'+(lvl?'Now: '+esc(does[lvl-1]):esc(does[0]))+(lvl&&lvl<3?'<br>Next: '+esc(does[lvl]):'')+'</div><div class="why">'+esc(why)+'</div></span>'+
+    (lvl<3?'<button class="btn" data-hire="'+id+'"'+(S.cash<c?' disabled':'')+'>'+(lvl?'Promote':'Hire')+'<small>'+money(c)+'</small></button>':'<span class="small">Top level</span>')+'</div>'}).join('')}
+function hire(id,btn){const before=E.staffLevel(S,id);if(!E.hireStaff(S,id))return nope(btn);const st=E.STAFF.find(x=>x[0]===id);SFX.milestone();confettiSmall();
+  if(!S.manual.includes('S:'+id))S.manual.push('S:'+id);
+  toast(before?st[1]+' promoted':st[1]+' joins the team',st[4][before]);render();hud();checkAch()}
+let staffClock=0,buyerClock=0;
+function staffTick(dt){staffClock+=dt;buyerClock+=dt;if(staffClock<1)return;staffClock=0;
+  // the cook buys lunch before morale gets low
+  const cook=E.staffLevel(S,'cook');if(cook&&S.morale<[50,60,70][cook-1]&&E.lunch(S)){SFX.lunch();jobProgress('lunch',1)}
+  // the coordinator collects finished jobs
+  if(E.staffLevel(S,'coordinator')){const i=S.jobs.findIndex(j=>j.progress>=j.target);if(i>=0)claimJob(i,true)}
+  // the buyer picks the best-value business that is cheap next to your cash
+  const buyer=E.staffLevel(S,'buyer');if(buyer&&buyerClock>=[20,10,5][buyer-1]){buyerClock=0;let best=null;
+    for(let e=0;e<=S.era;e++)for(let i=0;i<4;i++){const c=E.cost(e,i,S.owned[e][i]);if(c>S.cash*.1)continue;const gain=E.baseIncome(e,i)*E.eraMult(S,e)*E.milestoneMult(S.owned[e][i]+1);const v=gain/c;if(!best||v>best.v)best={e,i,v}}
+    if(best&&E.buy(S,best.e,best.i)){if(best.e===S.era)jobProgress('buyCurrent',1);drawLand();if(tabNow==='build')render()}}}
+// the scout and the risk manager step in when you don't
+const scoutCatches=()=>{const l=E.staffLevel(S,'scout');return l>=2||(l===1&&Math.random()<.5)};
+const riskPick=ev=>{const l=E.staffLevel(S,'risk');if(!l)return null;const want=l>=2?'2':'1';const i=ev[2].findIndex(o=>o[1]===want);return i>=0?i:null};
 
 /* ---------- advisors ---------- */
 const advisorCard=i=>{const a=E.ADVISORS[i];return a?'<p style="background:#0002;border-radius:12px;padding:10px 12px;font-size:15px"><b style="font:800 18px Barlow Condensed,sans-serif">New advisor: '+esc(a[0])+'</b><br>'+esc(a[3])+'</p>':''};
@@ -594,7 +640,7 @@ let toastTimer=0;function toast(title,text){let t=document.querySelector('.toast
 const ACH=[['first','Open for business','Buy your first anything',()=>S.owned.flat().some(n=>n>0)],['tap1k','Busy hands','Tap 500 times',()=>S.clicks>=500],['tap10k','Hustler','Tap 3,000 times',()=>S.clicks>=3000],
   ['risk5','Risk aware','Handle 5 risks well',()=>S.events.good>=5],['risk25','Risk manager','Handle 25 risks well',()=>S.events.good>=25],['hundred','Economies of scale','Own 100 of one business',()=>S.owned.flat().some(n=>n>=100)],
   ['tech','Method in the madness','Buy 10 techniques',()=>Object.keys(S.techs).length>=10],['era4','Hard hat era','Reach construction',()=>S.era>=3],['era6','Split the atom','Reach nuclear power',()=>S.era>=5],['era8','Moonwalker','Reach the Moon',()=>S.era>=7],['era10','Star harvester','Reach the Dyson swarm',()=>S.era>=9],['win','Galactic PM','Unite the galaxy',()=>S.done],
-  ['fever','Fever pitch','Hit fever mode 10 times',()=>(S.feverCount||0)>=10],['quiz','Teacher\'s pet','Get 10 lesson quizzes right',()=>S.quizzes.right>=10],['calc','Human calculator','Get 10 site maths right',()=>S.calcs.right>=10],['jobs','Gig economy','Finish 15 side jobs',()=>S.jobsDone>=15],['manual','Read the manual','Fill half the Field Manual',()=>S.manual.length>=21],['advisors','Board of advisors','Meet 6 advisors',()=>(S.advisors||[]).length>=6],['legacy','Serial entrepreneur','Win and start again',()=>(S.legacy||0)>=1]];
+  ['fever','Fever pitch','Hit fever mode 10 times',()=>(S.feverCount||0)>=10],['quiz','Teacher\'s pet','Get 10 lesson quizzes right',()=>S.quizzes.right>=10],['calc','Human calculator','Get 10 site math questions right',()=>S.calcs.right>=10],['jobs','Gig economy','Finish 15 side jobs',()=>S.jobsDone>=15],['manual','Read the manual','Fill half the Field Manual',()=>S.manual.length>=21],['advisors','Board of advisors','Meet 6 advisors',()=>(S.advisors||[]).length>=6],['legacy','Serial entrepreneur','Win and start again',()=>(S.legacy||0)>=1],['staff1','Hiring manager','Hire your first staff member',()=>Object.values(S.staff||{}).some(v=>v>0)],['staff6','Full crew','Hire all six staff',()=>E.STAFF.every(st=>E.staffLevel(S,st[0])>0)],['staff18','Dream team','Promote all six to the top level',()=>E.STAFF.every(st=>E.staffLevel(S,st[0])>=3)]];
 function checkAch(){for(const a of ACH)if(!S.achievements.includes(a[0])&&a[3]()){S.achievements.push(a[0]);SFX.milestone();toast('Achievement: '+a[1],a[2])}}
 
 /* ---------- save codes ---------- */
@@ -615,18 +661,18 @@ $('sound').onclick=()=>{S.sound=!S.sound;soundBtn();save()};
 let last=performance.now(),renderClock=0;
 function frame(now){const dt=Math.min(1,(now-last)/1000);last=now;
   if(!S.done){E.tick(S,dt);if(!nextEvent)scheduleEvent();if(!nextOpp)scheduleOpp();if(S.t>=nextEvent&&!document.querySelector('.overlay'))showEvent();if(S.t>=nextOpp&&!document.querySelector('.overlay'))showOpp();if(!nextCalc)scheduleCalc();if(S.t>=nextCalc&&!document.querySelector('.overlay'))showCalc()}
-  feverFx();renderClock+=dt;if(renderClock>.2){renderClock=0;hud();if(tabNow==='build'||tabNow==='goal'||tabNow==='tech')refreshRows();checkAch()}
+  feverFx();if(!S.done)staffTick(dt);renderClock+=dt;if(renderClock>.2){renderClock=0;hud();if(tabNow==='build'||tabNow==='goal'||tabNow==='tech')refreshRows();checkAch()}
   requestAnimationFrame(frame)}
 // time away earns a quarter of the idle rate, up to two hours
 function welcomeBack(){const away=(Date.now()-(S.savedAt||Date.now()))/1000;if(away<60||S.done)return;const secs=Math.min(away,E.offlineHours(S)*3600),gain=E.baseIps(S)*secs*.25;if(gain<=0)return;
   S.cash+=gain;S.earned+=gain;S.savedAt=Date.now();toast('While you were away','The crew earned '+money(gain)+' in '+clock(secs)+'. They work better when you are here.')}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){welcomeBack();last=performance.now()}else save()});
 function intro(){if(S.t>0)return;const o=document.createElement('div');o.className='overlay';o.setAttribute('role','dialog');
-  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap a few times to fill the hustle meter: a full meter doubles everything, and filling it starts fever. Buy things that earn for you. Answer risk cards and site maths. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
+  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap a few times to fill the hustle meter: a full meter doubles everything, and filling it starts fever. Buy things that earn for you. Answer risk cards and site math. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
   PH.appendChild(o);$('start').focus();$('start').onclick=()=>{o.remove();SFX.buy()}}
 function renderAll(){fillJobs();applyEraColours();drawLand();hud();render();soundBtn();ticker()}
 renderAll();welcomeBack();intro();recover();requestAnimationFrame(frame);
-window.__game={get S(){return S},E,tap,finishCapstone,showEvent,showOpp,showCalc,migrate,claimJob,lessonQuiz};
+window.__game={hire,staffTick,get S(){return S},E,tap,finishCapstone,showEvent,showOpp,showCalc,migrate,claimJob,lessonQuiz};
 }
 </script>
 </body>
