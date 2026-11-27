@@ -96,6 +96,16 @@ footer{padding:22px 16px 40px;color:var(--mut);font-size:13px;border-top:1px sol
 .links li span{display:block;font-size:15px;line-height:1.4;color:var(--mut);margin-top:2px}
 .links li button:hover b,.links li button:focus-visible b{color:var(--hv)}
 .links li .go{margin-left:auto;padding-left:10px;color:var(--mut);font-size:20px;line-height:1.2}
+/* the small map: this entry in the middle, its links branching out both sides */
+.mini{display:block;width:100%;height:auto;margin:4px 0 6px;overflow:visible}
+.mini .spoke{fill:none;stroke:var(--hv);stroke-width:1.6;opacity:.75}
+.mini .hubbox{fill:var(--hv)}.mini .hubtxt{fill:#fff;font:700 13px/1 "Barlow Condensed",sans-serif}
+.mini .nb{cursor:pointer}.mini .nb text{fill:var(--ink);font:13.5px Atkinson Hyperlegible,sans-serif}.mini .nb:hover text,.mini .nb:focus-visible text{fill:var(--hv)}
+.mini .nb circle{fill:var(--bg);stroke:var(--ink);stroke-width:2}.mini .nb.k-sticky circle{fill:#ffe769;stroke:#8a7a2a}.mini .nb rect{fill:var(--ink)}
+.mini .nb .hit{fill:transparent;stroke:none}
+.mini.in{animation:minifade .35s ease}@keyframes minifade{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.mini.in{animation:none}}
+.why{font:800 13px "Barlow Condensed",sans-serif;letter-spacing:1.6px;text-transform:uppercase;color:var(--mut);margin:14px 0 0}
 /* the index */
 .find{display:block;width:100%;margin:8px 0 6px;padding:11px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:17px Atkinson Hyperlegible,sans-serif}
 .find:focus{outline:none;border-color:var(--hv)}
@@ -181,13 +191,27 @@ const KIND={"sticky":"Sticky note","journal":"Journal","report":"Report"};
 const $=id=>document.getElementById(id),esc=t=>t.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const related=id=>DATA.LINKS.filter(l=>l[0]===id||l[1]===id).map(l=>({id:l[0]===id?l[1]:l[0],why:l[2]}));
 let trail=[];
+// wrap a title into at most n lines of about w characters
+function wrap(t,w,n){const words=t.split(' '),lines=[];let cur='';for(const x of words){if((cur+' '+x).trim().length>w&&cur){lines.push(cur);cur=x}else cur=(cur+' '+x).trim()}if(cur)lines.push(cur);
+  if(lines.length>n){lines.length=n;lines[n-1]=lines[n-1].replace(/s*S*$/,'')+'…'}return lines}
+// the small map: the entry in the middle, half its links on each side, one curve to each
+function miniMap(id,rel){const W=360,ROW=58,half=Math.ceil(rel.length/2),rows=Math.max(half,1),H=rows*ROW+8,cy=H/2;
+  const hub=wrap(DATA.titles[id],13,5),hubH=hub.length*15+16;
+  let out='<rect class="hubbox" x="134" y="'+(cy-hubH/2)+'" width="92" height="'+hubH+'" rx="10"/>'+hub.map((l,i)=>'<text class="hubtxt" x="180" y="'+(cy-hubH/2+20+i*15)+'" text-anchor="middle">'+esc(l)+'</text>').join('');
+  rel.forEach((r,i)=>{const left=i<half,row=left?i:i-half,count=left?half:rel.length-half,y=8+ROW/2+row*ROW+(rows-count)*ROW/2,x=left?118:242,ex=left?134:226;
+    const lines=wrap(DATA.titles[r.id],16,3),tx=left?108:252,anchor=left?'end':'start',t=DATA.types[r.id];
+    out+='<path class="spoke" d="M'+ex+' '+cy+'C'+(left?ex-30:ex+30)+' '+cy+','+(left?x+30:x-30)+' '+y+','+x+' '+y+'"/>'+
+      '<g class="nb k-'+t+'" data-go="'+r.id+'" tabindex="0" role="button" aria-label="'+esc(DATA.titles[r.id])+'"><rect class="hit" x="'+(left?0:236)+'" y="'+(y-ROW/2)+'" width="124" height="'+ROW+'"/>'+
+      (t==='report'?'<rect x="'+(x-6)+'" y="'+(y-6)+'" width="12" height="12"/>':'<circle cx="'+x+'" cy="'+y+'" r="5.5"/>')+
+      lines.map((l,k)=>'<text x="'+tx+'" y="'+(y+4+(k-(lines.length-1)/2)*15)+'" text-anchor="'+anchor+'">'+esc(l)+'</text>').join('')+'</g>'});
+  return '<svg class="mini in" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(DATA.titles[id])+' and the '+rel.length+' entries it links to">'+out+'</svg>'}
 // show one entry and its links, grouped by theme
 function show(id,from){if(!DATA.titles[id])id=DATA.start;
   const at=trail.indexOf(id);if(from==='back'&&at>=0)trail=trail.slice(0,at+1);else{if(at>=0)trail.splice(at,1);trail.push(id);trail=trail.slice(-5)}
   const rel=related(id),byTheme={};rel.forEach(r=>{(byTheme[DATA.themeOf[r.id]]=byTheme[DATA.themeOf[r.id]]||[]).push(r)});
   const themes=Object.keys(byTheme).sort((a,b)=>(b===DATA.themeOf[id])-(a===DATA.themeOf[id])||byTheme[b].length-byTheme[a].length);
   $('focus').innerHTML='<div class="where"><i class="k k-'+DATA.types[id]+'"></i>'+KIND[DATA.types[id]]+' · '+esc(DATA.groupOf[id])+'</div><h2>'+esc(DATA.titles[id])+'</h2>'+
-    '<div class="acts"><a class="btn" href="'+DATA.hrefs[id]+'">Read it →</a></div>'+
+    '<div class="acts"><a class="btn" href="'+DATA.hrefs[id]+'">Read it →</a></div>'+miniMap(id,themes.flatMap(t=>byTheme[t]))+'<p class="why">Why they connect</p>'+
     '<div class="links">'+themes.map(t=>'<h3>'+esc(t)+'</h3><ul>'+byTheme[t].map(r=>'<li><button data-go="'+r.id+'"><i class="k k-'+DATA.types[r.id]+'"></i><span style="margin:0;color:inherit;font-size:inherit"><b>'+esc(DATA.titles[r.id])+'</b><span>'+esc(r.why)+'</span></span><span class="go" aria-hidden="true">›</span></button></li>').join('')+'</ul>').join('')+'</div>'+
     (trail.length>1?'<p class="trail">Your path: '+trail.slice(0,-1).map(t=>'<button data-go="'+t+'">'+esc(DATA.titles[t])+'</button>').join(' → ')+' → '+esc(DATA.titles[id])+'</p>':'');
   document.querySelectorAll('.grp li').forEach(li=>li.classList.toggle('on',li.dataset.id===id));
@@ -196,6 +220,7 @@ function show(id,from){if(!DATA.titles[id])id=DATA.start;
 }
 function go(id){show(id);const f=$('focus');if(f.getBoundingClientRect().top<0||f.getBoundingClientRect().top>innerHeight*.4)f.scrollIntoView({behavior:'smooth',block:'start'})}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b){e.preventDefault();go(b.dataset.go)}});
+document.addEventListener('keydown',e=>{const b=e.target.closest&&e.target.closest('g[data-go]');if(b&&(e.key==='Enter'||e.key===' ')){e.preventDefault();go(b.dataset.go)}});
 addEventListener('popstate',()=>show(decodeURIComponent(location.hash.slice(1)),'back'));
 // filter the index
 $('find').addEventListener('input',()=>{const q=$('find').value.trim().toLowerCase();let any=false;
