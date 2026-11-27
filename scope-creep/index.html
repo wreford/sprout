@@ -99,6 +99,21 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .conf{position:absolute;z-index:40;width:8px;height:12px;top:-10px;pointer-events:none;animation:conf 1.8s ease-in forwards}
 @keyframes conf{to{transform:translate(var(--dx),110vh) rotate(720deg)}}
 .shake{animation:shake .35s}@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.ticker{flex:none;overflow:hidden;white-space:nowrap;background:#141414;color:#fff;font:600 12px Barlow,sans-serif;padding:5px 0;border-bottom:2px solid var(--era)}
+.ticker span{display:inline-block;padding-left:100%;animation:tick 38s linear infinite}@keyframes tick{to{transform:translateX(-100%)}}
+.tabs{grid-template-columns:repeat(5,1fr)}.tabs button{font-size:13.5px;letter-spacing:.3px;padding:10px 2px}.tabs .dot{right:4%;top:5px}
+.tap.fever{background:conic-gradient(from var(--spin,0deg),#ff3b3b,#ffb000,#27c26a,#2f80ed,#d63af9,#ff3b3b);color:#fff;text-shadow:0 2px 4px #0008;animation:spin 1s linear infinite}
+@property --spin{syntax:'<angle>';inherits:false;initial-value:0deg}@keyframes spin{to{--spin:360deg}}
+.fevertxt{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:6;font:800 26px "Barlow Condensed",sans-serif;color:#fff;letter-spacing:2px;text-shadow:0 0 12px #ff3b3b,0 2px 0 #0006;animation:pulse .5s ease-in-out infinite alternate}
+@keyframes pulse{to{transform:translateX(-50%) scale(1.12)}}
+.lesson{border-left:4px solid var(--era);background:var(--soft);border-radius:0 10px 10px 0;padding:8px 10px;margin:6px 0 10px;font-size:15px}
+.job{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:10px 12px;margin-bottom:8px}
+.job.ready{border-color:var(--era);animation:glow 1s ease-in-out infinite alternate}@keyframes glow{to{box-shadow:0 0 0 4px color-mix(in srgb,var(--era) 35%,transparent)}}
+.job b{font:700 18px "Barlow Condensed",sans-serif}.job .jb{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:6px}.job .jb i{display:block;height:100%;background:var(--era)}
+.job .btn{min-height:40px;padding:6px 14px;font-size:17px}
+.adv{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.adv div{border:2px solid var(--line);border-radius:12px;padding:8px;font-size:12px;color:var(--mut)}.adv div.on{border-color:var(--era);color:var(--ink);background:color-mix(in srgb,var(--era) 8%,var(--card))}.adv b{display:block;font:800 16px "Barlow Condensed",sans-serif;color:var(--ink)}
+.manual details{border-bottom:1px solid var(--line);padding:6px 2px}.manual summary{cursor:pointer;font:700 16px "Barlow Condensed",sans-serif}.manual p{margin:4px 0 6px;font-size:14px}
+.calcq{font:800 24px "Barlow Condensed",sans-serif;margin:4px 0 8px}
 textarea.code{width:100%;font:12px ui-monospace,monospace;border:2px solid var(--line);border-radius:10px;padding:8px;background:var(--bg);color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition:none!important}}
 </style>
@@ -120,9 +135,11 @@ textarea.code{width:100%;font:12px ui-monospace,monospace;border:2px solid var(-
   <div class="combotxt" id="comboTxt"></div>
   <div class="buff" id="buff"><b id="buffMult">×5</b><span id="buffName"></span><span style="margin-left:auto" id="buffTime"></span></div>
 </section>
+<div class="ticker" aria-hidden="true"><span id="tickerText"></span></div>
 <nav class="tabs" role="tablist">
   <button role="tab" data-tab="build" aria-selected="true">Build</button>
   <button role="tab" data-tab="tech" aria-selected="false">Upgrades<span class="dot" id="techDot" hidden></span></button>
+  <button role="tab" data-tab="jobs" aria-selected="false">Jobs<span class="dot" id="jobDot" hidden></span></button>
   <button role="tab" data-tab="goal" aria-selected="false">Goal<span class="dot" id="goalDot" hidden></span></button>
   <button role="tab" data-tab="more" aria-selected="false">More</button>
 </nav>
@@ -164,6 +181,20 @@ const ERAS=[
  {name:'Galactic Empire',colour:'#d63af9',verb:'Unite',unit:'star system',
   producers:['Colony ship','Gate network','Galactic trade guild','Ringworld'],capstone:'Unite the galaxy',
   techs:[['Galactic PMO','era','One status report for ten thousand worlds.'],['Hyperspace supply chain','all','Where the hell is my material? Everywhere, instantly.'],['Benefits realization','events','Did uniting the galaxy actually help anyone? Measure it.']]}];
+// one advisor joins when you finish each era; each brings a small permanent perk
+const ADVISORS=[
+ ['Pat the Planner','all',.05,'Everything earns 5% more. Pat writes everything down.'],
+ ['Rosa the Rigger','click',.15,'Taps earn 15% more. Rosa lifts with her legs.'],
+ ['Dev the Estimator','capstone',.05,'Capstone projects cost 5% less. Dev has seen this before.'],
+ ['Kim from Safety','morale',.25,'Morale drains 25% slower. Everybody goes home.'],
+ ['Sam the Scheduler','all',.08,'Everything earns 8% more. Sam protects the critical path.'],
+ ['Jo from QA','events',.2,'Good risk calls pay 20% more. Jo checks twice.'],
+ ['Ari the Systems Engineer','click',.2,'Taps earn 20% more. Requirements down, tests up.'],
+ ['Lee the Logistics Lead','offline',1,'An extra hour of earnings while you are away.'],
+ ['Max from the PMO','all',.1,'Everything earns 10% more. One report, fewer meetings.'],
+ ['Nova the Swarm Wrangler','fever',.5,'Fever mode lasts 50% longer.'],
+ ['The Galactic Senate','all',.25,'Everything earns 25% more. They finally agreed on something.']];
+const advisorSum=(s,kind)=>(s.advisors||[]).reduce((t,i)=>t+(ADVISORS[i]&&ADVISORS[i][1]===kind?ADVISORS[i][2]:0),0);
 const TIERS=[1,9,80,700];
 const baseCost=(e,i)=>5*Math.pow(18,e)*TIERS[i];
 const baseIncome=(e,i)=>baseCost(e,i)/(6*Math.pow(1.9,i)*Math.pow(1.6,e));
@@ -172,7 +203,7 @@ const cost=(e,i,n)=>baseCost(e,i)*Math.pow(GROWTH,n);
 // cost of buying k more after owning n
 const costN=(e,i,n,k)=>baseCost(e,i)*Math.pow(GROWTH,n)*(Math.pow(GROWTH,k)-1)/(GROWTH-1);
 // capstone prices, tuned by sim.js so a busy player spends roughly the target minutes in each era
-let CAPSTONE=[1.08e7,5.08e8,8.29e9,1.61e11,2.54e12,5.39e13,1.08e15,1.77e16,2.78e17,5.01e18,4.79e19];
+let CAPSTONE=[1.30e7,7.67e8,1.43e10,2.74e11,3.84e12,1.07e14,2.36e15,2.42e16,5.84e17,1.05e19,1.64e20];
 const TECH_SHARE=[.05,.15,.35];
 const techCost=(e,k)=>CAPSTONE[e]*TECH_SHARE[k];
 const TECH_EFFECT={click:1.6,era:3,all:1.6,morale:1,events:1};
@@ -180,34 +211,42 @@ const TECH_EFFECT={click:1.6,era:3,all:1.6,morale:1,events:1};
 const milestoneMult=n=>Math.pow(2,[25,50,100,200,300,400].filter(m=>n>=m).length);
 
 function fresh(){return{cash:0,earned:0,era:0,owned:ERAS.map(()=>[0,0,0,0]),techs:{},morale:80,combo:1,lastClick:0,
-  buff:{mult:1,until:0},t:0,clicks:0,events:{good:0,bad:0},done:false,doneAt:0}}
+  buff:{mult:1,until:0},t:0,advisors:[],legacy:0,feverUntil:0,feverRest:0,maxComboSince:0,feverCount:0,clicks:0,events:{good:0,bad:0},done:false,doneAt:0}}
 const hasTech=(s,e,k)=>!!s.techs[e+':'+k];
 function eraMult(s,e){let m=1;ERAS[e].techs.forEach((t,k)=>{if(t[1]==='era'&&hasTech(s,e,k))m*=TECH_EFFECT.era});return m}
-function allMult(s){let m=1;ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='all'&&hasTech(s,e,k))m*=TECH_EFFECT.all}));return m}
+function allMult(s){let m=(1+advisorSum(s,'all'))*(1+.5*(s.legacy||0));ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='all'&&hasTech(s,e,k))m*=TECH_EFFECT.all}));return m}
 const moraleMult=s=>.5+s.morale/100;
 // income per second before the temporary buff
 function baseIps(s){let sum=0;for(let e=0;e<=s.era;e++){const em=eraMult(s,e);for(let i=0;i<4;i++){const n=s.owned[e][i];if(n)sum+=n*baseIncome(e,i)*em*milestoneMult(n)}}
   return sum*allMult(s)*moraleMult(s)}
 const ips=(s)=>baseIps(s)*(s.t<s.buff.until?s.buff.mult:1);
-function clickMult(s){let m=1;ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='click'&&hasTech(s,e,k))m*=TECH_EFFECT.click}));return m}
+function clickMult(s){let m=1+advisorSum(s,'click');ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='click'&&hasTech(s,e,k))m*=TECH_EFFECT.click}));return m}
 // one click: a little cash on its own, more as the business grows, multiplied by a combo for clicking fast
-const clickValue=s=>(1+.015*baseIps(s))*clickMult(s)*s.combo;
+const feverOn=s=>s.t<(s.feverUntil||0);
+const clickValue=s=>(1+.015*baseIps(s))*clickMult(s)*s.combo*(feverOn(s)?3:1);
 const eventsLevel=s=>ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='events'&&hasTech(s,e,k)).length,0);
-const moraleDecay=s=>1/6/(1+.5*ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='morale'&&hasTech(s,e,k)).length,0));
+const moraleDecay=s=>1/6/(1+advisorSum(s,'morale')+.5*ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='morale'&&hasTech(s,e,k)).length,0));
 
 function tick(s,dt){s.t+=dt;const earn=ips(s)*dt;s.cash+=earn;s.earned+=earn;s.morale=Math.max(0,s.morale-moraleDecay(s)*dt);
   if(s.t-s.lastClick>1.2)s.combo=Math.max(1,s.combo-dt*1.5)}
-function click(s){s.combo=Math.min(3,s.combo+(s.t-s.lastClick<1?.08:0));s.lastClick=s.t;const v=clickValue(s);s.cash+=v;s.earned+=v;s.clicks++;return v}
+// fever: after six seconds at full combo, taps are worth triple for a while, then it rests for thirty seconds
+const FEVER_LEN=s=>8*(1+advisorSum(s,'fever'));
+function click(s){s.combo=Math.min(3,s.combo+(s.t-s.lastClick<1?.08:0));s.lastClick=s.t;
+  if(s.combo>=3){s.maxComboSince=s.maxComboSince||s.t;if(!feverOn(s)&&s.t-s.maxComboSince>=6&&s.t>=(s.feverRest||0)){s.feverUntil=s.t+FEVER_LEN(s);s.feverRest=s.feverUntil+30;s.feverCount=(s.feverCount||0)+1}}else s.maxComboSince=0;const v=clickValue(s);s.cash+=v;s.earned+=v;s.clicks++;return v}
 function buy(s,e,i,k=1){const c=costN(e,i,s.owned[e][i],k);if(s.cash<c||e>s.era)return false;s.cash-=c;s.owned[e][i]+=k;return true}
 function buyTech(s,e,k){const c=techCost(e,k);if(s.cash<c||hasTech(s,e,k)||e>s.era)return false;s.cash-=c;s.techs[e+':'+k]=1;return true}
-function buyCapstone(s){const c=CAPSTONE[s.era];if(s.cash<c)return false;s.cash-=c;if(s.era===ERAS.length-1){s.done=true;s.doneAt=s.t}else s.era++;s.morale=Math.min(100,s.morale+30);return true}
+const capstoneCost=s=>CAPSTONE[s.era]*(1-Math.min(.5,advisorSum(s,'capstone')));
+function buyCapstone(s){const c=capstoneCost(s);if(s.cash<c)return false;s.cash-=c;s.advisors=s.advisors||[];if(!s.advisors.includes(s.era))s.advisors.push(s.era);if(s.era===ERAS.length-1){s.done=true;s.doneAt=s.t}else s.era++;s.morale=Math.min(100,s.morale+30);return true}
 // team lunch: costs 20 seconds of income, restores morale
 const lunchCost=s=>Math.max(5,20*baseIps(s));
 function lunch(s){const c=lunchCost(s);if(s.cash<c)return false;s.cash-=c;s.morale=Math.min(100,s.morale+30);return true}
 // an event answered well pays more with better risk management
-function eventReward(s,grade){const lvl=eventsLevel(s),b=baseIps(s);return grade===2?(90+30*lvl)*b+50:grade===1?(30+10*lvl)*b+10:-30*b}
+function eventReward(s,grade){const lvl=eventsLevel(s),b=baseIps(s);return grade===2?(90+30*lvl)*b*(1+advisorSum(s,'events'))+50:grade===1?(30+10*lvl)*b+10:-30*b}
 
-const api={ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
+// a reward worth some seconds of income (quizzes, maths, jobs)
+const bonus=(s,secs)=>Math.max(25,secs*baseIps(s));
+const offlineHours=s=>2+advisorSum(s,'offline');
+const api={ADVISORS,advisorSum,feverOn,FEVER_LEN,capstoneCost,bonus,offlineHours,ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
 if(typeof module!=='undefined')module.exports=api;else window.ECON=api;
 
 // Words for the game: era intros, risk events, opportunities. Kept apart from the rules.
@@ -246,6 +285,67 @@ const EVENTS=[
 const OPPS=[['Thirsty marathon','The race route goes past your stand!'],['Food critic','A critic is in line. Make it count.'],['Viral video','Someone posted your crew. It is everywhere.'],['Investor visit','An investor wants to see the site.'],['Tailwind','Everything is going right for once.'],['Early delivery','Materials showed up early. Nobody knows why.'],['Clear skies','Perfect weather for the whole week.'],['Government grant','A grant came through. Spend it fast.']];
 if(typeof module!=='undefined')module.exports={STORY,EVENTS,OPPS};else window.CONTENT={STORY,EVENTS,OPPS};
 
+// One lesson per technique: [what it is, quiz question, right answer, wrong answer, wrong answer]
+const LESSONS={
+'To-do list':['Writing tasks down frees your head for doing them. Every plan starts as a list.','What is the first thing a to-do list gives you?','A record you can check instead of remembering','A guarantee that the work will be done on time','Automatic priorities for every task you add'],
+'Shopping list':['Procurement is getting what you need, when you need it, at a fair price. Buy before you run out.','Lemons run out every Friday afternoon. What fixes it?','Order based on how fast you use them','Buy as many as the car can hold, every single day','Wait until you run out, then go to the store'],
+'Check the weather':['A risk is something that might happen and would affect the project. Plan for it before it happens.','Which of these is a risk, not an issue?','Rain is forecast for tomorrow','It is raining right now and the stand is wet','You ran out of cups an hour ago'],
+'Gantt chart':['A Gantt chart shows tasks as bars on a calendar, so everyone can see what happens when.','What does the length of a bar on a Gantt chart show?','How long the task takes','How important the task is compared with others','How many people work on it'],
+'Kanban board':['Kanban makes work visible in columns (to do, doing, done) and limits how much is in progress at once.','Your "doing" column is overflowing. What does Kanban say?','Finish work in progress before starting new work','Add more columns to the board so the doing column looks less crowded','Start more tasks so the team stays busy'],
+'Food safety plan':['Quality is planned in, not inspected in. A plan prevents problems that checks only find.','Which is cheaper, usually?','Preventing a defect','Finding a defect at the end','Fixing a defect after a customer complains'],
+'Standard work':['Standard work is the current best way to do a task, written down, so everyone does it the same way and improves it together.','Why write down the best way to make a latte?','So every store gets the same result and can improve it','So nobody is ever allowed to change the recipe again, even if it gets better','So managers can check up on baristas'],
+'Customer survey':['Stakeholders are anyone affected by your project. Find out what they need early.','When is the best time to engage stakeholders?','Early, and all the way through','Only once the product is finished','Only when they complain'],
+'Loyalty program':['Benefits are the reason for a project: what improves for the business after delivery.','A loyalty program launches on time. Is the project a success yet?','Not until the benefits, like repeat customers, show up','Yes, it launched on time and on budget, which is what success means for any project','Yes, as long as the app has good reviews'],
+'Critical path method':['The critical path is the longest chain of dependent tasks. It sets the earliest finish date. Delay it and the project is late.','Which task should get the scarce crane first?','The one on the critical path','The one whose foreman asked first','The cheapest one to finish'],
+'Safety program':['STKY: the stuff that kills you. Put the most attention on hazards that can cause serious injury or death.','Which hazard deserves the most attention?','A suspended load over a walkway','A loose paper on the trailer floor','A squeaky door hinge'],
+'Change control':['Every change to scope, cost or schedule is logged, its impact assessed, and approved before anyone does it.','The owner asks for an extra floor. What happens first?','Assess the impact on cost, schedule and risk','Start building it straight away so the owner stays happy and keeps paying','Refuse because it is not in the contract'],
+'Earned value':['Earned value compares the value of work done (EV) with what it cost (AC) and what was planned (PV). CPI = EV ÷ AC.','EV is $80k and AC is $100k. What is CPI?','0.8, over budget','1.25, under budget','80, on budget'],
+'Advanced work packaging':['AWP plans backwards from the crews: a crew only gets a work package once every constraint (drawings, materials, scaffold, permits) is cleared.','A work package is missing its scaffold. What do you do?','Hold it and release one that is ready','Start anyway and sort out the scaffold later','Split the crew between this package and another'],
+'BIM model':['Building information modelling is a shared 3D model with data. Clashes are found on screen, not in the field.','Where is the cheapest place to find a pipe hitting a beam?','In the model, before construction','On site, when the pipefitter arrives','At handover, during the final walkdown'],
+'Nuclear QA program':['Nuclear QA means everything important to safety is controlled and recorded. Every weld, every test, every signature is traceable.','A gauge was out of calibration. What about work measured with it?','Treat it as suspect and re-check it','It is fine, the gauge was only slightly off','Recalibrate the gauge and carry on'],
+'Human performance tools':['Self-checking (stop, think, act, review), peer checks and three-way communication catch human slips before they matter.','What is three-way communication?','Say it, the listener repeats it, you confirm','Say the instruction three times, a little louder each time, so nobody misses it','Send it by radio, email and text'],
+'Peer review':['Peer reviews bring experienced people from other sites to find what you have stopped seeing. In nuclear, WANO and INPO run them.','What is a peer review for?','Finding problems you have stopped seeing','Handing out fines to the site for every mistake the visiting team can find','Approving the project budget'],
+'Systems engineering':['The V-model: requirements go down the left side to design, and tests come back up the right side to prove each requirement is met.','Verification asks "did we build it right?" What does validation ask?','Did we build the right thing?','Did we build it on time and to the schedule we promised the owner?','Did we build it under budget?'],
+'Launch readiness review':['A readiness review is a go or no-go decision based on data, made before the point of no return.','When should a readiness review happen?','Before the point of no return','Right after something goes wrong','Only if the schedule has slipped'],
+'Digital twin':['A digital twin is a live model linked to real data from the asset, so you can test changes safely.','What makes a model a digital twin?','It is linked to live data from the real thing','It is in 3D, looks realistic and was rendered by a professional studio','It was built by the same designers'],
+'Last Planner system':['The people doing the work plan the next week and promise only what they can deliver. Track how many promises were kept.','Who makes the weekly work plan in Last Planner?','The people who will do the work','The scheduler, alone, in the office','The client, at the monthly meeting'],
+'Modular construction':['Build modules in a factory where conditions are controlled, then assemble on site. Less weather, better quality.','What is the main advantage of building modules off site?','Controlled conditions and less site work','Modules never need to be inspected','Transport is always cheaper than materials'],
+'Reference class forecasting':['Estimate by looking at how similar past projects actually turned out, not just at your own plan.','How do you use reference class forecasting?','Look at how similar past projects turned out','Ask the team for their most optimistic guess and add a little for luck','Take last year\'s budget and add 10%'],
+'Portfolio management':['A portfolio is all the projects an organization chooses to do. Pick the ones that best fit the strategy, and stop the rest.','Twelve projects, money for six. What does portfolio management do?','Rank them by strategic value and fund the best','Fund all twelve at half the budget each','Fund the ones with the loudest sponsors'],
+'Program governance':['Governance is how decisions get made: who decides, on what, and when. Good governance decides fast and writes it down.','What is the main job of a program board?','Make the big decisions and own them','Approve every small purchase on every project, however small it is','Write the weekly status reports'],
+'Morale officer':['Teams go through forming, storming, norming and performing. Leaders adjust their style to the stage.','A new team argues about how to work. Which stage is it?','Storming','Performing','Adjourning'],
+'AI scheduler':['Tools can re-plan fast, but a schedule is only as good as its logic and its data. Garbage in, garbage out, at the speed of light.','An AI schedule says a task takes zero days. What do you do?','Check the data and the logic','Trust it, the AI is smarter','Delete the task from the schedule'],
+'Self-replicating crews':['Developing people is part of the job. Coaching and cross-training make the team stronger than any one person.','Your only welder for an alloy is going on leave. What should have happened earlier?','Cross-train a second welder','Ask the welder to cancel the leave','Change the alloy on the drawings'],
+'Monte Carlo everything':['Monte Carlo simulation runs the schedule thousands of times with random variation, giving a range of finish dates and their odds.','What does a Monte Carlo schedule give you?','A range of finish dates with probabilities','One exact finish date that everyone can plan around with full confidence','A list of who to blame if it slips'],
+'Galactic PMO':['A project management office sets standards, collects status and helps projects succeed. The good ones make reporting lighter, not heavier.','What should a good PMO do to reporting?','Make it lighter and generated from the plan','Double the number of reports so nothing could possibly be missed','Ask for a new template every month'],
+'Hyperspace supply chain':['Track every item at every handoff. If a crew has to ask where material is, the tracking is missing a step.','Material shows "shipped" but never arrives. What is missing?','A scan at the receiving handoff','A bigger warehouse at the site','A faster truck from the supplier'],
+'Benefits realization':['Benefits are measured after delivery, against the business case. Someone in the business owns each benefit.','Who usually owns a benefit after the project ends?','Someone in the business that uses it','The project manager, forever, even after the team has gone home','The contractor who built it']};
+// the news ticker: era headlines plus general tips
+const NEWS=[
+ ['Local child undercuts lemonade market','Ice prices soar in heatwave','Neighbour demands refill, cites loyalty'],
+ ['Taco truck spotted in three places at once','Commissary kitchen passes inspection first try','Festival goers rate tacos "life changing"'],
+ ['Barista world record: 900 lattes in an hour','Roastery smell reaches two postal codes','Drive-thru line visible from space (almost)'],
+ ['Crane operator waves at helicopter','Concrete cures right on schedule, crowd stunned','Framing crew finishes early, nobody believes it'],
+ ['Bridge opens, nobody falls in','Tunnel boring machine named "Dave"','Rail line on time, commuters confused'],
+ ['Reactor reaches full power, coffee machine still broken','Fuel plant hits a year without a lost-time injury','Regulator says "nice work", files it anyway'],
+ ['Orbital hotel gets five stars, literally','Satellite constellation spells "HI" over Toronto','Elevator car stuck at 20,000 km, plays music'],
+ ['Moon dust found in everyone\'s socks','Helium-3 prices crash, then recover','Lunar shipyard launches first boat (ship)'],
+ ['Mars rail opens, passengers bring sweaters','First Martian tomato tastes "fine"','Dust protest blocks Valles Marineris'],
+ ['Swarm collector #4,000,000 reports for duty','Sun reports "feeling watched"','Wormhole lab loses only one intern'],
+ ['Galactic Senate agrees on lunch order','Ringworld weather: sunny, forever','Status report reaches last world, already outdated']];
+const TIPS=['Tip: the critical path is the longest chain of dependent tasks.','Tip: a risk might happen; an issue already has.','Tip: CPI = EV ÷ AC. Under 1 means over budget.','Tip: SPI = EV ÷ PV. Under 1 means behind schedule.','Tip: the four threat responses are avoid, transfer, mitigate and accept.','Tip: changes go through change control, not the hallway.','Tip: PERT estimate = (optimistic + 4 × most likely + pessimistic) ÷ 6.','Tip: communication channels = n(n − 1) ÷ 2.','Tip: float is how long a task can slip without delaying the finish.','Tip: stakeholders are anyone affected by the project. Engage them early.','Tip: EMV = probability × impact.','Tip: rested crews build more than tired ones.'];
+// side jobs: [kind, target maker, description maker, reward in seconds of income]
+const JOBS=[
+ ['taps',s=>150+s.era*20,n=>'Tap '+n+' times',60],
+ ['buyCurrent',s=>10,n=>'Buy '+n+' businesses from this era',90],
+ ['risk',s=>1,n=>'Handle a risk card well',60],
+ ['opp',s=>1,n=>'Catch a gold bubble',45],
+ ['calc',s=>1,n=>'Answer a site maths challenge',60],
+ ['fever',s=>1,n=>'Hit fever mode',75],
+ ['lunch',s=>1,n=>'Buy the crew lunch',30],
+ ['tech',s=>1,n=>'Buy a technique',60]];
+if(typeof module!=='undefined')module.exports={LESSONS,NEWS,TIPS,JOBS};else Object.assign(window.CONTENT,{LESSONS,NEWS,TIPS,JOBS});
+
 {
 const E=window.ECON,{STORY,EVENTS,OPPS}=window.CONTENT,$=id=>document.getElementById(id),PH=$('phone');
 const SAVE_KEY='scopecreep1';
@@ -259,13 +359,22 @@ const clock=sec=>{sec=Math.max(0,Math.round(sec));const h=Math.floor(sec/3600),m
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- state and saving ---------- */
-let S=E.fresh();S.qty=1;S.sound=true;S.achievements=[];S.savedAt=Date.now();S.seenStory=-1;
-try{const raw=localStorage.getItem(SAVE_KEY);if(raw)S=Object.assign(S,JSON.parse(raw))}catch(e){}
+// Saves carry a version. Each update adds what it needs to an older save instead of starting over, so progress
+// always carries across updates. Fields this version doesn't know about are kept untouched.
+const SAVE_VERSION=2;
+const DEFAULTS=()=>Object.assign(E.fresh(),{qty:1,sound:true,achievements:[],savedAt:Date.now(),seenStory:-1,manual:[],jobs:[],jobsDone:0,calcs:{right:0,wrong:0},quizzes:{right:0,wrong:0},wins:0});
+function migrate(rec){const s=Object.assign(DEFAULTS(),rec);const from=rec.v||1;
+  if(from<2){// version 1 had no advisors or field manual: hand out what was already earned
+    s.advisors=[...Array(s.done?E.ERAS.length:s.era).keys()];
+    for(const key of Object.keys(s.techs||{})){const [e,k]=key.split(':').map(Number);const t=E.ERAS[e]&&E.ERAS[e].techs[k];if(t&&!s.manual.includes('L:'+t[0]))s.manual.push('L:'+t[0])}}
+  s.v=SAVE_VERSION;return s}
+let S=DEFAULTS();S.v=SAVE_VERSION;
+try{const raw=localStorage.getItem(SAVE_KEY);if(raw)S=migrate(JSON.parse(raw))}catch(e){}
 // a second copy in IndexedDB, in case one store gets cleared
 function idb(){return new Promise((ok,no)=>{const r=indexedDB.open('scopecreep',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 async function mirror(text){try{const db=await idb();db.transaction('kv','readwrite').objectStore('kv').put(text,SAVE_KEY);db.close()}catch(e){}}
 async function recover(){try{const db=await idb();const got=await new Promise(ok=>{const r=db.transaction('kv').objectStore('kv').get(SAVE_KEY);r.onsuccess=()=>ok(r.result);r.onerror=()=>ok(null)});db.close();
-  if(got){const rec=JSON.parse(got);if((rec.savedAt||0)>(S.savedAt||0)&&rec.t>S.t){S=Object.assign(S,rec);renderAll()}}}catch(e){}}
+  if(got){const rec=JSON.parse(got);if((rec.savedAt||0)>(S.savedAt||0)&&rec.t>S.t){S=migrate(rec);renderAll()}}}catch(e){}}
 function save(){S.savedAt=Date.now();const text=JSON.stringify(S);try{localStorage.setItem(SAVE_KEY,text)}catch(e){}mirror(text)}
 setInterval(save,10000);addEventListener('pagehide',save);
 
@@ -306,13 +415,14 @@ function applyEraColours(){const era=E.ERAS[S.era];document.documentElement.styl
   $('scene').style.setProperty('--sky',SKIES[S.era]);$('eraName').querySelector('span').textContent='Era '+(S.era+1)+' · '+era.name;
   $('tapVerb').textContent=era.verb;$('goalName').textContent=era.capstone;document.querySelector('meta[name=theme-color]').content=era.colour}
 function hud(){$('cash').textContent=money(S.cash);$('ips').textContent=money(E.ips(S))+' / sec';$('moraleBar').style.width=S.morale+'%';
-  const g=Math.min(1,S.cash/E.CAPSTONE[S.era]);$('goalBar').style.width=g*100+'%';$('goalPct').textContent=Math.floor(g*100)+'%';$('goalDot').hidden=g<1;
+  const g=Math.min(1,S.cash/E.capstoneCost(S));$('goalBar').style.width=g*100+'%';$('goalPct').textContent=Math.floor(g*100)+'%';$('goalDot').hidden=g<1;
   $('tapValue').textContent='+'+money(E.clickValue(S));
   $('comboRing').setAttribute('stroke-dasharray',((S.combo-1)/2*402).toFixed(0)+' 402');$('comboTxt').textContent=S.combo>1.15?'COMBO ×'+S.combo.toFixed(1):'';
   const buffOn=S.t<S.buff.until;$('buff').classList.toggle('on',buffOn);if(buffOn){$('buffMult').textContent='×'+S.buff.mult;$('buffName').textContent=S.buff.name||'';$('buffTime').textContent=Math.ceil(S.buff.until-S.t)+'s'}
   const lunchBtn=$('lunchBtn');if(S.morale<60&&!lunchBtn){const b=document.createElement('button');b.className='lunch';b.id='lunchBtn';b.onclick=doLunch;$('scene').appendChild(b)}if(S.morale>=60&&lunchBtn)lunchBtn.remove();
   if($('lunchBtn'))$('lunchBtn').textContent='Team lunch · '+money(E.lunchCost(S));
-  $('techDot').hidden=!affordableTech()}
+  $('techDot').hidden=!affordableTech();$('jobDot').hidden=!jobReady()}
+const jobReady=()=>(S.jobs||[]).some(j=>j.progress>=j.target);
 const affordableTech=()=>{for(let e=0;e<=S.era;e++)for(let k=0;k<3;k++)if(!E.hasTech(S,e,k)&&S.cash>=E.techCost(e,k))return true;return false};
 
 /* ---------- tapping ---------- */
@@ -320,7 +430,7 @@ function tap(ev){const v=E.click(S);SFX.tap(S.combo);const b=$('tap');b.classLis
   const r=$('scene').getBoundingClientRect();const x=ev&&ev.clientX?ev.clientX-r.left:r.width/2,y=ev&&ev.clientY?ev.clientY-r.top:r.height*.44;
   const f=document.createElement('div');f.className='float';f.textContent='+'+money(v);f.style.left=(x-20+Math.random()*30)+'px';f.style.top=(y-30)+'px';$('scene').appendChild(f);setTimeout(()=>f.remove(),900);
   for(let i=0;i<3;i++){const c=document.createElement('i');c.className='coin';c.style.left=x+'px';c.style.top=y+'px';c.style.setProperty('--dx',(Math.random()*120-60)+'px');c.style.setProperty('--dy',(-30-Math.random()*60)+'px');$('scene').appendChild(c);setTimeout(()=>c.remove(),700)}
-  hud();if(tabNow==='build')refreshRows()}
+  jobProgress('taps',1);hud();if(tabNow==='build')refreshRows()}
 $('tap').addEventListener('pointerdown',e=>{e.preventDefault();tap(e)});
 $('tap').addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();if(!e.repeat)tap()}});
 
@@ -338,8 +448,8 @@ function rowHTML(e,i){const n=S.owned[e][i],k=qtyFor(e,i),c=E.costN(e,i,n,k),eac
 function refreshRows(){document.querySelectorAll('#panel .row[data-i]').forEach(r=>{const e=+r.dataset.e,i=+r.dataset.i,k=qtyFor(e,i),c=E.costN(e,i,S.owned[e][i],k);r.classList.toggle('can',S.cash>=c);
   r.querySelector('.prog').style.width=Math.min(100,S.cash/c*100)+'%';r.querySelector('.px').innerHTML=money(c)+'<small>buy '+k+'</small>'});
   document.querySelectorAll('#panel .row[data-k]').forEach(r=>r.classList.toggle('can',S.cash>=E.techCost(+r.dataset.e,+r.dataset.k)));
-  const cb=$('capBtn');if(cb){cb.disabled=S.cash<E.CAPSTONE[S.era];$('capFill').style.width=Math.min(100,S.cash/E.CAPSTONE[S.era]*100)+'%';$('capEta').textContent=capEta()}}
-const capEta=()=>{const need=E.CAPSTONE[S.era]-S.cash;if(need<=0)return 'Ready. Do it.';const r=E.ips(S);return r>0?'About '+clock(need/r)+' at the current rate, sooner if you keep tapping':'Buy something to start earning'};
+  const cb=$('capBtn');if(cb){cb.disabled=S.cash<E.capstoneCost(S);$('capFill').style.width=Math.min(100,S.cash/E.capstoneCost(S)*100)+'%';$('capEta').textContent=capEta()}}
+const capEta=()=>{const need=E.capstoneCost(S)-S.cash;if(need<=0)return 'Ready. Do it.';const r=E.ips(S);return r>0?'About '+clock(need/r)+' at the current rate, sooner if you keep tapping':'Buy something to start earning'};
 function render(){const P=$('panel');let h='';
   if(tabNow==='build'){h+=`<div class="qty">${[1,10,100,'max'].map(q=>`<button data-q="${q}" aria-pressed="${S.qty==q}">${q==='max'?'Max':'×'+q}</button>`).join('')}</div>`;
     h+=`<div class="sec">${esc(E.ERAS[S.era].name)}</div>`+[0,1,2,3].map(i=>rowHTML(S.era,i)).join('');
@@ -348,26 +458,30 @@ function render(){const P=$('panel');let h='';
     const effect=t=>({click:'Taps ×'+E.TECH_EFFECT.click,era:'This era ×'+E.TECH_EFFECT.era,all:'Everything ×'+E.TECH_EFFECT.all,morale:'Morale lasts longer',events:'Better event rewards'}[t[1]]);
     h+=`<div class="sec">Project management techniques</div>`+(avail.length?avail.map(([e,k,t])=>`<button class="row tech${S.cash>=E.techCost(e,k)?' can':''}" data-e="${e}" data-k="${k}"><span class="ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--hv)" stroke-width="2.4"><path d="M4 18h16M6 14l4-4 3 3 5-6"/></svg></span><span><span class="nm">${esc(t[0])}</span><span class="sub">${effect(t)} · ${esc(t[2])}</span></span><span class="px">${money(E.techCost(e,k))}</span></button>`).join(''):'<p class="small">All bought. Next era brings more.</p>');
     if(owned.length)h+=`<div class="sec">In use</div><p class="small">${owned.map(o=>esc(o[2][0])).join(' · ')}</p>`}
-  else if(tabNow==='goal'){const era=E.ERAS[S.era],c=E.CAPSTONE[S.era];
+  else if(tabNow==='jobs'){fillJobs();h+=`<div class="sec">Side jobs</div><p class="small" style="margin:0 2px 8px">Finish a job, then collect it. Three on the board at a time.</p>`+S.jobs.map((j,i)=>`<div class="job${j.progress>=j.target?' ready':''}"><div><b>${esc(jobText(j))}</b><div class="small">${j.progress} of ${j.target} · pays about ${money(E.bonus(S,j.secs))}</div><div class="jb"><i style="width:${j.progress/j.target*100}%"></i></div></div>${j.progress>=j.target?`<button class="btn" data-claim="${i}">Collect</button>`:''}</div>`).join('')+`<p class="small">Jobs done: ${S.jobsDone}</p>`}
+  else if(tabNow==='goal'){const era=E.ERAS[S.era],c=E.capstoneCost(S);
     h+=`<div class="cap"><small class="cond" style="letter-spacing:2px;color:var(--mut)">ERA ${S.era+1} OF ${E.ERAS.length} · CAPSTONE PROJECT</small><h2>${esc(era.capstone)}</h2><p>Costs ${money(c)}. Finishing it moves you to the next era. Everything you own keeps earning.</p>
 <div class="capbar"><i id="capFill" style="width:${Math.min(100,S.cash/c*100)}%"></i></div><p class="small" id="capEta">${capEta()}</p><button class="btn wide" id="capBtn"${S.cash<c?' disabled':''}>${S.era===E.ERAS.length-1?'Unite the galaxy':'Complete the project →'}</button></div>
 <div class="timeline">${E.ERAS.map((x,i)=>`<i class="${i<S.era?'done':i===S.era?'now':''}" title="${esc(x.name)}"></i>`).join('')}</div><p class="small">${E.ERAS.map((x,i)=>i<=S.era?esc(x.name):'?').join(' → ')}</p>
 <div class="sec">Story so far</div><p>${esc(STORY[S.era])}</p>`}
-  else{const st=[['Time played',clock(S.t)],['Era',(S.era+1)+' of '+E.ERAS.length],['Earned in total',money(S.earned)],['Taps',S.clicks.toLocaleString()],['Events handled well',S.events.good],['Events fumbled',S.events.bad]];
+  else{const st=[['Time played',clock(S.t)],['Era',(S.era+1)+' of '+E.ERAS.length],['Earned in total',money(S.earned)],['Taps',S.clicks.toLocaleString()],['Fevers',S.feverCount||0],['Quizzes right',S.quizzes.right+' of '+(S.quizzes.right+S.quizzes.wrong)],['Site maths right',S.calcs.right+' of '+(S.calcs.right+S.calcs.wrong)],['Jobs done',S.jobsDone],['Events handled well',S.events.good],['Events fumbled',S.events.bad]];
     h+=`<div class="sec">Stats</div><div class="stats">${st.map(s=>`<div><small>${s[0]}</small><b>${s[1]}</b></div>`).join('')}</div>
 <div class="sec">Achievements</div><div class="ach">${ACH.map(a=>`<div class="${S.achievements.includes(a[0])?'on':''}"><b>${esc(a[1])}</b>${esc(a[2])}</div>`).join('')}</div>
+<div class="sec">Advisors (${(S.advisors||[]).length} of ${E.ADVISORS.length})</div><div class="adv">${E.ADVISORS.map((a,i)=>(S.advisors||[]).includes(i)?'<div class="on"><b>'+esc(a[0])+'</b>'+esc(a[3])+'</div>':'<div><b>?</b>Finish era '+(i+1)+' to meet them.</div>').join('')}</div>
+<div class="sec">Field Manual (${S.manual.length} of ${Object.keys(CONTENT.LESSONS).length+CALCS.length})</div><div class="manual">${S.manual.length?S.manual.map(m=>{const k=m.slice(2);if(m[0]==='L'){const L=CONTENT.LESSONS[k];return L?'<details><summary>'+esc(k)+'</summary><p>'+esc(L[0])+'</p></details>':''}const c=CALCS.find(x=>x.key===k);return c?'<details><summary>Formula: '+esc(k)+'</summary><p>'+esc(c.make().explain)+'</p></details>':''}).join(''):'<p class="small">Buy techniques and answer site maths to fill it.</p>'}</div>
 <div class="sec">Your save</div><p class="small">Saved automatically in this browser every few seconds, with a second copy kept in case one is cleared. Nothing is sent anywhere. Copy a save code to move to another device.</p>
 <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn alt" id="exportBtn">Copy save code</button><button class="btn alt" id="importBtn">Load a save code</button><button class="btn alt" id="resetBtn">Start over</button></div>
-<div class="sec">How to play</div><p class="small">Tap the big button to earn, and tap fast for a combo. Buy businesses on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Finish each era's capstone project to move on. A busy player takes around five hours to reach the galaxy.</p>`}
+<div class="sec">How to play</div><p class="small">Tap the big button to earn, and tap fast for a combo. Buy businesses on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Site maths pops up now and then: real project formulas, fresh numbers. Every technique comes with a one-minute lesson. Side jobs pay extra. Finish each era's capstone project to move on and meet a new advisor. A busy player takes around five hours to reach the galaxy.</p>`}
   P.innerHTML=h;
   P.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.qty=b.dataset.q==='max'?'max':+b.dataset.q;render()});
   P.querySelectorAll('.row[data-i]').forEach(r=>r.onclick=()=>buyProducer(+r.dataset.e,+r.dataset.i,r));
-  P.querySelectorAll('.row[data-k]').forEach(r=>r.onclick=()=>{const e=+r.dataset.e,k=+r.dataset.k;if(E.buyTech(S,e,k)){SFX.milestone();toast(E.ERAS[e].techs[k][0],E.ERAS[e].techs[k][2]);render();hud();checkAch()}else nope(r)});
+  P.querySelectorAll('.row[data-k]').forEach(r=>r.onclick=()=>{const e=+r.dataset.e,k=+r.dataset.k;if(E.buyTech(S,e,k)){SFX.milestone();jobProgress('tech',1);render();hud();checkAch();lessonQuiz(E.ERAS[e].techs[k])}else nope(r)});
   if($('capBtn'))$('capBtn').onclick=finishCapstone;
+  P.querySelectorAll('[data-claim]').forEach(b=>b.onclick=()=>claimJob(+b.dataset.claim));
   if($('exportBtn')){$('exportBtn').onclick=exportSave;$('importBtn').onclick=importSave;$('resetBtn').onclick=resetGame}}
 function nope(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
 function buyProducer(e,i,el){const before=S.owned[e][i],k=qtyFor(e,i);if(!E.buy(S,e,i,k)){nope(el);return}
-  SFX.buy();const after=S.owned[e][i];const crossed=[25,50,100,200,300,400].find(m=>before<m&&after>=m);
+  SFX.buy();const after=S.owned[e][i];if(e===S.era)jobProgress('buyCurrent',k);const crossed=[25,50,100,200,300,400].find(m=>before<m&&after>=m);
   render();hud();drawLand();const row=document.querySelector(`#panel .row[data-e="${e}"][data-i="${i}"]`);
   if(row){row.classList.add('flash');if(crossed){const b=document.createElement('span');b.className='boost';b.textContent='×2!';row.appendChild(b);SFX.milestone();toast(E.ERAS[e].producers[i]+' doubled',after+' owned. Everything they make is now worth twice as much.')}}
   checkAch()}
@@ -375,13 +489,13 @@ function buyProducer(e,i,el){const before=S.owned[e][i],k=qtyFor(e,i);if(!E.buy(
 /* ---------- capstone: next era ---------- */
 function finishCapstone(){const era=S.era;if(!E.buyCapstone(S))return;SFX.era();confetti();save();
   if(S.done)return victory();
-  applyEraColours();drawLand();hud();
+  applyEraColours();ticker();drawLand();hud();
   const o=document.createElement('div');o.className='overlay';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
-  o.innerHTML=`<small>Project complete: ${esc(E.ERAS[era].capstone)}</small><h1>Era ${S.era+1}<br>${esc(E.ERAS[S.era].name)}</h1><p>${esc(STORY[S.era])}</p><button class="btn" id="goOn">Let's go →</button>`;
+  o.innerHTML=`<small>Project complete: ${esc(E.ERAS[era].capstone)}</small><h1>Era ${S.era+1}<br>${esc(E.ERAS[S.era].name)}</h1><p>${esc(STORY[S.era])}</p>${advisorCard(era)}<button class="btn" id="goOn">Let's go →</button>`;
   PH.appendChild(o);$('goOn').focus();$('goOn').onclick=()=>{o.remove();document.querySelector('[data-tab=build]').click()};checkAch()}
 function victory(){const o=document.createElement('div');o.className='overlay';o.setAttribute('role','dialog');
-  o.innerHTML=`<small>Capstone complete: ${esc(E.ERAS[E.ERAS.length-1].capstone)}</small><h1>From a lemonade stand<br>to the galaxy.</h1><p>You did it in ${clock(S.doneAt)} of play, with ${S.clicks.toLocaleString()} taps and ${S.events.good} risks handled well. Every project on time. Probably.</p><button class="btn" id="again">Start a new stand</button>`;
-  PH.appendChild(o);confetti();setTimeout(confetti,700);$('again').onclick=()=>{resetGame(true)}}
+  o.innerHTML=`<small>Capstone complete: ${esc(E.ERAS[E.ERAS.length-1].capstone)}</small><h1>From a lemonade stand<br>to the galaxy.</h1><p>You did it in ${clock(S.doneAt)} of play, with ${S.clicks.toLocaleString()} taps and ${S.events.good} risks handled well. Every project on time. Probably.</p><button class="btn" id="again">New venture: everything earns +50%</button>`;
+  PH.appendChild(o);confetti();setTimeout(confetti,700);$('again').onclick=()=>{const keep={sound:S.sound,legacy:(S.legacy||0)+1,wins:(S.wins||0)+1,achievements:S.achievements,manual:S.manual,quizzes:S.quizzes,calcs:S.calcs,jobsDone:S.jobsDone};S=Object.assign(DEFAULTS(),keep,{v:SAVE_VERSION});save();document.querySelectorAll('.overlay,.sheet').forEach(x=>x.remove());renderAll();checkAch();toast('New venture','Lessons learned: everything earns '+(50*S.legacy)+'% more this time.')}}
 function confetti(){const cols=['#f5c400','#ff6b2c','#27c26a','#2f80ed','#d63af9','#e10600','#ffffff'];for(let i=0;i<60;i++){const c=document.createElement('i');c.className='conf';c.style.left=Math.random()*100+'%';c.style.background=cols[i%cols.length];c.style.setProperty('--dx',(Math.random()*160-80)+'px');c.style.animationDelay=Math.random()*.4+'s';PH.appendChild(c);setTimeout(()=>c.remove(),2400)}}
 
 /* ---------- risk events, opportunities, morale ---------- */
@@ -394,7 +508,7 @@ function showEvent(){const pool=EVENTS.filter(ev=>ev[3].includes(S.era));if(!poo
   PH.appendChild(sh);setTimeout(()=>{const f=sh.querySelector('.opt');if(f)f.focus()},50);
   const t0=S.t,LIMIT=20;let done=false;
   const finish=pick=>{if(done)return;done=true;const grade=pick==null?0:+ev[2][pick][1];const reward=E.eventReward(S,grade)*(pick==null?.5:1);
-    S.cash=Math.max(0,S.cash+reward);if(reward>0)S.earned+=reward;grade===2?S.events.good++:grade===0?S.events.bad++:0;
+    S.cash=Math.max(0,S.cash+reward);if(reward>0)S.earned+=reward;grade===2?(S.events.good++,jobProgress('risk',1)):grade===0?S.events.bad++:0;
     if(grade===0)S.morale=Math.max(0,S.morale-8);
     sh.querySelectorAll('.opt').forEach(b=>{b.disabled=true;const g=ev[2][+b.dataset.o][1];if(g==='2')b.classList.add('good');else if(+b.dataset.o===pick)b.classList.add('bad')});
     const fb=pick==null?'Too slow. Not deciding is a decision: you accepted the risk.':ev[2][pick][2];
@@ -408,15 +522,72 @@ function showEvent(){const pool=EVENTS.filter(ev=>ev[3].includes(S.era));if(!poo
 function showOpp(){const [name,text]=OPPS[Math.floor(Math.random()*OPPS.length)],b=document.createElement('button');b.className='opp';b.textContent=name;b.setAttribute('aria-label','Opportunity: '+name+'. Tap for five times income.');
   const sc=$('scene');b.style.left=(10+Math.random()*60)+'%';b.style.top=(8+Math.random()*30)+'%';sc.appendChild(b);SFX.opp();
   const gone=setTimeout(()=>b.remove(),9000);
-  b.onclick=e=>{e.stopPropagation();clearTimeout(gone);b.remove();S.buff={mult:5,until:S.t+20,name};SFX.opp();toast(name+'!',text+' Everything earns ×5 for 20 seconds.');checkAch()};scheduleOpp()}
-function doLunch(){if(E.lunch(S)){SFX.lunch();toast('Team lunch','Pizza for the crew. Morale is back up.');hud()}else nope($('lunchBtn'))}
+  b.onclick=e=>{e.stopPropagation();clearTimeout(gone);b.remove();S.buff={mult:5,until:S.t+20,name};SFX.opp();jobProgress('opp',1);toast(name+'!',text+' Everything earns ×5 for 20 seconds.');checkAch()};scheduleOpp()}
+function doLunch(){if(E.lunch(S)){SFX.lunch();jobProgress('lunch',1);toast('Team lunch','Pizza for the crew. Morale is back up.');hud()}else nope($('lunchBtn'))}
+
+/* ---------- lessons: every technique teaches one idea, then asks one question ---------- */
+function lessonQuiz(tech){const L=CONTENT.LESSONS[tech[0]];if(!L)return toast(tech[0],tech[2]);
+  if(!S.manual.includes('L:'+tech[0]))S.manual.push('L:'+tech[0]);
+  const order=[0,1,2].sort(()=>Math.random()-.5),reward=E.bonus(S,45);
+  const sh=sheet('<small class="k" style="color:var(--era-ink);background:var(--era);padding:2px 8px;border-radius:6px">New technique · quick lesson</small><h2 id="lt">'+esc(tech[0])+'</h2><div class="lesson">'+esc(L[0])+'</div><p><b>'+esc(L[1])+'</b></p>'+order.map((o,n)=>'<button class="opt" data-o="'+o+'"><b>'+(n+1)+'</b>'+esc(L[2+o])+'</button>').join('')+'<p class="small">Get it right for a bonus of '+money(reward)+'.</p>','lt');
+  sh.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{const ok=b.dataset.o==='0';sh.querySelectorAll('.opt').forEach(x=>{x.disabled=true;if(x.dataset.o==='0')x.classList.add('good');else if(x===b)x.classList.add('bad')});
+    if(ok){S.cash+=reward;S.earned+=reward;S.quizzes.right++;SFX.good();confettiSmall()}else{S.quizzes.wrong++;SFX.bad()}
+    sh.insertAdjacentHTML('beforeend','<p><b>'+(ok?'Correct. +'+money(reward):'Not quite.')+'</b> It\'s in your Field Manual now.</p><button class="btn wide" id="lessonDone">Back to work</button>');$('lessonDone').focus();$('lessonDone').onclick=()=>sh.remove();hud();checkAch()})}
+function sheet(html,labelId){const sh=document.createElement('div');sh.className='sheet';sh.setAttribute('role','dialog');sh.setAttribute('aria-modal','true');if(labelId)sh.setAttribute('aria-labelledby',labelId);sh.style.borderTopColor='var(--era)';sh.innerHTML=html;PH.appendChild(sh);
+  sh.addEventListener('keydown',e=>{const n=+e.key;if(n>=1&&n<=4){const b=sh.querySelectorAll('.opt')[n-1];if(b&&!b.disabled)b.click()}});setTimeout(()=>{const f=sh.querySelector('.opt,.btn');if(f)f.focus()},50);return sh}
+
+/* ---------- site maths: real project formulas with fresh numbers each time ---------- */
+const pick=a=>a[Math.floor(Math.random()*a.length)],R5=n=>Math.round(n/5)*5;
+const fmt2=n=>(Math.round(n*100)/100).toString();
+function spread(ans,fmtFn,near){const set=new Set([fmtFn(ans)]);let guard=0;while(set.size<4&&guard++<40)set.add(fmtFn(near()));return [...set]}
+const CALCS=[
+ {key:'Communication channels',min:0,make(){const n=pick([4,5,6,7,8,10,12]),a=n*(n-1)/2;return{q:'A crew of '+n+' people. How many communication channels?',a:String(a),opts:spread(a,String,()=>pick([n*n,n*(n-1),2*n,a+n,a-n+1,n*(n+1)/2])),explain:'Channels = n(n − 1) ÷ 2 = '+n+' × '+(n-1)+' ÷ 2 = '+a+'. Every person you add adds a channel to everyone else.'}}},
+ {key:'Float',min:0,make(){const es=pick([2,3,4,5,6,8]),ls=es+pick([0,2,3,4,5,7]),a=ls-es;return{q:'A task can start on day '+es+' at the earliest and day '+ls+' at the latest. How much float?',a:a+' days',opts:spread(a,v=>v+' days',()=>pick([es,ls,es+ls,a+1,a+2,Math.max(0,a-1)])),explain:'Float = latest start − earliest start = '+ls+' − '+es+' = '+a+'.'+(a===0?' Zero float: it\'s on the critical path.':' It can slip that long without delaying the finish.')}}},
+ {key:'Expected monetary value',min:0,make(){const p=pick([10,20,25,30,40,50]),imp=pick([1000,2000,4000,5000,8000,10000]),a=p/100*imp;return{q:'A '+p+'% chance of a $'+imp.toLocaleString()+' loss. What is the EMV?',a:'−$'+a.toLocaleString(),opts:spread(a,v=>'−$'+v.toLocaleString(),()=>pick([imp,imp*(1-p/100),a*2,a/2,p*10,imp-a])),explain:'EMV = probability × impact = '+p+'% × $'+imp.toLocaleString()+' = $'+a.toLocaleString()+'. Spend less than that to remove the risk and it\'s worth it.'}}},
+ {key:'Cost performance index',min:2,make(){const ac=pick([80,100,120,125,150,160,200]),ev=pick([60,80,90,100,120,150,180].filter(v=>v!==ac)),a=ev/ac;return{q:'Earned value $'+ev+'k, actual cost $'+ac+'k. What is CPI?',a:fmt2(a),opts:spread(a,fmt2,()=>pick([ac/ev,(ev-ac)/ac,a+.1,a-.1,a+.2,ev/(ac+ev)])),explain:'CPI = EV ÷ AC = '+ev+' ÷ '+ac+' = '+fmt2(a)+'. '+(a<1?'Under 1: each dollar spent is buying less than a dollar of work.':'Over 1: you\'re getting more work than you\'re paying for.')}}},
+ {key:'Schedule performance index',min:2,make(){const pv=pick([80,100,120,150,200]),ev=pick([60,75,90,100,120,180].filter(v=>v!==pv)),a=ev/pv;return{q:'Earned value $'+ev+'k, planned value $'+pv+'k. What is SPI?',a:fmt2(a),opts:spread(a,fmt2,()=>pick([pv/ev,a+.1,a-.1,a+.25,(pv-ev)/pv])),explain:'SPI = EV ÷ PV = '+ev+' ÷ '+pv+' = '+fmt2(a)+'. '+(a<1?'Under 1: behind schedule.':'Over 1: ahead of schedule.')}}},
+ {key:'Cost variance',min:2,make(){const ev=pick([100,120,150,200,250]),ac=ev+pick([-40,-20,-10,10,20,30,50]),a=ev-ac;const f=v=>(v<0?'−$':'$')+Math.abs(v)+'k';return{q:'EV is $'+ev+'k and AC is $'+ac+'k. What is the cost variance?',a:f(a),opts:spread(a,f,()=>pick([-a,ac-ev,a*2,ev+ac,a+10,a-10])),explain:'CV = EV − AC = '+ev+' − '+ac+' = '+f(a)+'. '+(a<0?'Negative: over budget.':'Positive: under budget.')}}},
+ {key:'Three-point (PERT) estimate',min:3,make(){const o=pick([2,3,4,6]),m=o+pick([2,3,4]),p=m+pick([4,6,8,10]),a=(o+4*m+p)/6;return{q:'Optimistic '+o+' days, most likely '+m+', pessimistic '+p+'. What is the PERT estimate?',a:fmt2(a)+' days',opts:spread(a,v=>fmt2(v)+' days',()=>pick([(o+m+p)/3,m,(o+p)/2,a+1,a-1,p-o])),explain:'PERT = (O + 4M + P) ÷ 6 = ('+o+' + '+4*m+' + '+p+') ÷ 6 = '+fmt2(a)+'. The most likely value counts four times.'}}},
+ {key:'Estimate at completion',min:4,make(){const bac=pick([400,500,600,800,1000]),cpi=pick([.8,.9,1.25,.75,1.1]),a=bac/cpi;const f=v=>'$'+Math.round(v)+'k';return{q:'Budget $'+bac+'k, CPI '+cpi+'. If the trend continues, what is the EAC?',a:f(a),opts:spread(a,f,()=>pick([bac*cpi,bac,bac+bac*(1-cpi),a+50,a-50])),explain:'EAC = BAC ÷ CPI = '+bac+' ÷ '+cpi+' = '+f(a)+'.'}}}];
+let nextCalc=0;function scheduleCalc(){nextCalc=S.t+100+Math.random()*50}
+function showCalc(){if(eventOpen||document.querySelector('.sheet,.overlay'))return scheduleCalc();const pool=CALCS.filter(c=>c.min<=S.era),c=pick(pool),m=c.make(),opts=m.opts.slice().sort(()=>Math.random()-.5),reward=E.bonus(S,60);eventOpen=true;SFX.event();
+  const sh=sheet('<small class="k" style="color:var(--era-ink);background:var(--era);padding:2px 8px;border-radius:6px">Site maths · '+esc(c.key)+'</small><p class="calcq" id="cq">'+esc(m.q)+'</p><div class="timer"><i id="cTimer" style="width:100%"></i></div>'+opts.map((o,n)=>'<button class="opt" data-v="'+esc(o)+'"><b>'+(n+1)+'</b>'+esc(o)+'</button>').join('')+'<p class="small">Right within 25 seconds: '+money(reward)+'.</p>','cq');
+  const t0=S.t;let done=false;
+  const finish=v=>{if(done)return;done=true;const ok=v===m.a;sh.querySelectorAll('.opt').forEach(b=>{b.disabled=true;if(b.dataset.v===m.a)b.classList.add('good');else if(b.dataset.v===v)b.classList.add('bad')});
+    if(ok){S.cash+=reward;S.earned+=reward;S.calcs.right++;jobProgress('calc',1);SFX.good();confettiSmall()}else{S.calcs.wrong++;SFX.bad()}
+    if(!S.manual.includes('F:'+c.key))S.manual.push('F:'+c.key);
+    sh.insertAdjacentHTML('beforeend','<div class="lesson">'+esc(m.explain)+'</div><button class="btn wide" id="cDone">'+(ok?'Nice. +'+money(reward):'Got it')+'</button>');$('cDone').focus();$('cDone').onclick=close;hud();checkAch()};
+  const close=()=>{sh.remove();eventOpen=false;scheduleCalc()};
+  sh.querySelectorAll('.opt').forEach(b=>b.onclick=()=>finish(b.dataset.v));
+  const tm=setInterval(()=>{if(!sh.isConnected||done){clearInterval(tm);return}const left=1-(S.t-t0)/25;$('cTimer').style.width=Math.max(0,left*100)+'%';if(left<=0)finish(null)},100)}
+
+/* ---------- jobs: three side jobs at a time ---------- */
+function newJob(exclude){const pool=CONTENT.JOBS.filter(j=>!exclude.includes(j[0]));const j=pick(pool);return{kind:j[0],target:j[1](S),progress:0,secs:j[3]}}
+function fillJobs(){while(S.jobs.length<3)S.jobs.push(newJob(S.jobs.map(j=>j.kind)))}
+function jobProgress(kind,n){let changed=false;for(const j of S.jobs)if(j.kind===kind&&j.progress<j.target){j.progress=Math.min(j.target,j.progress+n);changed=true;if(j.progress>=j.target){SFX.opp();toast('Job ready','“'+jobText(j)+'” is done. Collect it on the Jobs tab.')}}
+  if(changed&&tabNow==='jobs')render()}
+const jobText=j=>CONTENT.JOBS.find(x=>x[0]===j.kind)[2](j.target);
+function claimJob(i){const j=S.jobs[i];if(!j||j.progress<j.target)return;const r=E.bonus(S,j.secs);S.cash+=r;S.earned+=r;S.jobsDone++;S.jobs.splice(i,1);fillJobs();SFX.milestone();confettiSmall();toast('Job paid',money(r)+'. A new job is on the board.');render();hud();checkAch()}
+
+/* ---------- advisors ---------- */
+const advisorCard=i=>{const a=E.ADVISORS[i];return a?'<p style="background:#0002;border-radius:12px;padding:10px 12px;font-size:15px"><b style="font:800 18px Barlow Condensed,sans-serif">New advisor: '+esc(a[0])+'</b><br>'+esc(a[3])+'</p>':''};
+
+/* ---------- fever ---------- */
+let feverWas=false;function feverFx(){const on=E.feverOn(S);$('tap').classList.toggle('fever',on);let t=$('feverTxt');
+  if(on&&!t){t=document.createElement('div');t.className='fevertxt';t.id='feverTxt';$('scene').appendChild(t)}if(t)t.textContent=on?'FEVER ×3 · '+Math.ceil(S.feverUntil-S.t):'';if(!on&&t)t.remove();
+  if(on&&!feverWas){SFX.era();jobProgress('fever',1);checkAch()}feverWas=on}
+
+/* ---------- news ticker ---------- */
+function ticker(){const lines=CONTENT.NEWS[S.era].concat(CONTENT.TIPS.slice().sort(()=>Math.random()-.5).slice(0,3));$('tickerText').textContent=lines.join('   ·   ')}
+function confettiSmall(){const cols=['#f5c400','#27c26a','#2f80ed','#d63af9','#e10600'];for(let i=0;i<18;i++){const c=document.createElement('i');c.className='conf';c.style.left=(30+Math.random()*40)+'%';c.style.background=cols[i%cols.length];c.style.setProperty('--dx',(Math.random()*120-60)+'px');PH.appendChild(c);setTimeout(()=>c.remove(),1900)}}
 
 /* ---------- toasts and achievements ---------- */
 let toastTimer=0;function toast(title,text){let t=document.querySelector('.toast');if(!t){t=document.createElement('div');t.className='toast';t.setAttribute('role','status');PH.appendChild(t)}
   t.innerHTML=`<b>${esc(title)}</b>${esc(text)}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.remove(),3200)}
 const ACH=[['first','Open for business','Buy your first anything',()=>S.owned.flat().some(n=>n>0)],['tap1k','Busy hands','Tap 1,000 times',()=>S.clicks>=1000],['tap10k','Carpal tunnel pending','Tap 10,000 times',()=>S.clicks>=10000],
   ['risk5','Risk aware','Handle 5 risks well',()=>S.events.good>=5],['risk25','Risk manager','Handle 25 risks well',()=>S.events.good>=25],['hundred','Economies of scale','Own 100 of one business',()=>S.owned.flat().some(n=>n>=100)],
-  ['tech','Method in the madness','Buy 10 techniques',()=>Object.keys(S.techs).length>=10],['era4','Hard hat era','Reach construction',()=>S.era>=3],['era6','Split the atom','Reach nuclear power',()=>S.era>=5],['era8','Moonwalker','Reach the Moon',()=>S.era>=7],['era10','Star harvester','Reach the Dyson swarm',()=>S.era>=9],['win','Galactic PM','Unite the galaxy',()=>S.done]];
+  ['tech','Method in the madness','Buy 10 techniques',()=>Object.keys(S.techs).length>=10],['era4','Hard hat era','Reach construction',()=>S.era>=3],['era6','Split the atom','Reach nuclear power',()=>S.era>=5],['era8','Moonwalker','Reach the Moon',()=>S.era>=7],['era10','Star harvester','Reach the Dyson swarm',()=>S.era>=9],['win','Galactic PM','Unite the galaxy',()=>S.done],
+  ['fever','Fever pitch','Hit fever mode 10 times',()=>(S.feverCount||0)>=10],['quiz','Teacher\'s pet','Get 10 lesson quizzes right',()=>S.quizzes.right>=10],['calc','Human calculator','Get 10 site maths right',()=>S.calcs.right>=10],['jobs','Gig economy','Finish 15 side jobs',()=>S.jobsDone>=15],['manual','Read the manual','Fill half the Field Manual',()=>S.manual.length>=21],['advisors','Board of advisors','Meet 6 advisors',()=>(S.advisors||[]).length>=6],['legacy','Serial entrepreneur','Win and start again',()=>(S.legacy||0)>=1]];
 function checkAch(){for(const a of ACH)if(!S.achievements.includes(a[0])&&a[3]()){S.achievements.push(a[0]);SFX.milestone();toast('Achievement: '+a[1],a[2])}}
 
 /* ---------- save codes ---------- */
@@ -424,8 +595,8 @@ function dialog(html){const sh=document.createElement('div');sh.className='sheet
 function exportSave(){const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));const sh=dialog(`<h2>Your save code</h2><p class="small">Paste it into Load a save code on any device.</p><textarea class="code" rows="5" readonly>${code}</textarea><button class="btn wide" id="cpy">Copy</button> <button class="btn alt wide" id="cls" style="margin-top:6px">Close</button>`);
   const ta=sh.querySelector('textarea');ta.focus();ta.select();sh.querySelector('#cpy').onclick=async()=>{try{await navigator.clipboard.writeText(code);toast('Copied','Keep it somewhere safe.')}catch(e){ta.select()}};sh.querySelector('#cls').onclick=()=>sh.remove()}
 function importSave(){const sh=dialog(`<h2>Load a save code</h2><p class="small">This replaces the game on this device.</p><textarea class="code" rows="5" placeholder="Paste the code here"></textarea><button class="btn wide" id="ld">Load it</button> <button class="btn alt wide" id="cls" style="margin-top:6px">Cancel</button>`);
-  sh.querySelector('#cls').onclick=()=>sh.remove();sh.querySelector('#ld').onclick=()=>{try{const rec=JSON.parse(decodeURIComponent(escape(atob(sh.querySelector('textarea').value.trim()))));if(!rec.owned)throw 0;S=Object.assign(E.fresh(),rec);save();sh.remove();renderAll();toast('Loaded','Welcome back to era '+(S.era+1)+'.')}catch(e){toast('That code didn\'t work','Nothing was changed.')}}}
-function resetGame(skipAsk){const go=()=>{const keep={sound:S.sound};S=Object.assign(E.fresh(),{qty:1,achievements:[],savedAt:Date.now(),seenStory:-1},keep);save();document.querySelectorAll('.overlay,.sheet').forEach(x=>x.remove());renderAll();intro()};
+  sh.querySelector('#cls').onclick=()=>sh.remove();sh.querySelector('#ld').onclick=()=>{try{const rec=JSON.parse(decodeURIComponent(escape(atob(sh.querySelector('textarea').value.trim()))));if(!rec.owned)throw 0;S=migrate(rec);save();sh.remove();renderAll();toast('Loaded','Welcome back to era '+(S.era+1)+'.')}catch(e){toast('That code didn\'t work','Nothing was changed.')}}}
+function resetGame(skipAsk){const go=()=>{const keep={sound:S.sound};S=Object.assign(DEFAULTS(),keep,{v:SAVE_VERSION});save();document.querySelectorAll('.overlay,.sheet').forEach(x=>x.remove());renderAll();intro()};
   if(skipAsk===true)return go();const sh=dialog(`<h2>Start over?</h2><p>Everything goes back to one lemonade stand. Achievements too.</p><button class="btn wide" id="yes">Start over</button> <button class="btn alt wide" id="no" style="margin-top:6px">Keep playing</button>`);
   sh.querySelector('#no').onclick=()=>sh.remove();sh.querySelector('#yes').onclick=()=>{sh.remove();go()}}
 
@@ -436,19 +607,19 @@ $('sound').onclick=()=>{S.sound=!S.sound;soundBtn();save()};
 /* ---------- the loop ---------- */
 let last=performance.now(),renderClock=0;
 function frame(now){const dt=Math.min(1,(now-last)/1000);last=now;
-  if(!S.done){E.tick(S,dt);if(!nextEvent)scheduleEvent();if(!nextOpp)scheduleOpp();if(S.t>=nextEvent&&!document.querySelector('.overlay'))showEvent();if(S.t>=nextOpp&&!document.querySelector('.overlay'))showOpp()}
-  renderClock+=dt;if(renderClock>.2){renderClock=0;hud();if(tabNow==='build'||tabNow==='goal'||tabNow==='tech')refreshRows();checkAch()}
+  if(!S.done){E.tick(S,dt);if(!nextEvent)scheduleEvent();if(!nextOpp)scheduleOpp();if(S.t>=nextEvent&&!document.querySelector('.overlay'))showEvent();if(S.t>=nextOpp&&!document.querySelector('.overlay'))showOpp();if(!nextCalc)scheduleCalc();if(S.t>=nextCalc&&!document.querySelector('.overlay'))showCalc()}
+  feverFx();renderClock+=dt;if(renderClock>.2){renderClock=0;hud();if(tabNow==='build'||tabNow==='goal'||tabNow==='tech')refreshRows();checkAch()}
   requestAnimationFrame(frame)}
 // time away earns a quarter of the idle rate, up to two hours
-function welcomeBack(){const away=(Date.now()-(S.savedAt||Date.now()))/1000;if(away<60||S.done)return;const secs=Math.min(away,7200),gain=E.baseIps(S)*secs*.25;if(gain<=0)return;
+function welcomeBack(){const away=(Date.now()-(S.savedAt||Date.now()))/1000;if(away<60||S.done)return;const secs=Math.min(away,E.offlineHours(S)*3600),gain=E.baseIps(S)*secs*.25;if(gain<=0)return;
   S.cash+=gain;S.earned+=gain;S.savedAt=Date.now();toast('While you were away','The crew earned '+money(gain)+' in '+clock(secs)+'. They work better when you are here.')}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){welcomeBack();last=performance.now()}else save()});
 function intro(){if(S.t>0)return;const o=document.createElement('div');o.className='overlay';o.setAttribute('role','dialog');
-  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap to squeeze. Buy things that earn for you. Answer the risk cards well. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
+  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap to squeeze. Tap fast for a combo, keep it up for fever. Buy things that earn for you. Answer risk cards and site maths. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
   PH.appendChild(o);$('start').focus();$('start').onclick=()=>{o.remove();SFX.buy()}}
-function renderAll(){applyEraColours();drawLand();hud();render();soundBtn()}
+function renderAll(){fillJobs();applyEraColours();drawLand();hud();render();soundBtn();ticker()}
 renderAll();welcomeBack();intro();recover();requestAnimationFrame(frame);
-window.__game={get S(){return S},E,tap,finishCapstone,showEvent,showOpp};
+window.__game={get S(){return S},E,tap,finishCapstone,showEvent,showOpp,showCalc,migrate,claimJob,lessonQuiz};
 }
 </script>
 </body>
