@@ -41,6 +41,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .tap:active,.tap.hit{transform:translate(-50%,-47%) scale(.94);box-shadow:0 3px 0 rgba(0,0,0,.28),0 6px 14px rgba(0,0,0,.25)}
 .combo{position:absolute;left:50%;top:44%;width:142px;height:142px;transform:translate(-50%,-50%);z-index:2;pointer-events:none}
 .combo circle{fill:none;stroke-width:7}.combo .bg{stroke:rgba(255,255,255,.35)}.combo .fg{stroke:var(--hv);stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dasharray .15s}
+.tap.nudge{animation:nudge 1.4s ease-in-out infinite}@keyframes nudge{50%{box-shadow:0 8px 0 rgba(0,0,0,.28),0 0 0 10px color-mix(in srgb,var(--era) 45%,transparent)}}
 .combotxt{position:absolute;left:50%;top:calc(44% + 76px);transform:translateX(-50%);z-index:3;font:800 15px "Barlow Condensed",sans-serif;color:#fff;text-shadow:0 1px 3px #0009;letter-spacing:1px}
 .float{position:absolute;z-index:5;pointer-events:none;font:800 20px "Barlow Condensed",sans-serif;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.4),0 0 8px rgba(0,0,0,.35);animation:rise .9s ease-out forwards}
 @keyframes rise{to{transform:translateY(-60px);opacity:0}}
@@ -182,6 +183,7 @@ const ERAS=[
   producers:['Colony ship','Gate network','Galactic trade guild','Ringworld'],capstone:'Unite the galaxy',
   techs:[['Galactic PMO','era','One status report for ten thousand worlds.'],['Hyperspace supply chain','all','Where the hell is my material? Everywhere, instantly.'],['Benefits realization','events','Did uniting the galaxy actually help anyone? Measure it.']]}];
 // one advisor joins when you finish each era; each brings a small permanent perk
+const feverOn=s=>s.t<(s.feverUntil||0);
 const ADVISORS=[
  ['Pat the Planner','all',.05,'Everything earns 5% more. Pat writes everything down.'],
  ['Rosa the Rigger','click',.15,'Taps earn 15% more. Rosa lifts with her legs.'],
@@ -203,7 +205,7 @@ const cost=(e,i,n)=>baseCost(e,i)*Math.pow(GROWTH,n);
 // cost of buying k more after owning n
 const costN=(e,i,n,k)=>baseCost(e,i)*Math.pow(GROWTH,n)*(Math.pow(GROWTH,k)-1)/(GROWTH-1);
 // capstone prices, tuned by sim.js so a busy player spends roughly the target minutes in each era
-let CAPSTONE=[1.30e7,7.67e8,1.43e10,2.74e11,3.84e12,1.07e14,2.36e15,2.42e16,5.84e17,1.05e19,1.64e20];
+let CAPSTONE=[2.96e7,1.12e9,1.86e10,3.94e11,6.20e12,1.44e14,2.96e15,3.78e16,6.97e17,1.28e19,1.65e20];
 const TECH_SHARE=[.05,.15,.35];
 const techCost=(e,k)=>CAPSTONE[e]*TECH_SHARE[k];
 const TECH_EFFECT={click:1.6,era:3,all:1.6,morale:1,events:1};
@@ -219,20 +221,23 @@ const moraleMult=s=>.5+s.morale/100;
 // income per second before the temporary buff
 function baseIps(s){let sum=0;for(let e=0;e<=s.era;e++){const em=eraMult(s,e);for(let i=0;i<4;i++){const n=s.owned[e][i];if(n)sum+=n*baseIncome(e,i)*em*milestoneMult(n)}}
   return sum*allMult(s)*moraleMult(s)}
-const ips=(s)=>baseIps(s)*(s.t<s.buff.until?s.buff.mult:1);
+// a full hustle meter doubles income; fever triples it on top
+const hustleMult=s=>1+(s.combo-1)*.5;
+const ips=(s)=>baseIps(s)*(s.t<s.buff.until?s.buff.mult:1)*hustleMult(s)*(feverOn(s)?3:1);
 function clickMult(s){let m=1+advisorSum(s,'click');ERAS.forEach((E,e)=>E.techs.forEach((t,k)=>{if(t[1]==='click'&&hasTech(s,e,k))m*=TECH_EFFECT.click}));return m}
 // one click: a little cash on its own, more as the business grows, multiplied by a combo for clicking fast
-const feverOn=s=>s.t<(s.feverUntil||0);
-const clickValue=s=>(1+.015*baseIps(s))*clickMult(s)*s.combo*(feverOn(s)?3:1);
+// a tap is worth about half a second of income, more with tap techniques
+const clickValue=s=>(1+.5*baseIps(s))*clickMult(s);
 const eventsLevel=s=>ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='events'&&hasTech(s,e,k)).length,0);
 const moraleDecay=s=>1/6/(1+advisorSum(s,'morale')+.5*ERAS.reduce((n,E,e)=>n+E.techs.filter((t,k)=>t[1]==='morale'&&hasTech(s,e,k)).length,0));
 
 function tick(s,dt){s.t+=dt;const earn=ips(s)*dt;s.cash+=earn;s.earned+=earn;s.morale=Math.max(0,s.morale-moraleDecay(s)*dt);
-  if(s.t-s.lastClick>1.2)s.combo=Math.max(1,s.combo-dt*1.5)}
+  s.combo=Math.max(1,s.combo-dt*.05)}
 // fever: after six seconds at full combo, taps are worth triple for a while, then it rests for thirty seconds
-const FEVER_LEN=s=>8*(1+advisorSum(s,'fever'));
-function click(s){s.combo=Math.min(3,s.combo+(s.t-s.lastClick<1?.08:0));s.lastClick=s.t;
-  if(s.combo>=3){s.maxComboSince=s.maxComboSince||s.t;if(!feverOn(s)&&s.t-s.maxComboSince>=6&&s.t>=(s.feverRest||0)){s.feverUntil=s.t+FEVER_LEN(s);s.feverRest=s.feverUntil+30;s.feverCount=(s.feverCount||0)+1}}else s.maxComboSince=0;const v=clickValue(s);s.cash+=v;s.earned+=v;s.clicks++;return v}
+const FEVER_LEN=s=>10*(1+advisorSum(s,'fever'));
+// each tap tops up the hustle meter; filling it starts fever, at most about once a minute
+function click(s){s.combo=Math.min(3,s.combo+.25);s.lastClick=s.t;
+  if(s.combo>=3&&!feverOn(s)&&s.t>=(s.feverRest||0)){s.feverUntil=s.t+FEVER_LEN(s);s.feverRest=s.feverUntil+50;s.feverCount=(s.feverCount||0)+1}const v=clickValue(s);s.cash+=v;s.earned+=v;s.clicks++;return v}
 function buy(s,e,i,k=1){const c=costN(e,i,s.owned[e][i],k);if(s.cash<c||e>s.era)return false;s.cash-=c;s.owned[e][i]+=k;return true}
 function buyTech(s,e,k){const c=techCost(e,k);if(s.cash<c||hasTech(s,e,k)||e>s.era)return false;s.cash-=c;s.techs[e+':'+k]=1;return true}
 const capstoneCost=s=>CAPSTONE[s.era]*(1-Math.min(.5,advisorSum(s,'capstone')));
@@ -246,7 +251,7 @@ function eventReward(s,grade){const lvl=eventsLevel(s),b=baseIps(s);return grade
 // a reward worth some seconds of income (quizzes, maths, jobs)
 const bonus=(s,secs)=>Math.max(25,secs*baseIps(s));
 const offlineHours=s=>2+advisorSum(s,'offline');
-const api={ADVISORS,advisorSum,feverOn,FEVER_LEN,capstoneCost,bonus,offlineHours,ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
+const api={hustleMult,ADVISORS,advisorSum,feverOn,FEVER_LEN,capstoneCost,bonus,offlineHours,ERAS,TIERS,baseCost,baseIncome,cost,costN,CAPSTONE,setCapstone:a=>{CAPSTONE.splice(0,CAPSTONE.length,...a)},techCost,TECH_EFFECT,milestoneMult,fresh,hasTech,eraMult,allMult,moraleMult,baseIps,ips,clickMult,clickValue,eventsLevel,tick,click,buy,buyTech,buyCapstone,lunchCost,lunch,eventReward};
 if(typeof module!=='undefined')module.exports=api;else window.ECON=api;
 
 // Words for the game: era intros, risk events, opportunities. Kept apart from the rules.
@@ -336,7 +341,7 @@ const NEWS=[
 const TIPS=['Tip: the critical path is the longest chain of dependent tasks.','Tip: a risk might happen; an issue already has.','Tip: CPI = EV ÷ AC. Under 1 means over budget.','Tip: SPI = EV ÷ PV. Under 1 means behind schedule.','Tip: the four threat responses are avoid, transfer, mitigate and accept.','Tip: changes go through change control, not the hallway.','Tip: PERT estimate = (optimistic + 4 × most likely + pessimistic) ÷ 6.','Tip: communication channels = n(n − 1) ÷ 2.','Tip: float is how long a task can slip without delaying the finish.','Tip: stakeholders are anyone affected by the project. Engage them early.','Tip: EMV = probability × impact.','Tip: rested crews build more than tired ones.'];
 // side jobs: [kind, target maker, description maker, reward in seconds of income]
 const JOBS=[
- ['taps',s=>150+s.era*20,n=>'Tap '+n+' times',60],
+ ['taps',s=>30+s.era*5,n=>'Tap '+n+' times',60],
  ['buyCurrent',s=>10,n=>'Buy '+n+' businesses from this era',90],
  ['risk',s=>1,n=>'Handle a risk card well',60],
  ['opp',s=>1,n=>'Catch a gold bubble',45],
@@ -361,12 +366,14 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 /* ---------- state and saving ---------- */
 // Saves carry a version. Each update adds what it needs to an older save instead of starting over, so progress
 // always carries across updates. Fields this version doesn't know about are kept untouched.
-const SAVE_VERSION=2;
+const SAVE_VERSION=3;
 const DEFAULTS=()=>Object.assign(E.fresh(),{qty:1,sound:true,achievements:[],savedAt:Date.now(),seenStory:-1,manual:[],jobs:[],jobsDone:0,calcs:{right:0,wrong:0},quizzes:{right:0,wrong:0},wins:0});
 function migrate(rec){const s=Object.assign(DEFAULTS(),rec);const from=rec.v||1;
   if(from<2){// version 1 had no advisors or field manual: hand out what was already earned
     s.advisors=[...Array(s.done?E.ERAS.length:s.era).keys()];
     for(const key of Object.keys(s.techs||{})){const [e,k]=key.split(':').map(Number);const t=E.ERAS[e]&&E.ERAS[e].techs[k];if(t&&!s.manual.includes('L:'+t[0]))s.manual.push('L:'+t[0])}}
+  if(from<3){// version 3 asks for far fewer taps: shrink any tap job already on the board
+    for(const j of s.jobs||[])if(j.kind==='taps'){j.target=Math.min(j.target,30+s.era*5);j.progress=Math.min(j.progress,j.target)}}
   s.v=SAVE_VERSION;return s}
 let S=DEFAULTS();S.v=SAVE_VERSION;
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)S=migrate(JSON.parse(raw))}catch(e){}
@@ -417,7 +424,7 @@ function applyEraColours(){const era=E.ERAS[S.era];document.documentElement.styl
 function hud(){$('cash').textContent=money(S.cash);$('ips').textContent=money(E.ips(S))+' / sec';$('moraleBar').style.width=S.morale+'%';
   const g=Math.min(1,S.cash/E.capstoneCost(S));$('goalBar').style.width=g*100+'%';$('goalPct').textContent=Math.floor(g*100)+'%';$('goalDot').hidden=g<1;
   $('tapValue').textContent='+'+money(E.clickValue(S));
-  $('comboRing').setAttribute('stroke-dasharray',((S.combo-1)/2*402).toFixed(0)+' 402');$('comboTxt').textContent=S.combo>1.15?'COMBO ×'+S.combo.toFixed(1):'';
+  $('comboRing').setAttribute('stroke-dasharray',((S.combo-1)/2*402).toFixed(0)+' 402');$('comboTxt').textContent='HUSTLE ×'+E.hustleMult(S).toFixed(1)+' income';$('tap').classList.toggle('nudge',S.combo<1.3&&!E.feverOn(S));
   const buffOn=S.t<S.buff.until;$('buff').classList.toggle('on',buffOn);if(buffOn){$('buffMult').textContent='×'+S.buff.mult;$('buffName').textContent=S.buff.name||'';$('buffTime').textContent=Math.ceil(S.buff.until-S.t)+'s'}
   const lunchBtn=$('lunchBtn');if(S.morale<60&&!lunchBtn){const b=document.createElement('button');b.className='lunch';b.id='lunchBtn';b.onclick=doLunch;$('scene').appendChild(b)}if(S.morale>=60&&lunchBtn)lunchBtn.remove();
   if($('lunchBtn'))$('lunchBtn').textContent='Team lunch · '+money(E.lunchCost(S));
@@ -471,7 +478,7 @@ function render(){const P=$('panel');let h='';
 <div class="sec">Field Manual (${S.manual.length} of ${Object.keys(CONTENT.LESSONS).length+CALCS.length})</div><div class="manual">${S.manual.length?S.manual.map(m=>{const k=m.slice(2);if(m[0]==='L'){const L=CONTENT.LESSONS[k];return L?'<details><summary>'+esc(k)+'</summary><p>'+esc(L[0])+'</p></details>':''}const c=CALCS.find(x=>x.key===k);return c?'<details><summary>Formula: '+esc(k)+'</summary><p>'+esc(c.make().explain)+'</p></details>':''}).join(''):'<p class="small">Buy techniques and answer site maths to fill it.</p>'}</div>
 <div class="sec">Your save</div><p class="small">Saved automatically in this browser every few seconds, with a second copy kept in case one is cleared. Nothing is sent anywhere. Copy a save code to move to another device.</p>
 <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn alt" id="exportBtn">Copy save code</button><button class="btn alt" id="importBtn">Load a save code</button><button class="btn alt" id="resetBtn">Start over</button></div>
-<div class="sec">How to play</div><p class="small">Tap the big button to earn, and tap fast for a combo. Buy businesses on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Site maths pops up now and then: real project formulas, fresh numbers. Every technique comes with a one-minute lesson. Side jobs pay extra. Finish each era's capstone project to move on and meet a new advisor. A busy player takes around five hours to reach the galaxy.</p>`}
+<div class="sec">How to play</div><p class="small">Tap the big button a few times to fill the hustle meter around it. A full meter doubles all income and drains slowly, so a quick burst every half minute keeps it topped up, and filling it starts fever (income ×3 for ten seconds, about once a minute). Your businesses do the real earning. Buy them on Build: they earn on their own, and owning 25, 50, 100 of one doubles it. Upgrades are project management techniques that multiply things. Risk cards pop up: pick the best response. Catch the gold bubbles. Feed the crew when morale drops. Site maths pops up now and then: real project formulas, fresh numbers. Every technique comes with a one-minute lesson. Side jobs pay extra. Finish each era's capstone project to move on and meet a new advisor. A busy player takes around five hours to reach the galaxy.</p>`}
   P.innerHTML=h;
   P.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.qty=b.dataset.q==='max'?'max':+b.dataset.q;render()});
   P.querySelectorAll('.row[data-i]').forEach(r=>r.onclick=()=>buyProducer(+r.dataset.e,+r.dataset.i,r));
@@ -574,7 +581,7 @@ const advisorCard=i=>{const a=E.ADVISORS[i];return a?'<p style="background:#0002
 
 /* ---------- fever ---------- */
 let feverWas=false;function feverFx(){const on=E.feverOn(S);$('tap').classList.toggle('fever',on);let t=$('feverTxt');
-  if(on&&!t){t=document.createElement('div');t.className='fevertxt';t.id='feverTxt';$('scene').appendChild(t)}if(t)t.textContent=on?'FEVER ×3 · '+Math.ceil(S.feverUntil-S.t):'';if(!on&&t)t.remove();
+  if(on&&!t){t=document.createElement('div');t.className='fevertxt';t.id='feverTxt';$('scene').appendChild(t)}if(t)t.textContent=on?'FEVER · income ×3 · '+Math.ceil(S.feverUntil-S.t):'';if(!on&&t)t.remove();
   if(on&&!feverWas){SFX.era();jobProgress('fever',1);checkAch()}feverWas=on}
 
 /* ---------- news ticker ---------- */
@@ -584,7 +591,7 @@ function confettiSmall(){const cols=['#f5c400','#27c26a','#2f80ed','#d63af9','#e
 /* ---------- toasts and achievements ---------- */
 let toastTimer=0;function toast(title,text){let t=document.querySelector('.toast');if(!t){t=document.createElement('div');t.className='toast';t.setAttribute('role','status');PH.appendChild(t)}
   t.innerHTML=`<b>${esc(title)}</b>${esc(text)}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.remove(),3200)}
-const ACH=[['first','Open for business','Buy your first anything',()=>S.owned.flat().some(n=>n>0)],['tap1k','Busy hands','Tap 1,000 times',()=>S.clicks>=1000],['tap10k','Carpal tunnel pending','Tap 10,000 times',()=>S.clicks>=10000],
+const ACH=[['first','Open for business','Buy your first anything',()=>S.owned.flat().some(n=>n>0)],['tap1k','Busy hands','Tap 500 times',()=>S.clicks>=500],['tap10k','Hustler','Tap 3,000 times',()=>S.clicks>=3000],
   ['risk5','Risk aware','Handle 5 risks well',()=>S.events.good>=5],['risk25','Risk manager','Handle 25 risks well',()=>S.events.good>=25],['hundred','Economies of scale','Own 100 of one business',()=>S.owned.flat().some(n=>n>=100)],
   ['tech','Method in the madness','Buy 10 techniques',()=>Object.keys(S.techs).length>=10],['era4','Hard hat era','Reach construction',()=>S.era>=3],['era6','Split the atom','Reach nuclear power',()=>S.era>=5],['era8','Moonwalker','Reach the Moon',()=>S.era>=7],['era10','Star harvester','Reach the Dyson swarm',()=>S.era>=9],['win','Galactic PM','Unite the galaxy',()=>S.done],
   ['fever','Fever pitch','Hit fever mode 10 times',()=>(S.feverCount||0)>=10],['quiz','Teacher\'s pet','Get 10 lesson quizzes right',()=>S.quizzes.right>=10],['calc','Human calculator','Get 10 site maths right',()=>S.calcs.right>=10],['jobs','Gig economy','Finish 15 side jobs',()=>S.jobsDone>=15],['manual','Read the manual','Fill half the Field Manual',()=>S.manual.length>=21],['advisors','Board of advisors','Meet 6 advisors',()=>(S.advisors||[]).length>=6],['legacy','Serial entrepreneur','Win and start again',()=>(S.legacy||0)>=1]];
@@ -615,7 +622,7 @@ function welcomeBack(){const away=(Date.now()-(S.savedAt||Date.now()))/1000;if(a
   S.cash+=gain;S.earned+=gain;S.savedAt=Date.now();toast('While you were away','The crew earned '+money(gain)+' in '+clock(secs)+'. They work better when you are here.')}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){welcomeBack();last=performance.now()}else save()});
 function intro(){if(S.t>0)return;const o=document.createElement('div');o.className='overlay';o.setAttribute('role','dialog');
-  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap to squeeze. Tap fast for a combo, keep it up for fever. Buy things that earn for you. Answer risk cards and site maths. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
+  o.innerHTML=`<small>An idle project management game</small><h1>Scope Creep</h1><p>${esc(STORY[0])}</p><p style="font-size:15px">Tap a few times to fill the hustle meter: a full meter doubles everything, and filling it starts fever. Buy things that earn for you. Answer risk cards and site maths. Eleven eras from here to the galaxy.</p><button class="btn" id="start">Open the stand →</button>`;
   PH.appendChild(o);$('start').focus();$('start').onclick=()=>{o.remove();SFX.buy()}}
 function renderAll(){fillJobs();applyEraColours();drawLand();hud();render();soundBtn();ticker()}
 renderAll();welcomeBack();intro();recover();requestAnimationFrame(frame);
