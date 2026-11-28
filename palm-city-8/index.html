@@ -30,10 +30,12 @@ canvas{display:block;width:100%;aspect-ratio:320/288;image-rendering:pixelated;i
 .brand b{font:800 .7em "Barlow Condensed",sans-serif;color:var(--teal);margin-left:.2em;text-shadow:2px 2px 0 var(--deep)}
 .subhead{margin:1.2% 0 0;color:var(--cream);font:700 clamp(12px,3.6vw,18px) "Barlow Condensed",sans-serif;letter-spacing:.04em;text-shadow:2px 2px 0 var(--deep);text-align:center}
 .pad{position:relative;width:100%;flex:1;min-height:0}
-.dpad{position:absolute;left:4%;top:18%;width:40%;aspect-ratio:1}
-.dpad button{position:absolute;width:34%;height:34%;background:#2b0f3a;border:0;border-radius:6px;box-shadow:0 4px 0 #14051c;color:var(--cream);font-size:clamp(10px,3vw,16px)}
-.dpad .u{left:33%;top:0}.dpad .d{left:33%;bottom:0}.dpad .l{left:0;top:33%}.dpad .r{right:0;top:33%}
-.dpad .c{position:absolute;left:33%;top:33%;width:34%;height:34%;background:#2b0f3a}
+.stickzone{position:absolute;left:0;top:0;width:56%;height:78%;touch-action:none}
+.stick{position:absolute;left:8%;top:14%;width:clamp(96px,30vw,170px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#3a1650 0 55%,#2b0f3a 56%);box-shadow:inset 0 0 0 3px rgba(38,217,217,.55),0 4px 0 #14051c;pointer-events:none;transition:opacity .2s}
+.stick::before,.stick::after{content:"";position:absolute;left:50%;top:50%;background:rgba(255,232,244,.12);transform:translate(-50%,-50%)}
+.stick::before{width:70%;height:3px}.stick::after{width:3px;height:70%}
+.knob{position:absolute;left:50%;top:50%;width:46%;aspect-ratio:1;margin:-23% 0 0 -23%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff8fcb,#ff3ea5 55%,#b0236f);box-shadow:0 4px 0 #14051c,0 0 0 3px #2b0f3a;will-change:transform}
+.stickzone.on .stick{box-shadow:inset 0 0 0 3px var(--teal),0 0 18px rgba(38,217,217,.5)}
 .ab{position:absolute;right:4%;top:20%;width:44%;height:40%;transform:rotate(-22deg)}
 .ab button{position:absolute;width:42%;aspect-ratio:1;border-radius:50%;border:0;background:var(--deep);box-shadow:0 5px 0 #14051c,inset 0 0 0 3px var(--teal);color:var(--teal);font:800 clamp(14px,4vw,22px) "Barlow Condensed",sans-serif}
 .ab .b{left:0;top:30%}.ab .a{right:0;top:0}
@@ -55,7 +57,7 @@ button:active{transform:translateY(2px);box-shadow:none!important}
   <div class="brand">Palm City <b>8</b></div>
   <div class="subhead">I can't afford GTA 6, so this is my GTA 6-bit 😂</div>
   <div class="pad">
-    <div class="dpad"><button class="u" data-k="up" aria-label="Gas">▲</button><button class="l" data-k="left" aria-label="Steer left">◀</button><div class="c"></div><button class="r" data-k="right" aria-label="Steer right">▶</button><button class="d" data-k="down" aria-label="Brake">▼</button></div>
+    <div class="stickzone" id="stickzone" aria-label="Steering stick: point where you want to drive"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
     <div class="ab"><button class="b" data-k="b" aria-label="Horn">B</button><button class="a" data-k="a" aria-label="Gas">A</button></div>
     <div class="ss"><div><button data-k="select" aria-label="Music on or off">.</button><span>MUSIC</span></div><div><button data-k="start" aria-label="Start or pause">.</button><span>START</span></div></div>
     <div class="speaker"></div>
@@ -276,6 +278,8 @@ const SCOOTER = () => sprite('scooter', scooterPicture);
 const best = (() => { try { return +localStorage.getItem('palmcity8.best') || 0; } catch (e) { return 0; } })();
 let S, mode = 'title', musicOn = (() => { try { return localStorage.getItem('palmcity8.music') !== 'off'; } catch (e) { return true; } })();
 const keys = { up: 0, down: 0, left: 0, right: 0, a: 0, b: 0 };
+const stick = { x: 0, y: 0, mag: 0 };   // analog stick: direction on screen, 0..1 push
+const angleDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 function newGame() {
   S = { x: 43.5 * T, y: 4.5 * T, a: Math.PI / 2, v: 0, cash: 0, heat: 0, heatClock: 0, best, stage: 'pickup', target: null, timer: 0,
     delivered: 0, streak: 0, flash: null, flashT: 0, traffic: [], maids: [], shake: 0, honk: 0 };
@@ -306,11 +310,23 @@ function update() {
   frame++;
   if (mode !== 'play') return;
   // the car
-  const gas = keys.up || keys.a, brake = keys.down;
-  if (gas) S.v = Math.min(3.5, S.v + .09); else if (brake) S.v = Math.max(-1.4, S.v - .14); else S.v *= .965;
-  if (Math.abs(S.v) > .1) S.a += (keys.right - keys.left) * .055 * Math.sign(S.v);
+  let gas = keys.up || keys.a ? 1 : 0, brake = keys.down, steer = keys.right - keys.left;
+  if (stick.mag > .18) {   // point the stick where you want to go; how far you push it is the throttle
+    const want = Math.atan2(stick.y, stick.x), diff = angleDiff(want, S.a);
+    if (Math.abs(diff) > 2.5) {   // pulled the other way: brake, then back up toward the stick
+      if (S.v > .3) brake = 1; else { brake = 1; steer = -Math.max(-1, Math.min(1, angleDiff(want, S.a + Math.PI) * 2.5)); }
+    } else {
+      steer = Math.max(-1, Math.min(1, diff * 2.5));
+      gas = Math.max(gas, stick.mag * (Math.abs(diff) > 1.4 ? .55 : 1));
+    }
+  }
+  const top = 3.5 * (gas || 1);
+  if (gas && S.v < top) S.v = Math.min(top, S.v + .09 * Math.max(.5, gas)); else if (brake) S.v = Math.max(-1.4, S.v - .14); else S.v *= .965;
+  S.a += steer * .06 * (S.v < -.05 ? -1 : 1) * Math.max(.35, Math.min(1, Math.abs(S.v) / 1.2));   // turns a little even when stopped, so you never get stuck
   const nx = S.x + Math.cos(S.a) * S.v, ny = S.y + Math.sin(S.a) * S.v;
-  if (blockedAt(nx, ny, 6)) { const hx = nx + Math.cos(S.a) * 7, hy = ny + Math.sin(S.a) * 7, t = tileAtPx(hx, hy);
+  if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(nx - S.x) > .2) { S.x = nx; S.v *= .9; }        // scrape along a wall
+  else if (blockedAt(nx, ny, 6) && !blockedAt(S.x, ny, 6) && Math.abs(ny - S.y) > .2) { S.y = ny; S.v *= .9; }
+  else if (blockedAt(nx, ny, 6)) { const hx = nx + Math.cos(S.a) * 7, hy = ny + Math.sin(S.a) * 7, t = tileAtPx(hx, hy);
     if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); } }
     S.v *= -.25; }
   else { S.x = nx; S.y = ny; }
@@ -541,6 +557,30 @@ document.querySelectorAll('[data-k]').forEach(b => {
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
 });
 cv.addEventListener('pointerdown', () => { if (mode === 'title') press('start', true); });
+// the stick: its base jumps to wherever your thumb lands in the left half, then the knob follows the thumb
+(() => {
+  const zone = document.getElementById('stickzone'), base = document.getElementById('stick'), knob = document.getElementById('knob');
+  let id = null, cx = 0, cy = 0, home = null;
+  const place = () => { const z = zone.getBoundingClientRect(), b = base.getBoundingClientRect(); return { z, r: b.width / 2 }; };
+  const move = e => {
+    const { r } = place(); let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy), lim = r * .78;
+    if (d > lim) { dx *= lim / d; dy *= lim / d; }
+    knob.style.transform = `translate(${dx}px,${dy}px)`;
+    const m = Math.min(1, d / lim); stick.x = dx / (lim || 1); stick.y = dy / (lim || 1); stick.mag = m;
+  };
+  zone.addEventListener('pointerdown', e => {
+    e.preventDefault(); audioInit(); if (mode === 'title') { press('start', true); return; }
+    id = e.pointerId; zone.setPointerCapture(id); zone.classList.add('on');
+    const { z, r } = place(); if (!home) home = { left: base.style.left, top: base.style.top };
+    cx = e.clientX; cy = e.clientY;
+    base.style.left = (cx - z.left - r) + 'px'; base.style.top = (cy - z.top - r) + 'px';
+    move(e); if (navigator.vibrate) navigator.vibrate(6);
+  });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === id) move(e); });
+  const end = e => { if (e.pointerId !== id) return; id = null; zone.classList.remove('on'); stick.x = stick.y = stick.mag = 0; knob.style.transform = '';
+    if (home) { base.style.left = home.left; base.style.top = home.top; } };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+})();
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') mode = 'paused'; });
 
 /* ================= loop ================= */
@@ -554,7 +594,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ":" + stepN : "none"; }, press, at, MW, MH, T };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ":" + stepN : "none"; }, press, at, MW, MH, T, stick };
 </script>
 </body>
 </html>
