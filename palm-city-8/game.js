@@ -34,7 +34,7 @@ Object.entries({
   0: '0e11131519110e', 1: '040c040404040e', 2: '0e11010204081f', 3: '1f02040201110e', 4: '02060a121f0202', 5: '1f101e0101110e', 6: '0608101e11110e',
   7: '1f010204080808', 8: '0e11110e11110e', 9: '0e11110f01020c',
   '$': '040f140e051e04', '!': '04040404040004', ':': '000c0c000c0c00', '.': '00000000000c0c', '-': '0000001f000000', '?': '0e110102040004',
-  "'": '04040800000000', ',': '000000000c0408', '/': '01010204081010', '+': '0004041f040400', '*': '0015 0e1f0e1500', ' ': '00000000000000'
+  "'": '04040800000000', ',': '000000000c0408', '/': '01010204081010', '+': '0004041f040400', '>': '10080402040810', '<': '01020408040201', '(': '02040808080402', ')': '08040202020408', '%': '19190204081313', '&': '0c12140812150d', '*': '0015 0e1f0e1500', ' ': '00000000000000'
 }).forEach(([ch, hex]) => { hex = hex.replace(/ /g, ''); FONT[ch] = [0, 1, 2, 3, 4, 5, 6].map(r => parseInt(hex.substr(r * 2, 2), 16)); });
 function text(s, x, y, c, k = 1) {
   s = String(s).toUpperCase(); let cx = Math.round(x);
@@ -612,6 +612,7 @@ function updateMaids() {
 /* ================= update ================= */
 function update() {
   frame++;
+  if (mode === 'casino') { updateCasino(); return; }
   if (mode !== 'play') return;
   if (S.down) { if (!--S.downT) getUp(); }
   else if (S.onFoot) updateFoot();
@@ -716,6 +717,7 @@ function drawRing(x, y, c, label) {
 }
 function draw() {
   if (mode === 'title') return drawTitle();
+  if (mode === 'casino') return drawCasino();
   ctx = g;
   const sh = S.shake ? (blink(1) ? 2 : -2) : 0;
   camCX = clamp(Math.round(S.cam.x), SW / 2, MW * T - SW / 2) + sh; camCY = clamp(Math.round(S.cam.y), SH / 2, MH * T - SH / 2);
@@ -728,6 +730,8 @@ function draw() {
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
   drawPickups();
+  if (casinoDoor) { const x = casinoDoor.x - camX, y = casinoDoor.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 8, y - 12, 16, 14, '#b3123a'); px(x - 8, y - 12, 16, 1, P.sun); px(x - 8, y + 1, 16, 1, P.sun);
+    if (Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 60) { const l = S.onFoot ? 'DOOR: GO IN' : 'GET OUT TO GO IN'; px(x - tw(l) / 2 - 3, y + 8, tw(l) + 6, 10, P.ink); text(l, x - tw(l) / 2, y + 10, blink(4) ? P.sun : P.cream); } } }
   for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
   for (const c of S.parked) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(c.wreck ? WRECK() : c.look === -1 ? PLAYER_CAR() : c.look === 'cop' ? COP_CAR() : trafficCar(c.look), x, y, c.a); }
   for (const c of S.cops) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) { drawSprite(c.dead ? WRECK() : COP_CAR(), x, y, c.a); if (!c.dead) { px(x - 2, y - 2, 2, 3, blink(2) ? P.red : '#3a7aff'); px(x, y - 2, 2, 3, blink(2) ? '#3a7aff' : P.red); } } }
@@ -797,6 +801,7 @@ function drawRadar() {
   const dot = (wx, wy, c, size = 3, clampIt = true) => { let dx = wx / T - x0, dy = wy / T - y0; if (!clampIt && (dx < 0 || dy < 0 || dx >= RW || dy >= RH)) return; dx = clamp(dx, 1, RW - 2); dy = clamp(dy, 1, RH - 2); px(rx + dx - size / 2, ry + dy - size / 2, size, size, c); };
   if (S.job) { dot(S.job.target.x, S.job.target.y, blink(3) ? JOB_COLOUR[S.job.kind] : P.cream, 4); if (S.job.cps) for (let i = S.job.i + 1; i < S.job.cps.length; i++) dot(S.job.cps[i].x, S.job.cps[i].y, P.sun, 2, false); }
   else for (const k of JOB_KINDS) if (S.markers[k]) dot(S.markers[k].x, S.markers[k].y, JOB_COLOUR[k], 4);
+  if (casinoDoor) dot(casinoDoor.x, casinoDoor.y, '#ffffff', 2, false);
   for (const m of S.maids) dot(m.x, m.y, blink(2) ? P.red : '#3a7aff', 2, false);
   px(rx + RW / 2 - 1, ry + RH / 2 - 1, 3, 3, '#ffffff'); px(rx + RW / 2 + Math.round(Math.cos(S.a) * 3), ry + RH / 2 + Math.round(Math.sin(S.a) * 3), 1, 1, '#ffffff');
   px(rx - 2, ry - 2, RW + 4, 1, P.teal); px(rx - 2, ry + RH + 1, RW + 4, 1, P.pink);
@@ -809,6 +814,7 @@ function drawMap() {
   if (S.job) dot(S.job.target.x, S.job.target.y, blink(3) ? JOB_COLOUR[S.job.kind] : P.cream, 6);
   else for (const kd of JOB_KINDS) if (S.markers[kd]) dot(S.markers[kd].x, S.markers[kd].y, JOB_COLOUR[kd], 6);
   if (blink(2)) dot(S.x, S.y, '#ffffff', 5);
+  if (casinoDoor) { dot(casinoDoor.x, casinoDoor.y, P.sun, 5); text('CASINO', x0 + casinoDoor.x / T * k + 4, y0 + casinoDoor.y / T * k - 3, P.sun); }
   for (const z of ZONES) { const r = zoneRect(z); text(z.name, x0 + (r.x0 + r.x1) / 2 * k - tw(z.name) / 2, y0 + (r.y0 + r.y1) / 2 * k - 3, P.cream); }
   ctext('PALM CITY', 24, P.cream);
   const ly = y0 + h + 4; text('DELIVER', 40, ly, P.pink); text('TAXI', 100, ly, P.teal); text('RACE', 136, ly, P.sun); text('YOU', 172, ly, '#ffffff'); text('MAP TO CLOSE', 216, ly, P.blush);
@@ -870,6 +876,7 @@ function updateFoot() {
 // DOOR: get out when slow, or get into the nearest car: one you left, or anyone's (they run off)
 function door() {
   if (S.down) return;
+  if (S.onFoot && nearCasino()) { enterCasino(); return; }
   if (!S.onFoot) {
     if (Math.hypot(S.v, S.side) > 1.2 || S.air || S.sink) { flash('SLOW DOWN TO GET OUT', 50); return; }
     S.parked.push({ x: S.x, y: S.y, a: S.a, look: S.rideLook, hp: S.carHp });
@@ -1022,6 +1029,247 @@ function drawPickups() {
   }
 }
 const WRECK = () => sprite('wreck', () => carPicture('sedan', '#3a3440', '#2a2430'));
+
+/* ================= Lucky Cassette Casino ================= */
+// walk up to the casino door and press DOOR; GAS plays, DRIFT goes back, the stick picks
+const GAMES = [
+  { id: 'slots', name: 'SLOTS', blurb: 'THREE OF A KIND. SEVENS PAY 50X' },
+  { id: 'blackjack', name: 'BLACKJACK', blurb: 'BEAT THE DEALER TO 21' },
+  { id: 'roulette', name: 'ROULETTE', blurb: 'RED, BLACK, ODD, EVEN OR A NUMBER' },
+  { id: 'highlow', name: 'HIGH-LOW', blurb: 'GUESS THE NEXT CARD. LET IT RIDE' },
+  { id: 'wheel', name: 'WHEEL OF FORTUNA', blurb: 'SPIN IT. UP TO 5X' },
+  { id: 'scratch', name: 'RAD SCRATCH', blurb: 'MATCH THREE TO WIN' }
+];
+const BETS = [10, 25, 50, 100, 250, 500];
+let C = null;   // what is on the casino screen
+let casinoDoor = null;
+function findCasinoDoor() { const b = BUILDINGS.find(q => q.style === 'casino'); casinoDoor = b ? { x: (b.x0 + b.x1) / 2, y: b.y1 + 10 } : null; }
+const nearCasino = () => casinoDoor && Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 22;
+function enterCasino() { C = { screen: 'menu', sel: 0, bet: 25, msg: '', t: 0, held: null, holdT: 0 }; mode = 'casino'; sfx('deliver'); S.gambled = S.gambled || 0; }
+function leaveCasino() { mode = 'play'; C = null; S.y = casinoDoor.y + 6; sfx('door'); }
+const canBet = () => { if (S.cash < C.bet) { const ok = BETS.filter(b => b <= S.cash); if (!ok.length) { C.msg = 'COME BACK WITH CASH'; sfx('late'); return false; } C.bet = ok[ok.length - 1]; } S.cash -= C.bet; S.gambled += C.bet; return true; };
+function win(amount, line) { S.cash += amount; C.msg = line + (amount ? ' +$' + amount : ''); sfx(amount > C.bet ? 'deliver' : amount ? 'pickup' : 'late'); if (amount >= C.bet * 10) C.jackpot = 120; }
+function stepBet(d) { const i = clamp(BETS.indexOf(C.bet) + d, 0, BETS.length - 1); C.bet = BETS[i]; sfx('count'); }
+
+// --- cards ---
+const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const drawCard = () => ({ r: (Math.random() * 13) | 0, s: (Math.random() * 4) | 0 });
+const cardVal = c => c.r === 0 ? 11 : Math.min(10, c.r + 1);
+function handVal(h) { let v = 0, aces = 0; for (const c of h) { v += cardVal(c); if (c.r === 0) aces++; } while (v > 21 && aces--) v -= 10; return v; }
+function drawSuit(s, x, y) {
+  const c = s < 2 ? P.red : P.ink;
+  if (s === 0) { px(x, y, 2, 2, c); px(x + 3, y, 2, 2, c); px(x, y + 1, 5, 2, c); px(x + 1, y + 3, 3, 1, c); px(x + 2, y + 4, 1, 1, c); }        // heart
+  else if (s === 1) { px(x + 2, y, 1, 1, c); px(x + 1, y + 1, 3, 1, c); px(x, y + 2, 5, 1, c); px(x + 1, y + 3, 3, 1, c); px(x + 2, y + 4, 1, 1, c); }   // diamond
+  else if (s === 2) { px(x + 2, y, 1, 1, c); px(x + 1, y + 1, 3, 1, c); px(x, y + 2, 5, 2, c); px(x + 2, y + 4, 1, 2, c); }                          // spade
+  else { px(x + 1, y, 3, 2, c); px(x, y + 2, 2, 2, c); px(x + 3, y + 2, 2, 2, c); px(x + 2, y + 2, 1, 4, c); }                                       // club
+}
+function drawCardAt(c, x, y, hidden) {
+  px(x + 1, y + 2, 22, 30, 'rgba(0,0,0,.35)'); px(x, y, 22, 30, hidden ? P.violet : '#fffaf2'); px(x, y, 22, 1, '#ffffff');
+  if (hidden) { for (let i = 2; i < 28; i += 4) px(x + 2, y + i, 18, 2, P.pink); return; }
+  text(RANKS[c.r], x + 2, y + 2, c.s < 2 ? P.red : P.ink); drawSuit(c.s, x + 15, y + 3); drawSuit(c.s, x + 8, y + 16);
+}
+
+// --- slot symbols ---
+const SYMBOLS = ['7', 'CHERRY', 'PALM', 'TAPE', 'BOOMBOX', 'FLAMINGO', 'SHADES'], WEIGHTS = [1, 4, 5, 4, 4, 3, 3];
+const spinSymbol = () => { let r = Math.random() * WEIGHTS.reduce((a, b) => a + b); for (let i = 0; i < WEIGHTS.length; i++) if ((r -= WEIGHTS[i]) < 0) return i; return 2; };
+function drawSymbol(i, x, y) {
+  const n = SYMBOLS[i];
+  if (n === '7') { text('7', x + 4, y + 2, P.ink, 3); text('7', x + 3, y + 1, P.red, 3); }
+  else if (n === 'CHERRY') { px(x + 3, y + 11, 7, 7, P.red); px(x + 11, y + 12, 7, 7, P.red); px(x + 4, y + 12, 2, 2, '#ffb0b8'); px(x + 7, y + 3, 2, 9, '#3a8a2e'); px(x + 9, y + 3, 6, 2, '#3a8a2e'); px(x + 14, y + 5, 2, 7, '#3a8a2e'); }
+  else if (n === 'PALM') { px(x + 10, y + 7, 3, 14, '#7a4a32'); for (const [dx, dy] of [[-7, 0], [6, 0], [-5, 4], [5, 4], [0, -3]]) px(x + 10 + dx, y + 5 + dy, 7, 3, '#2fae4f'); }
+  else if (n === 'TAPE') { px(x + 1, y + 5, 20, 13, '#2a2430'); px(x + 3, y + 7, 16, 6, P.cream); px(x + 5, y + 9, 3, 3, '#2a2430'); px(x + 14, y + 9, 3, 3, '#2a2430'); px(x + 3, y + 7, 16, 1, P.pink); }
+  else if (n === 'BOOMBOX') { px(x + 1, y + 6, 20, 12, '#8a8490'); px(x + 6, y + 3, 10, 3, '#5a5462'); px(x + 3, y + 9, 6, 6, '#2a2430'); px(x + 13, y + 9, 6, 6, '#2a2430'); px(x + 5, y + 11, 2, 2, P.teal); px(x + 15, y + 11, 2, 2, P.teal); }
+  else if (n === 'FLAMINGO') { px(x + 6, y + 8, 10, 6, P.pink); px(x + 14, y + 2, 2, 8, P.pink); px(x + 14, y + 1, 4, 3, P.pink); px(x + 17, y + 2, 2, 1, P.ink); px(x + 9, y + 14, 1, 7, P.pink); }
+  else { px(x + 1, y + 8, 20, 2, P.ink); px(x + 2, y + 9, 8, 6, P.ink); px(x + 12, y + 9, 8, 6, P.ink); px(x + 3, y + 10, 3, 2, P.teal); px(x + 13, y + 10, 3, 2, P.teal); }
+}
+
+// --- roulette ---
+const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+const ROUL_BETS = ['RED', 'BLACK', 'ODD', 'EVEN', '1-18', '19-36', 'NUMBER'];
+function rouletteWins(bet, n, pick) {
+  if (bet === 'NUMBER') return n === pick ? 36 : 0;
+  if (n === 0) return 0;
+  return ({ RED: REDS.has(n), BLACK: !REDS.has(n), ODD: n % 2 === 1, EVEN: n % 2 === 0, '1-18': n <= 18, '19-36': n >= 19 })[bet] ? 2 : 0;
+}
+const FORTUNA = [0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 5, 0, 1, 0, 1];
+
+function casinoPress(k) {
+  if (!C) return;
+  const back = k === 'b' || k === 'start', go = k === 'a' || k === 'door' || k === 'up' && false;
+  if (C.screen === 'menu') {
+    if (k === 'up') { C.sel = (C.sel + GAMES.length - 1) % GAMES.length; sfx('count'); }
+    else if (k === 'down') { C.sel = (C.sel + 1) % GAMES.length; sfx('count'); }
+    else if (k === 'left' || k === 'right') stepBet(k === 'left' ? -1 : 1);
+    else if (back) leaveCasino();
+    else if (k === 'a' || k === 'door' || k === 'fire') { const id = GAMES[C.sel].id; Object.assign(C, { screen: id, phase: 'bet', msg: '' }); if (id === 'roulette') Object.assign(C, { rb: 0, num: 17, angle: 0 }); if (id === 'wheel') C.angle = 0; sfx('pickup'); }
+    return;
+  }
+  if (back && !C.busy) {   // walking away never throws money away
+    if (C.screen === 'highlow' && C.phase === 'guess') win(C.pot, 'CASHED OUT');
+    if (C.screen === 'blackjack' && C.phase === 'play') { blackjackEnd(); return; }
+    C.screen = 'menu'; C.msg = ''; sfx('count'); return; }
+  const game = C.screen;
+  if (game === 'slots') {
+    if (k === 'left' || k === 'right') { if (!C.busy) stepBet(k === 'left' ? -1 : 1); }
+    else if ((k === 'a' || k === 'door' || k === 'fire') && !C.busy && canBet()) { C.result = [spinSymbol(), spinSymbol(), spinSymbol()]; C.busy = 1; C.t = 0; C.msg = ''; sfx('skid'); }
+  } else if (game === 'blackjack') {
+    if (C.phase === 'bet' || C.phase === 'done') {
+      if (k === 'left' || k === 'right') stepBet(k === 'left' ? -1 : 1);
+      else if ((k === 'a' || k === 'door') && canBet()) {
+        C.you = [drawCard(), drawCard()]; C.dealer = [drawCard(), drawCard()]; C.phase = 'play'; C.stake = C.bet; C.msg = 'GAS HIT  FIRE STAND  DOOR DOUBLE'; sfx('count');
+        if (handVal(C.you) === 21) blackjackEnd();
+      }
+    } else if (C.phase === 'play') {
+      if (k === 'a') { C.you.push(drawCard()); sfx('count'); if (handVal(C.you) > 21) blackjackEnd(); else if (handVal(C.you) === 21) blackjackEnd(); }
+      else if (k === 'fire') blackjackEnd();
+      else if (k === 'door' && C.you.length === 2 && S.cash >= C.stake) { S.cash -= C.stake; S.gambled += C.stake; C.stake *= 2; C.you.push(drawCard()); blackjackEnd(); }
+    }
+  } else if (game === 'roulette') {
+    if (C.busy) return;
+    if (k === 'left' || k === 'right') { C.rb = (C.rb + (k === 'left' ? ROUL_BETS.length - 1 : 1)) % ROUL_BETS.length; sfx('count'); }
+    else if ((k === 'up' || k === 'down') && ROUL_BETS[C.rb] === 'NUMBER') { C.num = (C.num + (k === 'up' ? 1 : 36)) % 37; sfx('count'); }
+    else if (k === 'up' || k === 'down') stepBet(k === 'up' ? 1 : -1);
+    else if ((k === 'a' || k === 'door' || k === 'fire') && canBet()) { C.result = (Math.random() * 37) | 0; C.busy = 1; C.t = 0; C.msg = ''; C.spin0 = C.angle; sfx('skid'); }
+  } else if (game === 'highlow') {
+    if (C.phase === 'bet' || C.phase === 'done') {
+      if (k === 'left' || k === 'right') stepBet(k === 'left' ? -1 : 1);
+      else if ((k === 'a' || k === 'door') && canBet()) { C.card = drawCard(); C.pot = C.bet; C.streak = 0; C.phase = 'guess'; C.msg = 'UP HIGHER  DOWN LOWER  FIRE CASH OUT'; C.next = null; sfx('count'); }
+    } else if (C.phase === 'guess') {
+      if (k === 'up' || k === 'down') {
+        const n = drawCard(), a = C.card.r, b = n.r; C.next = n;
+        if (a === b) { C.msg = 'SAME CARD. PUSH'; C.card = n; sfx('count'); }
+        else if ((k === 'up') === (b > a)) { C.pot *= 2; C.streak++; C.card = n; C.msg = 'YES! POT $' + C.pot; sfx('pickup'); if (C.streak >= 6) { win(C.pot, 'SIX IN A ROW!'); C.phase = 'done'; } }
+        else { C.msg = 'NOPE. POT GONE'; C.card = n; C.phase = 'done'; sfx('late'); }
+      } else if (k === 'fire' || k === 'a') { win(C.pot, 'CASHED OUT'); C.phase = 'done'; }
+    }
+  } else if (game === 'wheel') {
+    if (C.busy) return;
+    if (k === 'left' || k === 'right') stepBet(k === 'left' ? -1 : 1);
+    else if ((k === 'a' || k === 'door' || k === 'fire') && canBet()) { C.result = (Math.random() * FORTUNA.length) | 0; C.busy = 1; C.t = 0; C.msg = ''; C.spin0 = C.angle; sfx('skid'); }
+  } else if (game === 'scratch') {
+    if (C.phase === 'bet' || C.phase === 'done') {
+      if (k === 'left' || k === 'right') stepBet(k === 'left' ? -1 : 1);
+      else if ((k === 'a' || k === 'door') && canBet()) { C.boxes = scratchTicket(); C.shown = 0; C.phase = 'scratch'; C.msg = 'GAS TO SCRATCH'; sfx('count'); }
+    } else if (C.phase === 'scratch' && (k === 'a' || k === 'door' || k === 'fire')) {
+      C.shown++; sfx('skid');
+      if (C.shown >= 6) { const m = C.boxes.find(v => C.boxes.filter(q => q === v).length >= 3); C.phase = 'done'; if (m) win(C.bet * m, 'MATCHED ' + m + 'X'); else win(0, 'NO MATCH'); }
+    }
+  }
+}
+function scratchTicket() {
+  const prizes = [1, 2, 5, 10, 50], out = [];
+  if (Math.random() < .33) { const m = Math.random() < .55 ? 1 : Math.random() < .7 ? 2 : Math.random() < .75 ? 5 : Math.random() < .85 ? 10 : 50; out.push(m, m, m); }
+  while (out.length < 6) { const v = pick(prizes); if (out.filter(q => q === v).length < 2) out.push(v); }
+  for (let i = out.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+function blackjackEnd() {
+  const you = handVal(C.you);
+  if (you <= 21) while (handVal(C.dealer) < 17) C.dealer.push(drawCard());
+  const d = handVal(C.dealer), natural = you === 21 && C.you.length === 2;
+  C.phase = 'done';
+  if (you > 21) win(0, 'BUST');
+  else if (natural && !(d === 21 && C.dealer.length === 2)) win(Math.floor(C.stake * 2.5), 'BLACKJACK!');
+  else if (d > 21 || you > d) win(C.stake * 2, 'YOU WIN');
+  else if (you === d) win(C.stake, 'PUSH');
+  else win(0, 'DEALER WINS');
+}
+function updateCasino() {
+  if (!C) return;
+  C.t++; if (C.jackpot) C.jackpot--;
+  // the stick works like a d-pad here
+  let dir = null;
+  if (stick.mag > .55) dir = Math.abs(stick.x) > Math.abs(stick.y) ? (stick.x > 0 ? 'right' : 'left') : (stick.y > 0 ? 'down' : 'up');
+  if (dir && dir !== C.held) { casinoPress(dir); C.holdT = 0; } else if (dir && ++C.holdT > 18) { casinoPress(dir); C.holdT = 10; }
+  C.held = dir;
+  if (C.screen === 'slots' && C.busy) {
+    if (C.t % 4 === 0) sfx('count');
+    if (C.t > 90) {
+      C.busy = 0; const [a, b, c] = C.result, n = SYMBOLS;
+      if (a === b && b === c) win(C.bet * (n[a] === '7' ? 50 : n[a] === 'CHERRY' ? 15 : 10), n[a] === '7' ? 'JACKPOT!' : 'THREE ' + n[a] + 'S');
+      else if ([a, b, c].filter(q => n[q] === '7').length === 2) win(C.bet * 5, 'TWO SEVENS');
+      else if (a === b || b === c || a === c) win(C.bet * 2, 'A PAIR');
+      else if ([a, b, c].some(q => n[q] === 'CHERRY')) win(C.bet, 'CHERRY. MONEY BACK');
+      else win(0, 'NOTHING');
+    }
+  }
+  if (C.screen === 'roulette' && C.busy) {
+    const D = 160, f = Math.min(1, C.t / D), ease = 1 - Math.pow(1 - f, 3), slot = WHEEL_ORDER.indexOf(C.result);
+    const target = Math.PI * 2 * 5 + (-slot / 37) * Math.PI * 2 - (C.spin0 % (Math.PI * 2));
+    C.angle = C.spin0 + target * ease;
+    if (C.t % 6 === 0 && f < .9) sfx('count');
+    if (C.t >= D) { C.busy = 0; const pay = rouletteWins(ROUL_BETS[C.rb], C.result, C.num) * C.bet; win(pay, (C.result === 0 ? 'GREEN ' : REDS.has(C.result) ? 'RED ' : 'BLACK ') + C.result); }
+  }
+  if (C.screen === 'wheel' && C.busy) {
+    const D = 170, f = Math.min(1, C.t / D), ease = 1 - Math.pow(1 - f, 3), seg = Math.PI * 2 / FORTUNA.length;
+    const target = Math.PI * 2 * 4 + (-C.result * seg) - (C.spin0 % (Math.PI * 2));
+    C.angle = C.spin0 + target * ease;
+    if (C.t % 5 === 0 && f < .92) sfx('count');
+    if (C.t >= D) { C.busy = 0; const m = FORTUNA[C.result]; win(C.bet * m, m ? m + 'X!' : 'ZERO. OUCH'); }
+  }
+}
+function drawCasino() {
+  ctx = g;
+  // carpet
+  for (let y = 0; y < SH; y += 8) for (let x = 0; x < SW; x += 8) px(x, y, 8, 8, ((x + y) >> 3) & 1 ? '#3a0f2a' : '#4a1436');
+  for (let y = 4; y < SH; y += 16) for (let x = 4; x < SW; x += 16) { px(x, y, 2, 2, P.sun); px(x + 8, y + 8, 2, 2, P.teal); }
+  px(0, 0, SW, 24, P.ink); px(0, 24, SW, 2, P.sun);
+  ctext('LUCKY CASSETTE CASINO', 4, C.jackpot && blink(2) ? P.pink : P.sun, 2);
+  text('$' + S.cash, 6, 30, P.cream, 2); const bl = 'BET $' + C.bet; text(bl, SW - 6 - tw(bl, 2), 30, P.teal, 2);
+  const foot = (s) => { px(0, SH - 14, SW, 14, P.ink); ctext(s, SH - 10, P.blush); };
+  if (C.msg) { const w = tw(C.msg, 2) + 16; px((SW - w) / 2, 176, w, 20, P.ink); px((SW - w) / 2, 176, w, 2, P.pink); ctext(C.msg, 180, P.cream, C.msg.length > 24 ? 1 : 2); }
+  if (C.screen === 'menu') {
+    GAMES.forEach((gm, i) => { const y = 52 + i * 19, on = i === C.sel; px(60, y, 216, 16, on ? P.pink : 'rgba(26,7,38,.75)'); text(gm.name, 70, y + 4, on ? P.ink : P.cream); if (on) text('>', 62, y + 4, P.ink); });
+    ctext(GAMES[C.sel].blurb, 168, P.sun);
+    foot('STICK PICKS  LEFT/RIGHT BET  GAS PLAY  DRIFT LEAVE'); return;
+  }
+  const felt = (x, y, w, h) => { px(x, y, w, h, '#1f6a3a'); px(x, y, w, 2, '#c9a24a'); px(x, y + h - 2, w, 2, '#c9a24a'); for (let i = x + 4; i < x + w; i += 12) px(i, y + 6, 1, 1, '#2a7a46'); };
+  if (C.screen === 'slots') {
+    px(84, 54, 168, 92, '#c9a24a'); px(88, 58, 160, 84, P.ink); ctext('PALM CITY SLOTS', 62, P.pink);
+    for (let r = 0; r < 3; r++) {
+      const x = 98 + r * 48, y = 80; px(x, y, 44, 44, '#fffaf2'); px(x, y, 44, 2, '#ffffff');
+      const stopped = !C.busy || C.t > 40 + r * 20, sym = !C.result ? r * 2 : stopped ? C.result[r] : (C.t + r * 3) % SYMBOLS.length;
+      drawSymbol(sym, x + 11, y + 11 + (stopped ? 0 : (C.t * 3 % 8) - 4));
+    }
+    foot('LEFT/RIGHT BET  GAS SPIN  DRIFT BACK');
+  } else if (C.screen === 'blackjack') {
+    felt(24, 50, 288, 118); text('DEALER', 34, 56, P.cream);
+    if (C.dealer) { C.dealer.forEach((c, i) => drawCardAt(c, 34 + i * 26, 66, C.phase === 'play' && i === 1)); if (C.phase !== 'play') text(String(handVal(C.dealer)), 34 + C.dealer.length * 26 + 4, 76, P.sun); }
+    text('YOU', 34, 108, P.cream);
+    if (C.you) { C.you.forEach((c, i) => drawCardAt(c, 34 + i * 26, 118, false)); text(String(handVal(C.you)), 34 + C.you.length * 26 + 4, 128, P.sun); }
+    foot(C.phase === 'play' ? 'GAS HIT  FIRE STAND  DOOR DOUBLE' : 'LEFT/RIGHT BET  GAS DEAL  DRIFT BACK');
+  } else if (C.screen === 'roulette') {
+    felt(16, 48, 304, 122);
+    const cx = 92, cy = 108, R = 52;
+    for (let i = 0; i < 37; i++) { const n = WHEEL_ORDER[i], a = C.angle + i / 37 * Math.PI * 2 - Math.PI / 2, col = n === 0 ? '#2fae4f' : REDS.has(n) ? P.red : P.ink;
+      for (let r = R - 12; r < R; r += 2) px(cx + Math.cos(a) * r - 2, cy + Math.sin(a) * r - 2, 4, 4, col); }
+    ctx.fillStyle = '#7a4a32'; ctx.beginPath(); ctx.arc(cx, cy, R - 14, 0, Math.PI * 2); ctx.fill(); px(cx - 3, cy - 3, 6, 6, P.sun);
+    px(cx - 2, cy - R - 6, 5, 6, '#ffffff');   // the ball sits at the top when the wheel stops
+    const label = ROUL_BETS[C.rb] === 'NUMBER' ? 'NUMBER ' + C.num : ROUL_BETS[C.rb];
+    text('YOUR BET', 172, 66, P.cream); px(172, 78, 130, 22, P.ink); text('< ' + label + ' >', 178, 85, P.sun);
+    text(ROUL_BETS[C.rb] === 'NUMBER' ? 'PAYS 36X. UP/DOWN NUMBER' : 'PAYS 2X. UP/DOWN BET', 172, 108, P.blush);
+    if (!C.busy && C.result !== undefined) { const n = C.result; px(172, 124, 40, 30, n === 0 ? '#2fae4f' : REDS.has(n) ? P.red : P.ink); text(String(n), 180, 132, '#ffffff', 2); }
+    foot('LEFT/RIGHT PICK  GAS SPIN  DRIFT BACK');
+  } else if (C.screen === 'highlow') {
+    felt(40, 50, 256, 118);
+    if (C.card) drawCardAt(C.card, 156, 80, false);
+    if (C.phase === 'guess') { text('POT $' + C.pot, 70, 90, P.sun, 2); text('STREAK ' + C.streak + '/6', 70, 112, P.cream); text('HIGHER?', 196, 84, P.teal); text('LOWER?', 196, 112, P.pink); }
+    foot(C.phase === 'guess' ? 'UP HIGHER  DOWN LOWER  FIRE CASH OUT' : 'LEFT/RIGHT BET  GAS DEAL  DRIFT BACK');
+  } else if (C.screen === 'wheel') {
+    const cx = SW / 2, cy = 112, R = 58, n = FORTUNA.length, cols = [P.pink, P.teal, P.sun, P.violet];
+    for (let i = 0; i < n; i++) { const a0 = C.angle + i / n * Math.PI * 2 - Math.PI / 2 - Math.PI / n; ctx.fillStyle = FORTUNA[i] === 0 ? '#2a2430' : cols[i % 4]; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, a0, a0 + Math.PI * 2 / n); ctx.closePath(); ctx.fill();
+      const am = a0 + Math.PI / n, lbl = FORTUNA[i] + 'X'; text(lbl, cx + Math.cos(am) * (R - 16) - tw(lbl) / 2, cy + Math.sin(am) * (R - 16) - 3, FORTUNA[i] === 0 ? P.blush : P.ink); }
+    px(cx - 4, cy - 4, 8, 8, P.cream); px(cx - 3, cy - R - 8, 7, 10, '#ffffff'); px(cx - 1, cy - R + 2, 3, 3, '#ffffff');
+    foot('LEFT/RIGHT BET  GAS SPIN  DRIFT BACK');
+  } else if (C.screen === 'scratch') {
+    px(78, 50, 180, 118, '#fff1a8'); px(78, 50, 180, 3, P.pink); ctext('RAD SCRATCH', 58, P.pink, 2); ctext('MATCH 3. WIN THAT X YOUR BET', 76, P.ink);
+    for (let i = 0; i < 6; i++) { const x = 92 + (i % 3) * 52, y = 92 + ((i / 3) | 0) * 34; px(x, y, 46, 28, P.cream);
+      if (!C.boxes || i >= C.shown) { px(x, y, 46, 28, '#b9b2c2'); for (let k = 0; k < 6; k++) px(x + 3 + k * 7, y + 4 + (k % 2) * 10, 5, 2, '#d8d2de'); }
+      else { const l = C.boxes[i] + 'X'; text(l, x + 23 - tw(l, 2) / 2, y + 7, P.violet, 2); } }
+    foot(C.phase === 'scratch' ? 'GAS SCRATCH' : 'LEFT/RIGHT PRICE  GAS BUY A TICKET  DRIFT BACK');
+  }
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1169,6 +1417,7 @@ function press(k, down) {
   if (!down) return;
   audioInit();
   if (k === 'select') { toggleMusic(); return; }
+  if (mode === 'casino') { casinoPress(k); return; }
   if (mode === 'title') { if (k === 'start' || k === 'a' || k === 'up' || k === 'door') startGame(); return; }
   if (k === 'start') { mode = mode === 'paused' || mode === 'map' ? 'play' : 'paused'; sfx('pickup'); return; }
   if (k === 'map') { if (mode === 'play' || mode === 'map') { mode = mode === 'map' ? 'play' : 'map'; sfx('pickup'); } return; }
@@ -1213,7 +1462,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 })();
 
 /* ================= loop ================= */
-buildIsland();
+buildIsland(); findCasinoDoor();
 let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
@@ -1223,4 +1472,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
