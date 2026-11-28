@@ -614,6 +614,7 @@ function updateMaids() {
 /* ================= update ================= */
 function update() {
   frame++;
+  if (mode === 'title') stickNav(TITLE, titlePress);
   if (S && mode === 'play') S.clock = (S.clock || 0) + 1;
   if (mode === 'casino') { updateCasino(); return; }
   if (mode !== 'play') return;
@@ -845,10 +846,10 @@ function drawTitle() {
   for (const [x, h] of [[30, 70], [300, 78]]) { for (let y = 0; y < h; y++) px(x + Math.sin(y / 16) * 4, H - y, 4, 1, P.ink); const tx = x + Math.sin(h / 16) * 4, ty = H - h; for (const [dx, dy, l] of [[-1, 0, 20], [1, 0, 20], [-1, 1, 14], [1, 1, 14], [-1, -1, 10], [1, -1, 10]]) for (let i = 0; i < l; i++) px(tx + dx * i, ty + dy * i * .5 + (i * i) / 40, 4, 3, P.ink); }
   ctext('PALM CITY', 108, P.pink, 4, P.ink);
   ctext('8', 142, P.teal, 5, P.ink);
-  if (blink(5)) ctext('PRESS PAUSE OR GAS', 186, P.cream, 2, P.ink);
   px(0, 204, SW, 20, P.ink); ctext('AN 8-BIT ISLAND JOYRIDE', 210, P.blush);
   const sv = loadSave(); if (sv) text('SAVED $' + sv.cash + '  TAPES ' + (sv.tapes || []).length + '/24', 6, 6, P.cream); else if (best) text('BEST $' + best, 6, 6, P.cream);
   const ml = musicOn ? radioName() : 'RADIO OFF'; text(ml, SW - 6 - tw(ml), 6, musicOn ? P.teal : P.blush);
+  drawTitleMenu();
 }
 
 /* ================= people ================= */
@@ -1635,6 +1636,51 @@ function drawPauseMenu() {
   keysHelp.forEach(([k, v], i) => { text(k, R, top + 16 + i * 12, P.pink); text(v, R + 136 - tw(v), top + 16 + i * 12, P.cream); });
   if (blink(5)) ctext('PAUSE TO GO ON', SH - 16, P.blush);
 }
+
+/* ================= 5. title menu ================= */
+const TITLE = { sel: 0, howto: false, erase: 0, held: null, holdT: 0 };
+const titleItems = () => loadSave() ? ['CONTINUE', 'NEW GAME', 'HOW TO PLAY'] : ['START', 'HOW TO PLAY'];
+const HOWTO = [
+  'STICK: POINT WHERE YOU WANT TO GO.',
+  'PUSH IT FURTHER TO GO FASTER. PULL BACK TO BRAKE.',
+  'HOLD DRIFT IN A TURN. LET GO FOR A BOOST.',
+  'PINK PIN: DELIVERY. TEAL: TAXI. GOLD: RACE.',
+  'DOOR: GET IN, GET OUT, OR TAKE ANY CAR.',
+  'FIRE SHOOTS. COPS NOTICE.',
+  'PAINT N SPRAY MAKES THEM FORGET.',
+  'THE CASINO IS ON THE STRIP.',
+  '24 TAPES ARE HIDDEN. 6 AND 14 UNLOCK STATIONS.',
+  'STREAMERDUDE IS LIVE AT STREAM HOUSE.'
+];
+function titlePress(k) {
+  const items = titleItems();
+  if (TITLE.howto) { if (['b', 'a', 'door', 'start', 'fire'].includes(k)) { TITLE.howto = false; sfx('count'); } return; }
+  if (k === 'up' || k === 'left') { TITLE.sel = (TITLE.sel + items.length - 1) % items.length; TITLE.erase = 0; sfx('count'); return; }
+  if (k === 'down' || k === 'right') { TITLE.sel = (TITLE.sel + 1) % items.length; TITLE.erase = 0; sfx('count'); return; }
+  if (!['a', 'door', 'start', 'fire'].includes(k)) return;
+  const it = items[TITLE.sel] || items[0];
+  if (it === 'HOW TO PLAY') { TITLE.howto = true; sfx('pickup'); }
+  else if (it === 'NEW GAME') { if (TITLE.erase) { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} TITLE.erase = 0; TITLE.sel = 0; startGame(); } else { TITLE.erase = 1; sfx('late'); } }
+  else startGame();
+}
+// the stick works like a d-pad on menus
+function stickNav(state, onPress) {
+  let dir = null;
+  if (stick.mag > .55) dir = Math.abs(stick.x) > Math.abs(stick.y) ? (stick.x > 0 ? 'right' : 'left') : (stick.y > 0 ? 'down' : 'up');
+  if (dir && dir !== state.held) { onPress(dir); state.holdT = 0; } else if (dir && ++state.holdT > 18) { onPress(dir); state.holdT = 10; }
+  state.held = dir;
+}
+function drawTitleMenu() {
+  const items = titleItems();
+  if (TITLE.howto) {
+    px(0, 0, SW, SH, 'rgba(20,6,30,.94)'); ctext('HOW TO PLAY', 10, P.pink, 2);
+    HOWTO.forEach((l, i) => text(l, 10, 36 + i * 17, i % 2 ? P.cream : P.sun));
+    if (blink(5)) ctext('PRESS GAS TO GO BACK', SH - 14, P.blush); return;
+  }
+  const y = 184, w = items.map(s => tw(s) + 16), total = w.reduce((a, b) => a + b, 0) + (items.length - 1) * 8; let x = (SW - total) / 2;
+  items.forEach((s, i) => { const on = i === TITLE.sel; px(x, y - 4, w[i], 15, on ? P.pink : 'rgba(26,7,38,.8)'); text(s, x + 8, y, on ? P.ink : P.cream); x += w[i] + 8; });
+  if (TITLE.erase) ctext('PRESS AGAIN TO ERASE YOUR SAVE', 172, P.red); else if (blink(5)) ctext('STICK PICKS  GAS GOES', 172, P.cream);
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1788,7 +1834,7 @@ function press(k, down) {
     try { if (fs) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (d.requestFullscreen || d.webkitRequestFullscreen).call(d); } catch (e) {} return; }
   if (k === 'select') { toggleMusic(); return; }
   if (mode === 'casino') { casinoPress(k); return; }
-  if (mode === 'title') { if (k === 'start' || k === 'a' || k === 'up' || k === 'door') startGame(); return; }
+  if (mode === 'title') { titlePress(k); return; }
   if (k === 'start') { mode = mode === 'paused' || mode === 'map' ? 'play' : 'paused'; sfx('pickup'); return; }
   if (k === 'map') { if (mode === 'play' || mode === 'map') { mode = mode === 'map' ? 'play' : 'map'; sfx('pickup'); } return; }
   if (k === 'door' && mode === 'play') door();
@@ -1804,7 +1850,7 @@ document.querySelectorAll('[data-k]').forEach(b => {
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
 });
 for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, () => { audioInit(); }, { capture: true, passive: true });
-cv.addEventListener('pointerdown', () => { if (mode === 'title') startGame(); });
+cv.addEventListener('pointerdown', () => { if (mode === 'title') titlePress('a'); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') mode = 'paused'; });
 // the stick: its base jumps to wherever your thumb lands in the left half, then the knob follows the thumb
 (() => {
@@ -1818,7 +1864,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
     const m = Math.min(1, d / lim); stick.x = dx / (lim || 1); stick.y = dy / (lim || 1); stick.mag = m;
   };
   zone.addEventListener('pointerdown', e => {
-    e.preventDefault(); audioInit(); if (mode === 'title') { startGame(); return; }
+    e.preventDefault(); audioInit();
     id = e.pointerId; zone.setPointerCapture(id); zone.classList.add('on');
     const { z, r } = place(); if (!home) home = { left: base.style.left, top: base.style.top };
     cx = e.clientX; cy = e.clientY;
