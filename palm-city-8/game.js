@@ -363,8 +363,8 @@ function newGame() {
     job: null, say: null, markers: {}, cam: { x: START.x, y: START.y }, tapes: [],
     onFoot: false, fa: 0, step: 0, knock: 0, kvx: 0, kvy: 0, hp: 100, carHp: 100, rideLook: -1, parked: [], runners: [], bullets: [], cops: [], weapon: 'PISTOL', ammo: 0, fireCool: 0, hurtT: 0, down: null, downT: 0, maidCool: 0 };
   placePickups();
-  S.peds = []; S.combo = { n: 0, t: 0 }; S.lastShot = null;
-  const saved = loadSave(); if (saved) { S.cash = saved.cash || 0; S.tapes = saved.tapes || []; S.stunts = saved.stunts || []; }
+  S.peds = []; S.combo = { n: 0, t: 0 }; S.lastShot = null; S.boss = null; S.goons = []; S.hitTargets = bossHit;
+  const saved = loadSave(); if (saved) { S.cash = saved.cash || 0; S.tapes = saved.tapes || []; S.stunts = saved.stunts || []; S.bossBeaten = saved.bossBeaten || 0; }
   for (let i = 0; i < 34; i++) S.traffic.push(spawnTraffic());
   for (const k of JOB_KINDS) placeMarker(k);
 }
@@ -629,7 +629,7 @@ function update() {
   S.runners = S.runners.filter(r => r.t > 0);
   for (const c of S.parked) if (c.wreck) { c.wreck--; if (frame % 6 === 0) puff(c.x, c.y, 1, '#3a3440', 1, 40, 4, .5); }
   S.parked = S.parked.filter(c => !(c.wreck === 0));
-  updateBullets(); updateCops(); updatePickups(); updatePeds(); updateProps(); updateTapes();
+  updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
@@ -732,7 +732,7 @@ function draw() {
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
-  drawPickups(); drawProps(); drawTapes();
+  drawPickups(); drawProps(); drawTapes(); drawBossPin();
   if (casinoDoor) { const x = casinoDoor.x - camX, y = casinoDoor.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 8, y - 12, 16, 14, '#b3123a'); px(x - 8, y - 12, 16, 1, P.sun); px(x - 8, y + 1, 16, 1, P.sun);
     if (Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 60) { const l = S.onFoot ? 'DOOR: GO IN' : 'GET OUT TO GO IN'; px(x - tw(l) / 2 - 3, y + 8, tw(l) + 6, 10, P.ink); text(l, x - tw(l) / 2, y + 10, blink(4) ? P.sun : P.cream); } } }
   for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
@@ -740,12 +740,12 @@ function draw() {
   for (const c of S.cops) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) { drawSprite(c.dead ? WRECK() : COP_CAR(), x, y, c.a); if (!c.dead) { px(x - 2, y - 2, 2, 3, blink(2) ? P.red : '#3a7aff'); px(x, y - 2, 2, 3, blink(2) ? '#3a7aff' : P.red); } } }
   for (const r of S.runners) drawPerson(personSprites('runner' + r.look, SHIRTS[r.look], '#3a3a44', SKINS[r.look % 4], HAIRS[r.look % 6]), r.x - camX, r.y - camY, r.a, r.step);
   for (const m of S.maids) { const x = m.x - camX, y = m.y - camY; drawSprite(SCOOTER(), x, y, m.a); px(x - 2, y - 2, 4, 4, blink(3) ? P.red : '#3a7aff'); }
-  drawPeds(); drawAerobics();
+  drawPeds(); drawAerobics(); drawBoss();
   const carX = S.x - camX, carY = S.y - camY;
   if (S.sink) { const r = 8 + (50 - S.sink) / 3; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; px(carX + Math.cos(a) * r, carY + Math.sin(a) * r * .6, 2, 1, P.foam); } if (S.sink > 25) drawSprite(PLAYER_CAR(), carX, carY, S.a, 0, (S.sink - 25) / 25); }
   else if (S.onFoot) { if (!S.down || blink(2)) drawPerson(PLAYER_FOOT(), carX, carY, S.fa, S.step, S.down === 'wasted'); }
   else if (!S.air) drawSprite(rideSprite(), carX, carY, S.a, 0);
-  for (const b of S.bullets) { const x = b.x - camX, y = b.y - camY; if (b.laser) { px(x - b.vx * .6, y - b.vy * .6, 3, 3, P.teal); px(x - 1, y - 1, 3, 3, '#ffffff'); } else { px(x - b.vx * .3, y - b.vy * .3, 1, 1, P.sun); px(x - 1, y - 1, 2, 2, b.mine ? '#fff6c8' : P.red); } }
+  for (const b of S.bullets) { const x = b.x - camX, y = b.y - camY; if (b.word) { text(b.word, x - tw(b.word) / 2 + 1, y - 2, P.ink); text(b.word, x - tw(b.word) / 2, y - 3, blink(2) ? '#3aff7a' : '#ffffff'); } else if (b.phone) { px(x - 2, y - 3, 5, 7, '#141018'); px(x - 1, y - 2, 3, 4, P.teal); } else if (b.laser) { px(x - b.vx * .6, y - b.vy * .6, 3, 3, P.teal); px(x - 1, y - 1, 3, 3, '#ffffff'); } else { px(x - b.vx * .3, y - b.vy * .3, 1, 1, P.sun); px(x - 1, y - 1, 2, 2, b.mine ? '#fff6c8' : P.red); } }
   for (const q of S.parts) px(q.x - camX - q.size / 2, q.y - camY - q.size / 2, q.size, q.size, q.col);
   // tall things, farthest from the middle first, so nearer ones cover them
   const tall = [];
@@ -780,7 +780,7 @@ function drawHUD() {
   text('HEAT', SW - 6 - 5 * 10 - 26, 6, P.blush);
   for (let i = 0; i < 5; i++) { const on = i < S.heat, x = SW - 6 - 5 * 10 + i * 10; px(x, 4, 8, 8, on ? (blink(3) ? P.red : '#3a7aff') : P.purp); }
   if (S.streak > 1) text('STREAK X' + S.streak, 6, 26, P.sun);
-  if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
+  if (S.boss) drawBossBar(); else if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 158, w, 24, P.ink); px(x, 158, w, 2, P.pink); px(x, 180, w, 2, P.teal); ctext(S.flash, 163, P.cream, 2); }
@@ -808,6 +808,7 @@ function drawRadar() {
   else for (const k of JOB_KINDS) if (S.markers[k]) dot(S.markers[k].x, S.markers[k].y, JOB_COLOUR[k], 4);
   if (casinoDoor) dot(casinoDoor.x, casinoDoor.y, '#ffffff', 2, false);
   for (const a of AEROBICS) dot(a.x, a.y, P.pink, 2, false);
+  if (STREAM) dot(STREAM.gate.x, STREAM.gate.y, blink(3) ? P.red : '#ffffff', 3, false);
   TAPES.forEach((t, i) => { if (!S.tapes.includes(i) && Math.hypot(t.x - S.x, t.y - S.y) < 220 && blink(3)) dot(t.x, t.y, P.violet, 2, false); });
   for (const m of S.maids) dot(m.x, m.y, blink(2) ? P.red : '#3a7aff', 2, false);
   px(rx + RW / 2 - 1, ry + RH / 2 - 1, 3, 3, '#ffffff'); px(rx + RW / 2 + Math.round(Math.cos(S.a) * 3), ry + RH / 2 + Math.round(Math.sin(S.a) * 3), 1, 1, '#ffffff');
@@ -1023,7 +1024,7 @@ function goDown(why) {
   if (S.job) { S.job = null; for (const k of JOB_KINDS) if (!S.markers[k]) placeMarker(k); }
 }
 function getUp() {
-  S.down = null; S.heat = 0; S.maids = []; S.cops = []; S.bullets = []; S.hp = 100; S.carHp = 100; S.shotsSeen = false;
+  S.down = null; S.boss = null; S.goons = []; S.heat = 0; S.maids = []; S.cops = []; S.bullets = []; S.hp = 100; S.carHp = 100; S.shotsSeen = false;
   S.onFoot = false; S.rideLook = -1; S.x = START.x; S.y = START.y; S.a = -Math.PI / 2; S.cam.x = S.x; S.cam.y = S.y; S.weapon = 'PISTOL'; S.ammo = 0;
 }
 function drawPickups() {
@@ -1444,9 +1445,123 @@ function drawProps() {
 
 /* ================= saving ================= */
 const SAVE_KEY = 'palmcity8.save';
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cash: S.cash, tapes: S.tapes, stunts: S.stunts })); } catch (e) {} }
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cash: S.cash, tapes: S.tapes, stunts: S.stunts, bossBeaten: S.bossBeaten || 0 })); } catch (e) {} }
 function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || null; } catch (e) { return null; } }
 function buildExtras() { placeAerobics(); placeTapes(); placeProps(); }
+
+/* ================= boss: TIKTOK STREAMERDUDE at Stream House ================= */
+// a made-up streamer: lime tracksuit, backwards pink cap, big shades, phone on a selfie stick
+let STREAM = null;
+function setupStreamHouse() {
+  const z = ZONES.find(q => q.kind === 'mansion'), r = zoneRect(z), cx = Math.round((r.x0 + r.x1) / 2);
+  STREAM = { gate: { x: (cx + 4) * T + 8, y: r.y1 * T + 8 }, arena: { x0: (r.x0 + 1) * T, y0: (r.y0 + 1) * T, x1: r.x1 * T, y1: (r.y1 - 1) * T } };
+}
+function bossPicture(f) {
+  return makeSprite(16, 16, () => {
+    const l = [-2, 0, 2, 0][f];
+    px(6 + l, 2, 4, 3, '#2a2430'); px(6 - l, 11, 4, 3, '#2a2430');          // shoes
+    px(3, 2, 8, 12, '#3aff7a'); px(3, 2, 8, 1, '#a8ffc8'); px(3, 7, 8, 2, '#1fbf5a');   // tracksuit with stripe
+    px(6, 4, 6, 8, '#f2c9a0');                                              // head
+    px(4, 4, 4, 8, P.pink); px(3, 5, 2, 6, P.pink);                         // cap, backwards
+    px(10, 4, 2, 8, '#141018'); px(9, 5, 1, 2, '#141018'); px(9, 9, 1, 2, '#141018');   // shades
+    px(11, 12, 5, 1, '#c8c2cc'); px(14, 13, 2, 3, '#141018'); px(14, 13, 1, 1, P.teal);   // selfie stick and phone
+  });
+}
+const bossSprites = () => [0, 1, 2, 3].map(f => sprite('boss' + f, () => bossPicture(f)));
+const modSprites = () => personSprites('mod', P.violet, '#2a2430', '#d9a877', '#1a1a1a');
+const BOSS_LINES = ['YO CHAT, SMASH THAT LIKE BUTTON', 'THIS IS CONTENT', 'DO NOT FORGET TO SUBSCRIBE', 'MODS, GET THIS GUY', 'I AM NOT MAD. I AM LIVE', 'RING LIGHT, ACTIVATE', 'CHAT, IS THIS REAL?', 'CLIP THAT', 'WORLD RECORD STREAM, BABY'];
+const CHAT = ['RATIO', 'NPC', 'W', 'L', 'FIRST!', 'LOL', 'CAP', 'MID', 'POG', 'SUS', 'GG?'];
+// somewhere on the lawn that is not the house, a palm or the pool
+function lawnSpot() { const A = STREAM.arena; for (let k = 0; k < 300; k++) { const x = A.x0 + 16 + Math.random() * (A.x1 - A.x0 - 32), y = A.y0 + 16 + Math.random() * (A.y1 - A.y0 - 32); if (!blockedAt(x, y, 8) && !isWater(tileAtPx(x, y))) return { x, y }; } return { x: STREAM.gate.x, y: STREAM.gate.y - 40 }; }
+function startBoss() {
+  const A = STREAM.arena, at0 = lawnSpot();
+  S.boss = { x: at0.x, y: at0.y, a: Math.PI / 2, hp: 60, max: 60, t: 0, tx: 0, ty: 0, step: 0, cool: 0, dash: 0, viewers: 1200, called: false, flash: 0 };
+  S.goons = [];
+  say('STREAMERDUDE: YO CHAT! SOME RANDO IS AT THE HOUSE', 170); flash('BOSS: TIKTOK STREAMERDUDE', 120); sfx('go');
+}
+function bossShoot(x, y, a, kind) {
+  if (kind === 'phone') S.bullets.push({ x, y, vx: Math.cos(a) * 3.2, vy: Math.sin(a) * 3.2, life: 90, dmg: 5, phone: true });
+  else S.bullets.push({ x, y, vx: Math.cos(a) * 2.3, vy: Math.sin(a) * 2.3, life: 120, dmg: 3, word: pick(CHAT) });
+}
+function updateBoss() {
+  const B = S.boss;
+  if (!B) {
+    if (!S.down && !S.air && Math.hypot(STREAM.gate.x - S.x, STREAM.gate.y - S.y) < 22) startBoss();
+    return;
+  }
+  const A = STREAM.arena, d = Math.hypot(S.x - B.x, S.y - B.y);
+  if (d > 520) { S.boss = null; S.goons = []; flash('STREAM PAUSED', 80); return; }
+  B.t++; B.viewers += 3 + (B.max - B.hp) * .4; if (B.cool) B.cool--; if (B.flash) B.flash--;
+  const toYou = Math.atan2(S.y - B.y, S.x - B.x), phase = B.hp > B.max * .5 ? 1 : B.hp > B.max * .25 ? 2 : 3;
+  // move: wander the lawn, or dash at you in the last phase
+  if (B.dash > 0) { B.dash--; B.x += Math.cos(B.a) * 4.2; B.y += Math.sin(B.a) * 4.2; B.step += 2; if (frame % 2 === 0) puff(B.x, B.y, 2, '#ffffff', 1.5, 14, 2); }
+  else {
+    if (B.t % 90 === 1 || Math.hypot(B.tx - B.x, B.ty - B.y) < 6) { const q = lawnSpot(); B.tx = q.x; B.ty = q.y; }
+    const k = Math.atan2(B.ty - B.y, B.tx - B.x), sp = phase === 3 ? 1.8 : 1.3, nx = B.x + Math.cos(k) * sp, ny = B.y + Math.sin(k) * sp; B.a = k;
+    if (!blockedAt(nx, ny, 6)) { B.x = nx; B.y = ny; B.step++; } else { const q = lawnSpot(); B.tx = q.x; B.ty = q.y; }
+  }
+  B.x = clamp(B.x, A.x0 + 8, A.x1 - 8); B.y = clamp(B.y, A.y0 + 8, A.y1 - 8);
+  if (blockedAt(B.x, B.y, 4)) { const q = lawnSpot(); B.x = q.x; B.y = q.y; B.dash = 0; }
+  // attacks
+  if (B.t % (phase === 1 ? 80 : 64) === 0) { for (const s of [-.3, 0, .3]) bossShoot(B.x, B.y, toYou + s, 'phone'); sfx('laser'); }
+  if (B.t % 46 === 23) bossShoot(B.x, B.y, toYou + (Math.random() - .5) * .3, 'word');
+  if (B.t % 300 === 150) say('STREAMERDUDE: ' + pick(BOSS_LINES), 120);
+  if (phase >= 2 && !B.called) { B.called = true; say('STREAMERDUDE: MODS! MODS!', 120); for (let i = 0; i < 4; i++) S.goons.push({ x: B.x + Math.cos(i * 1.6) * 30, y: B.y + Math.sin(i * 1.6) * 30, a: 0, hp: 4, step: 0, cool: 40 + i * 20 }); }
+  if (phase === 3 && B.t % 220 === 0) { B.flash = 24; B.dash = 34; B.a = toYou; sfx('boost'); say('STREAMERDUDE: RING LIGHT, ACTIVATE', 90); }
+  // contact
+  if (d < (S.onFoot ? 12 : 20) && !B.cool && !S.down) {
+    B.cool = 40;
+    if (!S.onFoot && Math.hypot(S.v, S.side) > 1.8) { B.hp -= 4; B.viewers += 300; flash('RAMMED! -4', 40); sfx('crash'); B.x -= Math.cos(toYou) * 18; B.y -= Math.sin(toYou) * 18; hurt(3); }
+    else hurt(B.dash ? 18 : 8);
+  }
+  // mods
+  for (const m of S.goons) {
+    if (m.dead) continue;
+    const md = Math.hypot(S.x - m.x, S.y - m.y), ma = Math.atan2(S.y - m.y, S.x - m.x); m.a = ma;
+    const sp = md > 90 ? 1.1 : md < 60 ? -.8 : 0, nx = m.x + Math.cos(ma) * sp, ny = m.y + Math.sin(ma) * sp;
+    if (!walkBlocked(nx, ny)) { m.x = nx; m.y = ny; if (sp) m.step++; }
+    if (--m.cool <= 0) { m.cool = 80; S.bullets.push({ x: m.x, y: m.y, vx: Math.cos(ma) * 3.4, vy: Math.sin(ma) * 3.4, life: 70, dmg: 4 }); sfx('shot'); }
+  }
+  if (B.hp <= 0) bossDown();
+}
+function bossHit(b) {
+  const B = S.boss; if (!B) return;
+  if (Math.abs(B.x - b.x) < 9 && Math.abs(B.y - b.y) < 9) { B.hp -= b.dmg; B.viewers += 40; b.life = 0; puff(b.x, b.y, 4, '#3aff7a', 2, 12, 2); if (Math.random() < .08) say('STREAMERDUDE: ' + pick(['OW! CLIP THAT', 'CHAT, HE HIT ME', 'THAT IS A BAN']), 80); return; }
+  for (const m of S.goons) if (!m.dead && Math.abs(m.x - b.x) < 6 && Math.abs(m.y - b.y) < 6) { m.hp -= b.dmg; b.life = 0; if (m.hp <= 0) { m.dead = true; puff(m.x, m.y, 10, P.violet, 3, 20, 3); flash('MOD BANNED', 40); } return; }
+}
+function bossDown() {
+  const B = S.boss;
+  for (let i = 0; i < 4; i++) puff(B.x, B.y, 20, pick([P.pink, P.teal, P.sun, '#3aff7a', '#ffffff']), 5, 50, 3);
+  sfx('boom'); S.cash += 2500; S.bossBeaten = (S.bossBeaten || 0) + 1;
+  flash('STREAM ENDED. GG +$2500', 200); say('STREAMERDUDE: CHAT... I THINK I NEED TO TOUCH GRASS', 200);
+  S.boss = null; S.goons = []; save();
+}
+function drawBossPin() {
+  if (S.boss) return;
+  const x = STREAM.gate.x - camX, y = STREAM.gate.y - camY; if (x < -40 || y < -50 || x > SW + 40 || y > SH + 40) return;
+  drawPin(x, y, P.red, 'live');
+  px(x - 12, y - 46, 24, 10, P.red); text('LIVE', x - 11, y - 44, '#ffffff');
+}
+function drawBoss() {
+  const B = S.boss;
+  for (const m of S.goons) if (!m.dead) { const x = m.x - camX, y = m.y - camY; drawPerson(modSprites(), x, y, m.a, m.step); px(x - 7, y - 12, 14, 6, P.violet); text('MOD', x - 8, y - 12, '#ffffff'); }
+  if (!B) return;
+  const x = B.x - camX, y = B.y - camY;
+  // the ring light floats behind him
+  const rl = x - Math.cos(B.a) * 14, rt = y - Math.sin(B.a) * 14 - 10;
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; px(rl + Math.cos(a) * 7 - 1, rt + Math.sin(a) * 7 - 1, 3, 3, B.flash && blink(1) ? P.sun : '#ffffff'); }
+  const sp = bossSprites()[(B.step >> 3) & 3], i = headingIndex(B.a), pic = sp.look[i], w = Math.round(pic.width * 1.5);
+  g.drawImage(sp.shadow[i], Math.round(x - w / 2 + 2), Math.round(y - w / 2 + 3), w, w); g.drawImage(pic, Math.round(x - w / 2), Math.round(y - w / 2), w, w);
+  if (B.flash) { g.fillStyle = 'rgba(255,255,255,' + (B.flash / 40) + ')'; g.fillRect(0, 21, SW, SH - 21); }
+}
+function drawBossBar() {
+  const B = S.boss; if (!B) return;
+  px(40, 24, SW - 80, 20, P.ink); px(40, 24, SW - 80, 1, P.red);
+  text('TIKTOK STREAMERDUDE', 46, 27, '#3aff7a');
+  const v = B.viewers >= 1000 ? (B.viewers / 1000).toFixed(1) + 'K' : String(Math.round(B.viewers)), l = 'VIEWERS ' + v;
+  px(SW - 46 - tw(l) - 12, 27, 7, 7, blink(4) ? P.red : '#7a1020'); text(l, SW - 46 - tw(l), 27, P.cream);
+  px(46, 37, SW - 92, 4, '#3a2a48'); px(46, 37, Math.max(0, (SW - 92) * B.hp / B.max), 4, '#3aff7a');
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1642,7 +1757,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 })();
 
 /* ================= loop ================= */
-buildIsland(); findCasinoDoor(); buildExtras();
+buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse();
 let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
@@ -1652,4 +1767,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
