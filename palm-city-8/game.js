@@ -1584,7 +1584,12 @@ function headlight(x, y, a, len, k) {
 }
 function glow(x, y, r, rgb, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb + ',0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
 function drawNight() {
-  const n = nightLevel(); if (n <= 0) { LIT.length = 0; return; }
+  const n = nightLevel();
+  // cop lights flash day and night
+  g.globalCompositeOperation = 'lighter';
+  for (const c of S.cops) if (!c.dead && !c.parked) { const x = c.x - camX, y = c.y - camY; if (x > -40 && y > -40 && x < SW + 40 && y < SH + 40) glow(x, y, 16 + n * 12, blink(2) ? '255,40,80' : '60,120,255', .3 + .3 * n); }
+  g.globalCompositeOperation = 'source-over';
+  if (n <= 0) { LIT.length = 0; return; }
   const warm = Math.min(1, n * 2), deep = Math.max(0, n * 2 - 1);
   g.globalCompositeOperation = 'multiply';
   g.fillStyle = 'rgb(' + Math.round(255 - 40 * warm - 150 * deep) + ',' + Math.round(255 - 90 * warm - 100 * deep) + ',' + Math.round(255 - 120 * warm - 10 * deep) + ')';
@@ -1593,7 +1598,6 @@ function drawNight() {
   for (const l of LAMPS) { const x = l.x - camX, y = l.y - camY; if (x > -40 && y > -40 && x < SW + 40 && y < SH + 40) glow(x + 4, y + 4, 30, '255,200,130', .32 * n); }
   if (!S.onFoot && !S.sink) headlight(S.x - camX, S.y - camY, S.a, 80, n);
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (!c.wreck && x > -60 && y > -60 && x < SW + 60 && y < SH + 60) headlight(x, y, Math.atan2(c.dy, c.dx), 56, n * .8); }
-  for (const c of S.cops) if (!c.dead) { const x = c.x - camX, y = c.y - camY; glow(x, y, 26, blink(2) ? '255,40,80' : '60,120,255', .45 * n); }
   for (const b of BUILDINGS) if (b.sign) { const t = proj((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.h), x = t[0], y = t[1]; if (x > -60 && y > -60 && x < SW + 60 && y < SH + 60) glow(x, y, 44, b.style === 'casino' ? '255,211,107' : '255,62,165', .4 * n); }
   if (casinoDoor) glow(casinoDoor.x - camX, casinoDoor.y - camY - 6, 34, '255,60,90', .35 * n);
   g.globalCompositeOperation = 'source-over';
@@ -1611,7 +1615,9 @@ function engineInit() {
   o.connect(lp); o2.connect(lp); lp.connect(gn); gn.connect(master); o.start(); o2.start();
   const sq = AC.createBufferSource(), bp = AC.createBiquadFilter(), sg = AC.createGain(); sq.buffer = NB; sq.loop = true; bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 3; sg.gain.value = 0;
   sq.connect(bp); bp.connect(sg); sg.connect(master); sq.start();
-  engine = { o, o2, lp, gn, sg };
+  const so = AC.createOscillator(), slp = AC.createBiquadFilter(), sgn = AC.createGain(); so.type = 'square'; slp.type = 'lowpass'; slp.frequency.value = 1800; sgn.gain.value = 0;
+  so.connect(slp); slp.connect(sgn); sgn.connect(master); so.start();
+  engine = { o, o2, lp, gn, sg, so, sgn };
 }
 function updateEngineSound() {
   if (!AC || AC.state !== 'running') return;
@@ -1623,6 +1629,10 @@ function updateEngineSound() {
   const braking = driving && keys.down && S.v > 2;
   const slip = driving && !S.air && (S.drift || braking) ? Math.min(1, Math.abs(S.side) / 2 + (braking ? .5 : 0)) : 0;
   engine.sg.gain.setTargetAtTime(slip * .08, t, .03);
+  // siren: a wail that gets louder as the nearest cop car closes in
+  let near = 1e9; if (mode === 'play' && S) for (const c of S.cops) if (!c.dead && !c.parked) near = Math.min(near, Math.hypot(c.x - S.x, c.y - S.y));
+  const loud = near < 420 ? (1 - near / 420) : 0;
+  engine.so.frequency.setTargetAtTime(700 + 320 * Math.sin(frame / 14), t, .02); engine.sgn.gain.setTargetAtTime(loud * .03, t, .1);
 }
 
 /* ================= 4. pause menu: stats and controls ================= */
