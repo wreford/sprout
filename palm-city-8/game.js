@@ -1562,6 +1562,7 @@ function drawBossBar() {
   px(SW - 46 - tw(l) - 12, 27, 7, 7, blink(4) ? P.red : '#7a1020'); text(l, SW - 46 - tw(l), 27, P.cream);
   px(46, 37, SW - 92, 4, '#3a2a48'); px(46, 37, Math.max(0, (SW - 92) * B.hp / B.max), 4, '#3aff7a');
 }
+// extras added one at a time
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1711,6 +1712,8 @@ function press(k, down) {
   if (k in keys) keys[k] = down ? 1 : 0;
   if (!down) return;
   audioInit();
+  if (k === 'full') { const d = document.documentElement, fs = document.fullscreenElement || document.webkitFullscreenElement;
+    try { if (fs) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (d.requestFullscreen || d.webkitRequestFullscreen).call(d); } catch (e) {} return; }
   if (k === 'select') { toggleMusic(); return; }
   if (mode === 'casino') { casinoPress(k); return; }
   if (mode === 'title') { if (k === 'start' || k === 'a' || k === 'up' || k === 'door') startGame(); return; }
