@@ -443,8 +443,8 @@ const SAY_BAD = ['I AM WALKING NEXT TIME', 'KEEP THE CHANGE. JUST LET ME OUT', '
 function say(line, t = 150) { S.say = { text: line, t }; }
 function farCurb(min) { let t = randomCurb(); for (let i = 0; i < 300 && Math.hypot(t.x - S.x, t.y - S.y) < min; i++) t = randomCurb(); return t; }
 function placeMarker(kind) {
-  let t = farCurb(180);
-  for (let i = 0; i < 100 && Object.values(S.markers).some(m => m && Math.hypot(m.x - t.x, m.y - t.y) < 260); i++) t = farCurb(180);
+  let t = nearCurb(220, 700);
+  for (let i = 0; i < 100 && Object.values(S.markers).some(m => m && Math.hypot(m.x - t.x, m.y - t.y) < 200); i++) t = nearCurb(220, 700);
   S.markers[kind] = t;
 }
 // race route: a walk along the street grid, never through the coast road, parks or water
@@ -475,7 +475,7 @@ function startJob(kind) {
   else {
     const cps = buildRoute(from.x, from.y); let len = Math.hypot(cps[0].x - S.x, cps[0].y - S.y);
     for (let i = 1; i < cps.length; i++) len += Math.hypot(cps[i].x - cps[i - 1].x, cps[i].y - cps[i - 1].y);
-    S.job = { kind, cps, i: 0, time: 0, count: 180, par: Math.round(len / (2.3 * 60) + 5) }; S.v = 0; S.side = 0;
+    S.job = { kind, cps, i: 0, time: 0, count: 120, par: Math.round(len / (2.3 * 60) + 5) }; S.v = 0; S.side = 0;
   }
   S.job.target = S.job.target || S.job.cps[0];
   S.markers[kind] = null;
@@ -494,7 +494,7 @@ function updateJobs() {
       if (J.i >= J.cps.length) {
         const secs = J.time / 60;
         if (secs <= J.par) { const pay = 150 + Math.round((J.par - secs) * 10); S.cash += pay; S.races++; sfx('deliver'); flash('WIN ' + secs.toFixed(1) + 'S +$' + pay, 150); }
-        else { S.cash += 40; sfx('late'); flash('TOO SLOW ' + secs.toFixed(1) + 'S +$40', 150); }
+        else { S.cash += 40; sfx('late'); flash('TOO SLOW ' + secs.toFixed(1) + 'S +$40', 150); endJob(); offerRetry('race'); return; }
         return endJob();
       }
       J.target = J.cps[J.i];
@@ -508,14 +508,16 @@ function updateJobs() {
     else { const fare = 70 + secs * 2, tip = Math.max(0, 60 - J.bumps * 20), stars = Math.max(1, 5 - J.bumps); S.cash += fare + tip; S.fares++; flash('*'.repeat(stars) + ' +$' + (fare + tip), 150); say(J.rider + ': ' + pick(J.bumps < 2 ? SAY_GOOD : SAY_BAD)); }
     sfx('deliver'); return endJob();
   }
-  if (J.timer <= 0) { S.streak = 0; sfx('late'); flash(J.kind === 'taxi' ? 'TOO SLOW. THEY GOT OUT' : 'LATE! TRY ANOTHER'); if (J.kind === 'taxi') say(J.rider + ': ' + pick(SAY_BAD)); endJob(); }
+  if (J.timer <= 0) { offerRetry(J.kind); S.streak = 0; sfx('late'); flash(J.kind === 'taxi' ? 'TOO SLOW. THEY GOT OUT' : 'LATE! TRY ANOTHER'); if (J.kind === 'taxi') say(J.rider + ': ' + pick(SAY_BAD)); endJob(); }
 }
 
 /* ================= the car ================= */
 function driveInput() {
   let gas = keys.up || keys.a ? 1 : 0, brake = keys.down, steer = keys.right - keys.left;
   if (stick.mag > .18) {   // point the stick where you want to go; how far you push it is the throttle
-    const want = Math.atan2(stick.y, stick.x), diff = angleDiff(want, S.a);
+    let want = Math.atan2(stick.y, stick.x);
+    const card = Math.round(want / (Math.PI / 2)) * (Math.PI / 2); if (Math.abs(angleDiff(want, card)) < .26 && tileAtPx(S.x, S.y) === ROAD) want = card;   // nearly lined up with the street: line up
+    const diff = angleDiff(want, S.a);
     if (Math.abs(diff) > 2.5) { brake = 1; if (S.v <= .3) steer = -clamp(angleDiff(want, S.a + Math.PI) * 2.5, -1, 1); }
     else { steer = clamp(diff * 2.5, -1, 1); gas = Math.max(gas, stick.mag * (Math.abs(diff) > 1.4 ? .55 : 1)); }
   }
@@ -620,7 +622,7 @@ function updateMaids() {
   }
   S.maids = S.maids.filter(m => !m.dead);
   if (S.heat > 0) { const near = [...S.maids, ...S.cops.filter(c => !c.dead && !c.parked)].some(m => Math.hypot(m.x - S.x, m.y - S.y) < 150); S.heatClock = near ? 0 : S.heatClock + 1;
-    if (S.heatClock > 60 * 5) { S.heat--; S.heatClock = 0; S.maids.pop(); const live = S.cops.filter(c => !c.dead); if (live.length > Math.max(0, S.heat - 2)) S.cops.splice(S.cops.indexOf(live[live.length - 1]), 1); if (!S.heat) { S.shotsSeen = false; } } }
+    if (S.heatClock > 60 * 3.5) { S.heat--; S.heatClock = 0; S.maids.pop(); const live = S.cops.filter(c => !c.dead); if (live.length > Math.max(0, S.heat - 2)) S.cops.splice(S.cops.indexOf(live[live.length - 1]), 1); if (!S.heat) { S.shotsSeen = false; } } }
 }
 
 /* ================= update ================= */
@@ -629,6 +631,7 @@ function update() {
   if (mode === 'title') stickNav(TITLE, titlePress);
   if (S && mode === 'play') S.clock = (S.clock || 0) + 1;
   if (mode === 'casino') { updateCasino(); return; }
+  if (mode === 'map') { updateMapCursor(); return; }
   if (mode !== 'play') return;
   if (S.down) { if (!--S.downT) getUp(); }
   else if (S.onFoot) updateFoot();
@@ -645,7 +648,7 @@ function update() {
   S.parked = S.parked.filter(c => !(c.wreck === 0));
   updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
-  updateTips(); updateTraps(); updateSeaLife(); updateAtms(); updateRad();
+  updateTips(); updateTraps(); updateSeaLife(); updateAtms(); updateRad(); updateQol();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -744,7 +747,7 @@ function draw() {
   camCX = clamp(Math.round(S.cam.x), SW / 2, MW * T - SW / 2) + sh; camCY = clamp(Math.round(S.cam.y), SH / 2, MH * T - SH / 2);
   camX = camCX - SW / 2; camY = camCY - SH / 2;
   g.drawImage(groundPic, camX, camY, SW, SH, 0, 0, SW, SH);
-  drawWaves(); drawSeaLife();
+  drawWaves(); drawSeaLife(); drawGpsRoad();
   const tc = S.job ? JOB_COLOUR[S.job.kind] : P.cream;
   if (!S.job) { for (const k of JOB_KINDS) if (S.markers[k]) drawPin(S.markers[k].x - camX, S.markers[k].y - camY, JOB_COLOUR[k], k); }
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
@@ -799,7 +802,8 @@ function drawHUD() {
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const k = tw(S.flash, 2) + 20 > SW - 8 ? 1 : 2, w = tw(S.flash, k) + 20, x = (SW - w) / 2, h = k === 2 ? 24 : 16; px(x, 158, w, h, P.ink); px(x, 158, w, 2, P.pink); px(x, 156 + h, w, 2, P.teal); ctext(S.flash, k === 2 ? 163 : 162, P.cream, k); }
-  drawTip(); drawCarBanner();
+  drawTip(); drawCarBanner(); drawRetry();
+  if (S.fade) { g.fillStyle = 'rgba(26,7,38,' + S.fade / 30 + ')'; g.fillRect(0, 21, SW, SH - 21); }
   drawRadar();
   const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
   if (!S.onFoot) { px(hx, hy - 10, 52, 6, P.ink); px(hx + 1, hy - 9, Math.max(0, S.carHp) / 2, 4, S.carHp < 35 ? P.sun : P.teal); text('CAR', hx + 55, hy - 11, P.teal); }
@@ -821,6 +825,8 @@ function drawRadar() {
   const sx = Math.max(0, x0), sy = Math.max(0, y0), ex = Math.min(MW, x0 + RW), ey = Math.min(MH, y0 + RH);
   if (ex > sx && ey > sy) g.drawImage(radarPic, sx, sy, ex - sx, ey - sy, rx + sx - x0, ry + sy - y0, ex - sx, ey - sy);
   const dot = (wx, wy, c, size = 3, clampIt = true) => { let dx = wx / T - x0, dy = wy / T - y0; if (!clampIt && (dx < 0 || dy < 0 || dx >= RW || dy >= RH)) return; dx = clamp(dx, 1, RW - 2); dy = clamp(dy, 1, RH - 2); px(rx + dx - size / 2, ry + dy - size / 2, size, size, c); };
+  drawGpsOn(rx, ry, x0, y0, RW, RH, 1, S.job ? JOB_COLOUR[S.job.kind] : P.cream);
+  if (S.waypoint && !S.job) dot(S.waypoint.x, S.waypoint.y, blink(3) ? P.cream : P.sun, 4);
   if (S.job) { dot(S.job.target.x, S.job.target.y, blink(3) ? JOB_COLOUR[S.job.kind] : P.cream, 4); if (S.job.cps) for (let i = S.job.i + 1; i < S.job.cps.length; i++) dot(S.job.cps[i].x, S.job.cps[i].y, P.sun, 2, false); }
   else for (const k of JOB_KINDS) if (S.markers[k]) dot(S.markers[k].x, S.markers[k].y, JOB_COLOUR[k], 4);
   if (casinoDoor) dot(casinoDoor.x, casinoDoor.y, '#ffffff', 2, false);
@@ -832,17 +838,20 @@ function drawRadar() {
   px(rx - 2, ry - 2, RW + 4, 1, P.teal); px(rx - 2, ry + RH + 1, RW + 4, 1, P.pink);
 }
 function drawMap() {
-  const k = 1.3, w = Math.round(MW * k), h = Math.round(MH * k), x0 = Math.round((SW - w) / 2), y0 = 32;
+  const k = 1.12, w = Math.round(MW * k), h = Math.round(MH * k), x0 = Math.round((SW - w) / 2), y0 = 32;
   px(0, 21, SW, SH - 21, 'rgba(26,7,38,.94)');
   g.drawImage(radarPic, 0, 0, MW, MH, x0, y0, w, h);
   const dot = (wx, wy, c, size) => px(x0 + wx / T * k - size / 2, y0 + wy / T * k - size / 2, size, size, c);
   if (S.job) dot(S.job.target.x, S.job.target.y, blink(3) ? JOB_COLOUR[S.job.kind] : P.cream, 6);
   else for (const kd of JOB_KINDS) if (S.markers[kd]) dot(S.markers[kd].x, S.markers[kd].y, JOB_COLOUR[kd], 6);
+  drawGpsOn(x0, y0, 0, 0, w, h, k, S.job ? JOB_COLOUR[S.job.kind] : P.cream);
+  if (S.waypoint) dot(S.waypoint.x, S.waypoint.y, P.sun, 6);
+  if (S.cursor) { const cx = x0 + S.cursor.x / T * k, cy = y0 + S.cursor.y / T * k; px(cx - 6, cy, 13, 1, '#ffffff'); px(cx, cy - 6, 1, 13, '#ffffff'); px(cx - 2, cy - 2, 5, 5, blink(3) ? P.pink : P.sun); }
   if (blink(2)) dot(S.x, S.y, '#ffffff', 5);
   if (casinoDoor) { dot(casinoDoor.x, casinoDoor.y, P.sun, 5); text('CASINO', x0 + casinoDoor.x / T * k + 4, y0 + casinoDoor.y / T * k - 3, P.sun); }
   for (const z of ZONES) { const r = zoneRect(z); text(z.name, x0 + (r.x0 + r.x1) / 2 * k - tw(z.name) / 2, y0 + (r.y0 + r.y1) / 2 * k - 3, P.cream); }
   ctext('PALM CITY   TAPES ' + S.tapes.length + '/' + TAPE_TOTAL + '   STUNTS ' + S.stunts.length + '/' + STUNT_IDS.size, 24, P.cream);
-  const ly = y0 + h + 4; text('DELIVER', 40, ly, P.pink); text('TAXI', 100, ly, P.teal); text('RACE', 136, ly, P.sun); text('YOU', 172, ly, '#ffffff'); text('MAP TO CLOSE', 216, ly, P.blush);
+  const ly = y0 + h + 4; text('DELIVER', 40, ly, P.pink); text('TAXI', 100, ly, P.teal); text('RACE', 136, ly, P.sun); text('YOU', 172, ly, '#ffffff'); text('STICK MOVES  GAS WAYPOINT  DOOR CAB $' + CAB_FARE, 18, ly + 10, P.blush);
 }
 function drawTitle() {
   ctx = g;
@@ -915,7 +924,7 @@ function door() {
   for (const c of S.parked) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'parked'; } }
   for (const c of S.traffic) if (!c.wreck) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'traffic'; } }
   for (const c of S.cops) if (c.parked) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'cop'; } }
-  if (!best) { flash('NO CAR HERE', 40); return; }
+  if (!best) { callCar(); return; }
   if (from === 'parked') { S.parked.splice(S.parked.indexOf(best), 1); S.x = best.x; S.y = best.y; S.a = best.a; S.rideLook = best.look; S.carHp = best.hp; }
   else if (from === 'cop') { S.cops.splice(S.cops.indexOf(best), 1); S.x = best.x; S.y = best.y; S.a = best.a; S.rideLook = 'cop'; S.carHp = 70; addHeat(2, 'STOLE A COP CAR!'); }
   else {
@@ -1021,7 +1030,7 @@ function placePickups() {
 function updatePickups() {
   for (const q of S.pickups) {
     if (q.gone) { q.gone--; continue; }
-    if (Math.hypot(q.x - S.x, q.y - S.y) < 14 && S.onFoot === true || (Math.hypot(q.x - S.x, q.y - S.y) < 16 && !S.onFoot && q.kind !== 'COLA')) {
+    if (Math.hypot(q.x - S.x, q.y - S.y) < 22 && S.onFoot === true || (Math.hypot(q.x - S.x, q.y - S.y) < 16 && !S.onFoot && q.kind !== 'COLA')) {
       if (q.kind === 'COLA') { if (S.hp >= 100) continue; S.hp = Math.min(100, S.hp + 40); flash('NEW KOLA +40 HP', 60); }
       else { S.weapon = q.kind; S.ammo = q.kind === 'UZI' ? 160 : 24; flash(q.kind === 'UZI' ? 'UZI! 160 ROUNDS' : 'BLASTER 2000!', 70); }
       sfx('pickup'); q.gone = 60 * 45;
@@ -1043,7 +1052,7 @@ function goDown(why) {
 }
 function getUp() {
   S.down = null; S.boss = null; S.goons = []; S.heat = 0; S.maids = []; S.cops = []; S.bullets = []; S.hp = 100; S.carHp = 100; S.shotsSeen = false;
-  S.onFoot = false; S.rideLook = -1; S.x = START.x; S.y = START.y; S.a = -Math.PI / 2; S.cam.x = S.x; S.cam.y = S.y; S.weapon = 'PISTOL'; S.ammo = 0;
+  S.onFoot = false; S.rideLook = -1; const r = nearestRoad(S.x, S.y, 10); if (r) { S.x = r[0] * T + 8; S.y = r[1] * T + 8; } else { S.x = START.x; S.y = START.y; } S.a = -Math.PI / 2; S.cam.x = S.x; S.cam.y = S.y; S.weapon = 'PISTOL'; S.ammo = 0;
 }
 function drawPickups() {
   for (const q of S.pickups) {
@@ -1392,7 +1401,7 @@ function placeTapes() {
 }
 function updateTapes() {
   TAPES.forEach((t, i) => {
-    if (S.tapes.includes(i) || Math.hypot(t.x - S.x, t.y - S.y) > 16 || S.air) return;
+    if (S.tapes.includes(i) || Math.hypot(t.x - S.x, t.y - S.y) > 26 || S.air) return;
     S.tapes.push(i); S.cash += 50; sfx('tape'); const n = S.tapes.length;
     const unlocked = STATIONS.find(st => st.unlock === n);
     if (n === TAPE_TOTAL) { S.cash += 1000; flash('ALL 24 TAPES! +$1000', 180); }
@@ -1661,7 +1670,7 @@ function drawPauseMenu() {
   const rows = [['CASH', '$' + S.cash], ['TAPES', S.tapes.length + '/' + TAPE_TOTAL], ['STUNTS', S.stunts.length + '/' + STUNT_IDS.size], ['DELIVERIES', S.delivered], ['TAXI FARES', S.fares], ['RACES WON', S.races], ['GAMBLED', '$' + (S.gambled || 0)], ['STREAMERDUDE', S.bossBeaten ? 'BEATEN X' + S.bossBeaten : 'NOT YET'], ['TOP SPEED', Math.max(0, ...Object.values(S.traps || {})) + ' KM/H']];
   rows.forEach(([k, v], i) => { text(k, L, top + 16 + i * 12, P.cream); const s = String(v); text(s, L + 140 - tw(s), top + 16 + i * 12, P.sun); });
   text('BUTTONS', R, top, P.teal); px(R, top + 9, 136, 1, P.teal);
-  const keysHelp = [['STICK', 'DRIVE OR WALK'], ['GAS', 'GO'], ['DRIFT', 'HOLD IN A TURN'], ['FIRE', 'SHOOT'], ['DOOR', 'IN, OUT, TALK'], ['RADIO', 'NEXT STATION'], ['MAP', 'WHOLE ISLAND'], ['FULL', 'FULL SCREEN']];
+  const keysHelp = [['STICK', 'DRIVE OR WALK'], ['GAS', 'GO'], ['DRIFT', 'HOLD IN A TURN'], ['FIRE', 'SHOOT'], ['DOOR', 'IN, OUT, CALL CAR'], ['RADIO', 'NEXT STATION'], ['MAP', 'WAYPOINT, CAB'], ['FULL', 'FULL SCREEN']];
   keysHelp.forEach(([k, v], i) => { text(k, R, top + 16 + i * 12, P.pink); text(v, R + 136 - tw(v), top + 16 + i * 12, P.cream); });
   if (blink(5)) ctext('PAUSE TO GO ON', SH - 16, P.blush);
 }
@@ -1677,7 +1686,7 @@ const HOWTO = [
   'DOOR: GET IN, GET OUT, OR TAKE ANY CAR.',
   'FIRE SHOOTS. COPS NOTICE.',
   'PAINT N SPRAY MAKES THEM FORGET.',
-  'THE CASINO IS ON THE STRIP.',
+  'MAP: SET A WAYPOINT, OR DOOR FOR A CAB.',
   '24 TAPES ARE HIDDEN. 6 AND 14 UNLOCK STATIONS.',
   'STREAMERDUDE IS LIVE AT STREAM HOUSE.'
 ];
@@ -1948,6 +1957,89 @@ function drawRad() {
   const l = 'RAMPAGE ' + R.n + '/' + R.goal + '  ' + Math.ceil(R.t / 60) + 'S', w = tw(l) + 12;
   px((SW - w) / 2, 24, w, 13, P.pink); text(l, (SW - w) / 2 + 6, 27, P.ink);
 }
+
+/* ================= quality of life ================= */
+// --- GPS: a route along the roads to the job or your waypoint ---
+const drivableT = t => t === ROAD || t === RUNWAY || t === LOT || t === PIER || t === RAMP || t === SPRAY;
+const GPS = { dist: null, target: null, path: [], at: -999 };
+function gpsTarget() { return S.job ? S.job.target : S.waypoint || null; }
+function nearestRoad(x, y, r = 6) {
+  const tx = Math.floor(x / T), ty = Math.floor(y / T); let best = null, bd = 1e9;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (drivableT(at(tx + dx, ty + dy)) && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = [tx + dx, ty + dy]; }
+  return best;
+}
+// distances from the target over every road tile, rebuilt when the target changes
+function buildDist(tx, ty) {
+  const d = new Int32Array(MW * MH).fill(-1), q = new Int32Array(MW * MH); let h = 0, n = 0;
+  d[ty * MW + tx] = 0; q[n++] = ty * MW + tx;
+  while (h < n) { const i = q[h++], x = i % MW, y = (i / MW) | 0;
+    for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + ax, ny = y + ay; if (!inMap(nx, ny)) continue; const j = ny * MW + nx; if (d[j] >= 0 || !drivableT(map[j])) continue; d[j] = d[i] + 1; q[n++] = j; } }
+  return d;
+}
+function updateGps() {
+  const t = gpsTarget(); if (!t) { GPS.path = []; GPS.target = null; return; }
+  if (GPS.target !== t) { const r = nearestRoad(t.x, t.y, 8); GPS.target = t; GPS.dist = r ? buildDist(r[0], r[1]) : null; GPS.at = -999; }
+  if (!GPS.dist || frame - GPS.at < 15) return;
+  GPS.at = frame; GPS.path = [];
+  let p = nearestRoad(S.x, S.y, 5); if (!p) return;
+  for (let k = 0; k < 400; k++) {
+    GPS.path.push(p); const here = GPS.dist[p[1] * MW + p[0]]; if (here <= 0) break;
+    let next = null; for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = p[0] + ax, ny = p[1] + ay; if (inMap(nx, ny) && GPS.dist[ny * MW + nx] >= 0 && GPS.dist[ny * MW + nx] < here) { next = [nx, ny]; break; } }
+    if (!next) break; p = next;
+  }
+}
+function drawGpsRoad() {
+  const col = S.job ? JOB_COLOUR[S.job.kind] : P.cream;
+  for (let i = 2; i < Math.min(GPS.path.length - 1, 60); i += 2) {
+    const [x, y] = GPS.path[i], [nx, ny] = GPS.path[i + 1], sx = x * T + 8 - camX, sy = y * T + 8 - camY; if (sx < -8 || sy < -8 || sx > SW + 8 || sy > SH + 8) continue;
+    const dx = nx - x, dy = ny - y; g.globalAlpha = .55;
+    px(sx - 2 + dx * 2, sy - 2 + dy * 2, 4, 4, col); px(sx - 1 - dx, sy - 1 - dy, 2, 2, col); g.globalAlpha = 1;
+  }
+}
+function drawGpsOn(rx, ry, x0, y0, W, H, k, col) {
+  for (let i = 0; i < GPS.path.length; i += (k < 1.2 ? 1 : 1)) { const [x, y] = GPS.path[i], dx = (x - x0) * k, dy = (y - y0) * k; if (dx >= 0 && dy >= 0 && dx < W && dy < H) px(rx + dx, ry + dy, Math.max(1, Math.round(k)), Math.max(1, Math.round(k)), col); }
+}
+// --- map cursor: set a waypoint, or take a cab there ---
+const CAB_FARE = 40;
+function mapPress(k) {
+  if (!S.cursor) S.cursor = { x: S.x, y: S.y };
+  const step = 4 * T;
+  if (k === 'left') S.cursor.x -= step; else if (k === 'right') S.cursor.x += step; else if (k === 'up') S.cursor.y -= step; else if (k === 'down') S.cursor.y += step;
+  else if (k === 'a') { const r = nearestRoad(S.cursor.x, S.cursor.y, 10); if (r) { S.waypoint = { x: r[0] * T + 8, y: r[1] * T + 8 }; sfx('pickup'); mode = 'play'; flash('WAYPOINT SET', 60); } }
+  else if (k === 'fire') { S.waypoint = null; sfx('count'); }
+  else if (k === 'door') takeCab();
+  S.cursor.x = clamp(S.cursor.x, 0, MW * T); S.cursor.y = clamp(S.cursor.y, 0, MH * T);
+}
+function takeCab() {
+  if (S.cash < CAB_FARE) { flash('CAB IS $' + CAB_FARE, 60); sfx('late'); return; }
+  const r = nearestRoad(S.cursor.x, S.cursor.y, 12); if (!r) { flash('NO ROAD THERE', 60); return; }
+  S.cash -= CAB_FARE; S.x = r[0] * T + 8; S.y = r[1] * T + 8; S.cam.x = S.x; S.cam.y = S.y; S.v = 0; S.side = 0; S.sink = 0; S.air = 0;
+  if (S.onFoot) { S.onFoot = false; S.rideLook = -1; S.carHp = 100; }
+  S.heat = 0; S.maids = []; S.cops = S.cops.filter(c => c.dead);
+  mode = 'play'; S.fade = 30; sfx('door'); flash('PALM CAB: THAT IS $' + CAB_FARE + ', HUN', 90); carBanner();
+}
+function updateMapCursor() { if (!S.cursor) S.cursor = { x: S.x, y: S.y }; const sp = 6; if (stick.mag > .3) { S.cursor.x = clamp(S.cursor.x + stick.x * sp * 2, 0, MW * T); S.cursor.y = clamp(S.cursor.y + stick.y * sp * 2, 0, MH * T); } }
+// --- call your car when you are on foot with nothing to drive ---
+function callCar() {
+  if (S.callCool) { flash('YOUR CAR IS ON THE WAY', 40); return; }
+  for (const side of [1, -1]) for (let r = 18; r < 70; r += 8) { const a = S.fa + side * Math.PI / 2, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r;
+    if (!blockedAt(x, y, 8) && !isWater(tileAtPx(x, y))) { S.parked = S.parked.filter(c => c.look !== -1); S.parked.push({ x, y, a: S.fa, look: -1, hp: 100 }); S.callCool = 60 * 6; flash('YOUR PALM 6 TURBO IS HERE', 80); sfx('pickup'); return; } }
+  flash('NO ROOM FOR A CAR HERE', 50);
+}
+// --- retry a job you just failed ---
+function offerRetry(kind) { S.retry = { kind, t: 60 * 5 }; }
+function retryJob() { const k = S.retry.kind; S.retry = null; if (S.job) return; S.markers[k] = { x: S.x, y: S.y }; startJob(k); }
+function drawRetry() { if (!S.retry || S.job) return; const l = 'GAS TO RETRY ' + Math.ceil(S.retry.t / 60), w = tw(l) + 12; px((SW - w) / 2, 140, w, 13, P.ink); px((SW - w) / 2, 140, w, 1, P.sun); text(l, (SW - w) / 2 + 6, 143, blink(3) ? P.sun : P.cream); }
+// --- keep the pins near you ---
+function nearCurb(min, max) { let t = randomCurb(); for (let i = 0; i < 400; i++) { const d = Math.hypot(t.x - S.x, t.y - S.y); if (d >= min && d <= max) return t; t = randomCurb(); } return t; }
+function updateQol() {
+  if (S.callCool) S.callCool--;
+  if (S.retry && !--S.retry.t) S.retry = null;
+  if (S.fade) S.fade--;
+  if (S.waypoint && Math.hypot(S.waypoint.x - S.x, S.waypoint.y - S.y) < 30) { S.waypoint = null; flash('YOU ARE HERE', 50); sfx('pickup'); }
+  if (frame % 300 === 0) for (const k of JOB_KINDS) { const m = S.markers[k]; if (m && Math.hypot(m.x - S.x, m.y - S.y) > 1300) placeMarker(k); }
+  updateGps();
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -2098,6 +2190,7 @@ function toggleMusic() {
 /* ================= input ================= */
 function startGame() { audioInit(); newGame(); mode = 'play'; sfx('start'); carBanner(); }
 function press(k, down) {
+  const was = keys[k];
   if (k in keys) keys[k] = down ? 1 : 0;
   if (!down) return;
   audioInit();
@@ -2107,7 +2200,9 @@ function press(k, down) {
   if (mode === 'casino') { casinoPress(k); return; }
   if (mode === 'title') { titlePress(k); return; }
   if (k === 'start') { mode = mode === 'paused' || mode === 'map' ? 'play' : 'paused'; sfx('pickup'); return; }
-  if (k === 'map') { if (mode === 'play' || mode === 'map') { mode = mode === 'map' ? 'play' : 'map'; sfx('pickup'); } return; }
+  if (k === 'map') { if (mode === 'play' || mode === 'map') { mode = mode === 'map' ? 'play' : 'map'; if (mode === 'map') S.cursor = { x: S.waypoint ? S.waypoint.x : S.x, y: S.waypoint ? S.waypoint.y : S.y }; sfx('pickup'); } return; }
+  if (mode === 'map') { mapPress(k); return; }
+  if (k === 'a' && !was && S.retry && mode === 'play') { retryJob(); return; }
   if (k === 'door' && mode === 'play') door();
 }
 const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'a', x: 'b', c: 'fire', ' ': 'fire', e: 'door', f: 'door', Enter: 'door', p: 'start', Escape: 'start', m: 'map', r: 'select' };
@@ -2161,4 +2256,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, RAD_TOKENS, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, GPS, RAD_TOKENS, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
