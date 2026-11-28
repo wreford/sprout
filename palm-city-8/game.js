@@ -645,7 +645,7 @@ function update() {
   S.parked = S.parked.filter(c => !(c.wreck === 0));
   updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
-  updateTips(); updateTraps(); updateSeaLife(); updateAtms();
+  updateTips(); updateTraps(); updateSeaLife(); updateAtms(); updateRad();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -750,7 +750,7 @@ function draw() {
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
-  drawPickups(); drawProps(); drawTapes(); drawBossPin(); drawTraps(); drawAtms();
+  drawPickups(); drawProps(); drawTapes(); drawBossPin(); drawTraps(); drawAtms(); drawRad();
   if (casinoDoor) { const x = casinoDoor.x - camX, y = casinoDoor.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 8, y - 12, 16, 14, '#b3123a'); px(x - 8, y - 12, 16, 1, P.sun); px(x - 8, y + 1, 16, 1, P.sun);
     if (Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 60) { const l = S.onFoot ? 'DOOR: GO IN' : 'GET OUT TO GO IN'; px(x - tw(l) / 2 - 3, y + 8, tw(l) + 6, 10, P.ink); text(l, x - tw(l) / 2, y + 10, blink(4) ? P.sun : P.cream); } } }
   for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
@@ -795,7 +795,7 @@ function drawHUD() {
   else { const s = Math.max(0, Math.ceil(J.timer / 60)); ctext((J.kind === 'taxi' ? 'FARE ' : 'DROP ') + s + 'S', 2, s <= 5 && blink(3) ? P.pink : JOB_COLOUR[J.kind], 2); }
   drawWanted();
   if (S.streak > 1) text('STREAK X' + S.streak, 6, 26, P.sun);
-  if (S.boss) drawBossBar(); else if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
+  if (S.boss) drawBossBar(); else if (S.rampage) {} else if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const k = tw(S.flash, 2) + 20 > SW - 8 ? 1 : 2, w = tw(S.flash, k) + 20, x = (SW - w) / 2, h = k === 2 ? 24 : 16; px(x, 158, w, h, P.ink); px(x, 158, w, 2, P.pink); px(x, 156 + h, w, 2, P.teal); ctext(S.flash, k === 2 ? 163 : 162, P.cream, k); }
@@ -1429,6 +1429,7 @@ function knock(o, vx, vy, byCar) {
   o.vx = vx * (ball ? 1.6 : 1.3) + (Math.random() - .5) * 2; o.vy = vy * (ball ? 1.6 : 1.3) + (Math.random() - .5) * 2; o.fly = ball ? 70 : 40; o.spin = 0;
   sfx(ball ? 'boing' : 'smash'); puff(o.x, o.y, ball ? 2 : 5, ball ? P.cream : o.kind === 'cone' ? '#ff7a2a' : '#8a8490', 2, 14, 2);
   if (ball || !byCar) return;
+  if (S.rampage) S.rampage.n++;
   S.combo.n = S.combo.t > 0 ? S.combo.n + 1 : 1; S.combo.t = 120; const pay = 5 * S.combo.n; S.cash += pay;
   flash(S.combo.n > 1 ? 'SMASH X' + S.combo.n + ' +$' + pay : '+$5', 50);
   if (S.combo.n % 10 === 0) addHeat(1, 'VANDAL!');
@@ -1917,6 +1918,36 @@ function drawSpeedFx() {
   }
   if (S.blast) { g.fillStyle = 'rgba(255,240,200,' + (S.blast / 14) * .55 + ')'; g.fillRect(0, 21, SW, SH - 21); S.blast--; }
 }
+
+/* ================= 20. radical rampage ================= */
+const RAD_TOKENS = [];
+function placeRad() {
+  for (let k = 0; k < 20000 && RAD_TOKENS.length < 4; k++) {
+    const x = (rnd() * MW) | 0, y = (rnd() * MH) | 0, t = at(x, y);
+    if ((t !== PLAZA && t !== SAND) || blocked[y * MW + x] || nearT(x, y, SEA) || RAD_TOKENS.some(r => Math.hypot(r.x / T - x, r.y / T - y) < 35)) continue;
+    RAD_TOKENS.push({ x: x * T + 8, y: y * T + 8, gone: 0 });
+  }
+}
+function updateRad() {
+  for (const r of RAD_TOKENS) {
+    if (r.gone) { r.gone--; continue; }
+    if (!S.rampage && !S.air && Math.hypot(r.x - S.x, r.y - S.y) < 16) { S.rampage = { t: 60 * 30, n: 0, goal: 20 }; r.gone = 60 * 120; flash('RADICAL RAMPAGE! SMASH 20', 120); sfx('go'); }
+  }
+  const R = S.rampage; if (!R) return;
+  R.t--;
+  if (R.n >= R.goal) { S.cash += 500; flash('RAMPAGE DONE! +$500', 150); sfx('deliver'); S.rampage = null; }
+  else if (R.t <= 0) { flash('RAMPAGE OVER ' + R.n + '/' + R.goal, 120); sfx('late'); S.rampage = null; }
+}
+function drawRad() {
+  for (const r of RAD_TOKENS) {
+    if (r.gone) continue; const x = r.x - camX, y = r.y - camY - 4 - Math.abs(Math.sin(frame / 12)) * 4; if (x < -20 || y < -20 || x > SW + 20 || y > SH + 20) continue;
+    g.globalCompositeOperation = 'lighter'; glow(x, y, 16, '255,62,165', .5); g.globalCompositeOperation = 'source-over';
+    px(x - 9, y - 5, 19, 10, P.ink); px(x - 9, y - 5, 19, 1, P.pink); text('RAD', x - 8, y - 3, blink(3) ? P.pink : P.sun);
+  }
+  const R = S.rampage; if (!R) return;
+  const l = 'RAMPAGE ' + R.n + '/' + R.goal + '  ' + Math.ceil(R.t / 60) + 'S', w = tw(l) + 12;
+  px((SW - w) / 2, 24, w, 13, P.pink); text(l, (SW - w) / 2 + 6, 27, P.ink);
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -2091,7 +2122,7 @@ document.querySelectorAll('[data-k]').forEach(b => {
 });
 for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, () => { audioInit(); }, { capture: true, passive: true });
 cv.addEventListener('pointerdown', () => { if (mode === 'title') titlePress('a'); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') mode = 'paused'; });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S) { save(); if (mode === 'play') mode = 'paused'; } });
 // the stick: its base jumps to wherever your thumb lands in the left half, then the knob follows the thumb
 (() => {
   const zone = document.getElementById('stickzone'), base = document.getElementById('stick'), knob = document.getElementById('knob');
@@ -2120,7 +2151,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 })();
 
 /* ================= loop ================= */
-buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse(); placeTraps(); placeSeaLife(); placeAtms();
+buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse(); placeTraps(); placeSeaLife(); placeAtms(); placeRad();
 let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
@@ -2130,4 +2161,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, RAD_TOKENS, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
