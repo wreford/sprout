@@ -547,6 +547,10 @@ function updateCar() {
     if (S.drift && frame % 2 === 0) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : null; if (c) puff(S.x - ca * 10, S.y - sa * 10, 2, c, 1.6, 14, 2); }
   }
   if (boosting && frame % 2 === 0) puff(S.x - ca * 12, S.y - sa * 12, 2, frame % 4 ? P.sun : P.pink, .8, 12, 3);
+  if (soft && Math.abs(S.v) > .6) {   // tyre tracks stay in sand and grass
+    groundCtx.fillStyle = ground === SAND || ground === BUNKER ? 'rgba(160,110,60,.22)' : 'rgba(30,70,20,.18)';
+    for (const k of [-4, 4]) groundCtx.fillRect(Math.round(S.x - ca * 8 - sa * k), Math.round(S.y - sa * 8 + ca * k), 2, 2);
+  }
   if (soft && Math.abs(S.v) > 1.5 && frame % 4 === 0) puff(S.x - ca * 10, S.y - sa * 10, 1, ground === SAND || ground === BUNKER ? P.sand2 : P.grass2, .7, 20, 3);
   const nx = S.x + vx, ny = S.y + vy;
   if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(vx) > .2) { S.x = nx; S.v *= .9; S.side *= .5; }
@@ -680,10 +684,11 @@ function drawBuilding(b) {
 function drawPalm(p) {
   const sx = p.x - camX, sy = p.y - camY; if (sx < -60 || sy < -60 || sx > SW + 60 || sy > SH + 60) return;
   let top;
-  for (let z = 0; z <= p.h; z += 2) { const bend = Math.sin(z / p.h * 1.6) * 6 * p.bend, q = proj(p.x + bend, p.y, z); g.fillStyle = (z >> 1) % 3 === 0 ? '#5a3424' : P.trunk; g.fillRect(Math.round(q[0]) - 1, Math.round(q[1]) - 1, 3, 3); top = q; }
+  for (let z = 0; z <= p.h; z += 2) { const sway = Math.sin(frame / 50 + p.x * .01) * 2.2 * (z / p.h) * (z / p.h), bend = Math.sin(z / p.h * 1.6) * 6 * p.bend + sway, q = proj(p.x + bend, p.y, z); g.fillStyle = (z >> 1) % 3 === 0 ? '#5a3424' : P.trunk; g.fillRect(Math.round(q[0]) - 1, Math.round(q[1]) - 1, 3, 3); top = q; }
   const s = F / (F - p.h), [cx, cy] = top;
   for (const [dx, dy] of [[-10, 1], [10, 1], [-7, 6], [7, 6], [0, -8], [-7, -6], [7, -6], [0, 8]]) {
-    for (let i = 1; i <= 4; i++) { const f = i / 4; g.fillStyle = i < 3 ? P.frond2 : P.frond; g.fillRect(Math.round(cx + dx * f * s) - 2, Math.round(cy + dy * f * s + f * f * 3) - 1, 4, 3); }
+    const flap = Math.sin(frame / 22 + dx + p.y * .01) * .8;
+    for (let i = 1; i <= 4; i++) { const f = i / 4; g.fillStyle = i < 3 ? P.frond2 : P.frond; g.fillRect(Math.round(cx + dx * f * s) - 2, Math.round(cy + dy * f * s + f * f * (3 + flap)) - 1, 4, 3); }
   }
   g.fillStyle = '#7a4a2e'; g.fillRect(Math.round(cx) - 2, Math.round(cy) - 2, 4, 4);
 }
@@ -700,6 +705,7 @@ function drawWaves() {
     const sx = tx * T - camX, sy = ty * T - camY, w = ((frame >> 4) + tx * 3 + ty * 5) % 4;
     if (t === SEA) {
       px(sx + w * 3, sy + 4, 6, 1, 'rgba(232,251,255,.55)'); px(sx + ((w + 2) % 4) * 3 + 2, sy + 11, 5, 1, 'rgba(10,60,100,.35)');
+      if (hash(tx * 3 + (frame >> 4), ty) < .07 && nightLevel() < .5) { const kx = sx + (hash(ty, tx + (frame >> 4)) * 14 | 0), ky = sy + (hash(tx, ty * 7) * 14 | 0); px(kx, ky, 2, 1, '#ffffff'); px(kx, ky - 1, 1, 3, 'rgba(255,255,255,.6)'); }
       const fw = 2 + ((frame >> 4) + tx + ty) % 3 * 2;
       if (at(tx - 1, ty) === SAND || at(tx - 1, ty) === PIER) px(sx, sy, fw, 16, P.foam); if (at(tx + 1, ty) === SAND) px(sx + 16 - fw, sy, fw, 16, P.foam);
       if (at(tx, ty - 1) === SAND) px(sx, sy, 16, fw, P.foam); if (at(tx, ty + 1) === SAND) px(sx, sy + 16 - fw, 16, fw, P.foam);
