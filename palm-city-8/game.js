@@ -770,7 +770,7 @@ function draw() {
   if (S.hurtT && S.onFoot) { px(0, 21, SW, 2, P.red); px(0, SH - 2, SW, 2, P.red); px(0, 21, 2, SH, P.red); px(SW - 2, 21, 2, SH, P.red); }
   if (S.down) { const t = S.down === 'busted' ? 'BUSTED' : 'TOTALLY WASTED', sub = S.down === 'busted' ? 'GNARLY. -$' + S.downLoss : 'BOGUS. -$' + S.downLoss; px(0, 80, SW, 56, 'rgba(26,7,38,.85)'); ctext(t, 88, S.down === 'busted' ? '#3a7aff' : P.red, 3, P.ink); ctext(sub, 118, P.cream, 1); }
   if (mode === 'map') drawMap();
-  if (mode === 'paused') { px(68, 66, 200, 84, P.ink); px(68, 66, 200, 3, P.teal); px(68, 147, 200, 3, P.pink); ctext('PAUSED', 82, P.teal, 4, P.purp); ctext('PAUSE TO GO ON', 124, P.cream, 2); }
+  if (mode === 'paused') drawPauseMenu();
   document.getElementById('lamp').classList.toggle('on', S.heat > 0 && !!blink(4));
 }
 function drawHUD() {
@@ -1620,6 +1620,20 @@ function updateEngineSound() {
   const braking = driving && keys.down && S.v > 2;
   const slip = driving && !S.air && (S.drift || braking) ? Math.min(1, Math.abs(S.side) / 2 + (braking ? .5 : 0)) : 0;
   engine.sg.gain.setTargetAtTime(slip * .08, t, .03);
+}
+
+/* ================= 4. pause menu: stats and controls ================= */
+function drawPauseMenu() {
+  px(0, 21, SW, SH - 21, 'rgba(20,6,30,.9)');
+  ctext('PAUSED', 28, P.teal, 3, P.purp);
+  const L = 18, R = 182, top = 58;
+  text('YOUR RUN', L, top, P.pink); px(L, top + 9, 140, 1, P.pink);
+  const rows = [['CASH', '$' + S.cash], ['TAPES', S.tapes.length + '/' + TAPE_TOTAL], ['STUNTS', S.stunts.length + '/' + STUNT_IDS.size], ['DELIVERIES', S.delivered], ['TAXI FARES', S.fares], ['RACES WON', S.races], ['GAMBLED', '$' + (S.gambled || 0)], ['STREAMERDUDE', S.bossBeaten ? 'BEATEN X' + S.bossBeaten : 'NOT YET']];
+  rows.forEach(([k, v], i) => { text(k, L, top + 16 + i * 12, P.cream); const s = String(v); text(s, L + 140 - tw(s), top + 16 + i * 12, P.sun); });
+  text('BUTTONS', R, top, P.teal); px(R, top + 9, 136, 1, P.teal);
+  const keysHelp = [['STICK', 'DRIVE OR WALK'], ['GAS', 'GO'], ['DRIFT', 'HOLD IN A TURN'], ['FIRE', 'SHOOT'], ['DOOR', 'IN, OUT, TALK'], ['RADIO', 'NEXT STATION'], ['MAP', 'WHOLE ISLAND'], ['FULL', 'FULL SCREEN']];
+  keysHelp.forEach(([k, v], i) => { text(k, R, top + 16 + i * 12, P.pink); text(v, R + 136 - tw(v), top + 16 + i * 12, P.cream); });
+  if (blink(5)) ctext('PAUSE TO GO ON', SH - 16, P.blush);
 }
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
