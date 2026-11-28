@@ -2257,3 +2257,18 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, GPS, RAD_TOKENS, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+
+/* ================= no accidental zoom ================= */
+// iPhones read a thumb on the stick plus a thumb on a button as a pinch, and ignore user-scalable=no
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouchEnd < 320) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
+// if the page got zoomed anyway, snap it back by re-applying the viewport settings
+(() => {
+  const meta = document.querySelector('meta[name=viewport]'), base = 'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no';
+  const unzoom = () => { if (window.visualViewport && visualViewport.scale > 1.01) { meta.setAttribute('content', base + ', maximum-scale=1'); setTimeout(() => meta.setAttribute('content', base + ', maximum-scale=1'), 50); } };
+  if (window.visualViewport) visualViewport.addEventListener('resize', unzoom);
+  addEventListener('orientationchange', unzoom);
+})();
