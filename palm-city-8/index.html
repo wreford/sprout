@@ -58,7 +58,7 @@ button:active{transform:translateY(2px);box-shadow:none!important}
   <div class="subhead">I can't afford GTA 6, so this is my GTA 6-bit 😂</div>
   <div class="pad">
     <div class="stickzone" id="stickzone" aria-label="Steering stick: point where you want to drive"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
-    <div class="ab"><button class="b" data-k="b" aria-label="Horn">B</button><button class="a" data-k="a" aria-label="Gas">A</button></div>
+    <div class="ab"><button class="b" data-k="b" aria-label="Drift (hold while turning), horn when slow">B</button><button class="a" data-k="a" aria-label="Gas">A</button></div>
     <div class="ss"><div><button data-k="select" aria-label="Music on or off">.</button><span>MUSIC</span></div><div><button data-k="start" aria-label="Start or pause">.</button><span>START</span></div></div>
     <div class="speaker"></div>
   </div>
@@ -282,7 +282,8 @@ const stick = { x: 0, y: 0, mag: 0 };   // analog stick: direction on screen, 0.
 const angleDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 function newGame() {
   S = { x: 43.5 * T, y: 4.5 * T, a: Math.PI / 2, v: 0, cash: 0, heat: 0, heatClock: 0, best, stage: 'pickup', target: null, timer: 0,
-    delivered: 0, streak: 0, flash: null, flashT: 0, traffic: [], maids: [], shake: 0, honk: 0 };
+    delivered: 0, streak: 0, flash: null, flashT: 0, traffic: [], maids: [], shake: 0, honk: 0,
+    side: 0, drift: false, charge: 0, boost: 0, parts: [], geysers: [] };
   for (let i = 0; i < 16; i++) S.traffic.push(spawnTraffic());
   nextPickup();
 }
@@ -302,6 +303,7 @@ function spawnTraffic() { for (;;) { const x = (rnd() * 45) | 0, y = (rnd() * MH
   const c = { x: x * T + 8, y: y * T + 8, dx: horiz ? (rnd() < .5 ? 1 : -1) : 0, dy: horiz ? 0 : (rnd() < .5 ? 1 : -1), sp: 1.1 + rnd() * .6, look: (rnd() * TRAFFIC_LOOKS.length) | 0 };
   keepRight(c); return c; } } }
 function flash(s, t = 90) { S.flash = s; S.flashT = t; }
+function puff(x, y, n, col, spd, life, size = 2, up = 0) { for (let i = 0; i < n && S.parts.length < 400; i++) S.parts.push({ x, y, vx: (Math.random() - .5) * spd, vy: (Math.random() - .5) * spd - up, life: life * (.6 + Math.random() * .6), col, size }); }
 
 /* ================= update ================= */
 function tileAtPx(x, y) { return at(Math.floor(x / T), Math.floor(y / T)); }
@@ -320,17 +322,49 @@ function update() {
       gas = Math.max(gas, stick.mag * (Math.abs(diff) > 1.4 ? .55 : 1));
     }
   }
-  const top = 3.5 * (gas || 1);
-  if (gas && S.v < top) S.v = Math.min(top, S.v + .09 * Math.max(.5, gas)); else if (brake) S.v = Math.max(-1.4, S.v - .14); else S.v *= .965;
-  S.a += steer * .06 * (S.v < -.05 ? -1 : 1) * Math.max(.35, Math.min(1, Math.abs(S.v) / 1.2));   // turns a little even when stopped, so you never get stuck
-  const nx = S.x + Math.cos(S.a) * S.v, ny = S.y + Math.sin(S.a) * S.v;
-  if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(nx - S.x) > .2) { S.x = nx; S.v *= .9; }        // scrape along a wall
-  else if (blockedAt(nx, ny, 6) && !blockedAt(S.x, ny, 6) && Math.abs(ny - S.y) > .2) { S.y = ny; S.v *= .9; }
-  else if (blockedAt(nx, ny, 6)) { const hx = nx + Math.cos(S.a) * 7, hy = ny + Math.sin(S.a) * 7, t = tileAtPx(hx, hy);
-    if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); } }
-    S.v *= -.25; }
+  // forward speed (S.v) and sideways slide (S.side) are worked out from the car's heading each frame
+  const onSand = tileAtPx(S.x, S.y) === SAND, boosting = S.boost > 0;
+  const top = (3.5 + (boosting ? 1.8 : 0)) * (gas || 1) * (onSand ? .8 : 1);
+  if (boosting) { S.boost--; gas = 1; }
+  if (gas && S.v < top) S.v = Math.min(top, S.v + (boosting ? .2 : .09) * Math.max(.5, gas));
+  else if (brake) S.v = S.v > .3 ? S.v - .16 : Math.max(-1.4, S.v - .07);
+  else S.v *= S.v > top ? .985 : .975;
+  // drift: hold B while turning at speed; the back end slides and a charge builds; let go for a boost
+  if (!S.drift && keys.b && Math.abs(steer) > .3 && S.v > 1.9) { S.drift = true; S.charge = 0; sfx('skid'); }
+  if (S.drift && (!keys.b || Math.hypot(S.v, S.side) < 1.2)) {
+    const lvl = S.charge > 110 ? 2 : S.charge > 40 ? 1 : 0;
+    if (lvl && !keys.b) { S.boost = lvl === 2 ? 90 : 50; sfx('boost'); flash(lvl === 2 ? 'MEGA BOOST!' : 'BOOST!', 50); }
+    S.drift = false; S.charge = 0;
+  }
+  const turn = .06 * (S.drift ? 1.3 : 1) * (S.v < -.05 ? -1 : 1) * Math.max(.35, Math.min(1, Math.abs(S.v) / 1.2));   // turns a little even when stopped
+  const vx0 = Math.cos(S.a) * S.v - Math.sin(S.a) * S.side, vy0 = Math.sin(S.a) * S.v + Math.cos(S.a) * S.side;
+  S.a += steer * turn;
+  const ca = Math.cos(S.a), sa = Math.sin(S.a);
+  S.v = vx0 * ca + vy0 * sa; S.side = (-vx0 * sa + vy0 * ca) * (S.drift ? .9 : keys.b ? .85 : .45);
+  if (S.drift) { if (S.v < 2.4 && Math.abs(S.side) > .8) S.v += .06;   // the slide keeps pulling you forward
+    S.v *= .997; if (Math.abs(S.side) > .35) S.charge += Math.abs(S.side) * 1.3 + .3; }
+  const vx = ca * S.v - sa * S.side, vy = sa * S.v + ca * S.side;
+  // tire marks and smoke when sliding or braking hard
+  if ((S.drift && Math.abs(S.side) > .3) || (brake && S.v > 2)) {
+    townCtx.fillStyle = 'rgba(26,7,38,.28)';
+    for (const k of [-4, 4]) townCtx.fillRect(Math.round(S.x - ca * 7 - sa * k), Math.round(S.y - sa * 7 + ca * k), 2, 2);
+    if (frame % 3 === 0) puff(S.x - ca * 9, S.y - sa * 9, 1, 'rgba(255,232,244,.6)', .6, 24, 3);
+    if (S.drift && frame % 2 === 0) { const lvl = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : null; if (lvl) puff(S.x - ca * 9 - sa * 4 * (frame % 4 ? 1 : -1), S.y - sa * 9 + ca * 4 * (frame % 4 ? 1 : -1), 2, lvl, 1.6, 14, 2); }
+  }
+  if (boosting && frame % 2 === 0) puff(S.x - ca * 11, S.y - sa * 11, 2, frame % 4 ? P.sun : P.pink, .8, 12, 3);
+  if (onSand && Math.abs(S.v) > 1.5 && frame % 4 === 0) puff(S.x - ca * 9, S.y - sa * 9, 1, P.sand2, .7, 20, 3);
+  const nx = S.x + vx, ny = S.y + vy;
+  if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(vx) > .2) { S.x = nx; S.v *= .9; S.side *= .5; }        // scrape along a wall
+  else if (blockedAt(nx, ny, 6) && !blockedAt(S.x, ny, 6) && Math.abs(vy) > .2) { S.y = ny; S.v *= .9; S.side *= .5; }
+  else if (blockedAt(nx, ny, 6)) { const hx = nx + ca * 7, hy = ny + sa * 7, t = tileAtPx(hx, hy);
+    if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; puff(hx, hy, 6, P.sun, 2.5, 14, 2); if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); S.geysers.push({ x: Math.floor(hx / T) * T + 8, y: Math.floor(hy / T) * T + 8, t: 60 * 8 }); } }
+    S.v *= -.25; S.side = 0; S.drift = false; S.boost = 0; }
   else { S.x = nx; S.y = ny; }
-  if (tileAtPx(S.x, S.y) === SAND && S.v > 1.8) S.v *= .96;   // sand slows you down
+  // particles and broken hydrants
+  for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
+  S.parts = S.parts.filter(q => q.life > 0);
+  for (const h of S.geysers) { h.t--; if (frame % 2 === 0) puff(h.x, h.y - 4, 2, frame % 4 ? P.foam : '#ffffff', 1.4, 26, 2, 1.2); }
+  S.geysers = S.geysers.filter(h => h.t > 0);
   // traffic
   for (const c of S.traffic) {
     const tx = Math.floor(c.x / T), ty = Math.floor(c.y / T), cxp = tx * T + 8, cyp = ty * T + 8;
@@ -342,7 +376,7 @@ function update() {
     c.x += c.dx * c.sp; c.y += c.dy * c.sp;
     if (Math.abs(c.x - S.x) < 13 && Math.abs(c.y - S.y) < 13) {
       if (Math.abs(S.v) > 1.4) { sfx('crash'); S.shake = 6; addHeat(1, 'FENDER BENDER'); }
-      S.v *= -.4; S.x -= Math.cos(S.a) * 6; S.y -= Math.sin(S.a) * 6; c.dx = -c.dx; c.dy = -c.dy; c.x += c.dx * 8; c.y += c.dy * 8; keepRight(c);
+      S.v *= -.4; S.side = 0; S.drift = false; S.x -= Math.cos(S.a) * 6; S.y -= Math.sin(S.a) * 6; c.dx = -c.dx; c.dy = -c.dy; c.x += c.dx * 8; c.y += c.dy * 8; keepRight(c);
     }
   }
   // parking enforcement: one scooter per heat level
@@ -373,7 +407,7 @@ function update() {
 function setTileAtPx(x, y, v) { const tx = Math.floor(x / T), ty = Math.floor(y / T); if (tx >= 0 && ty >= 0 && tx < MW && ty < MH) { set(tx, ty, v); paintTile(tx, ty); } }
 function addHeat(n, why) { S.heat = Math.min(5, S.heat + n); S.heatClock = 0; flash(why); }
 function spawnMaid() { for (let i = 0; i < 200; i++) { const a = rnd() * Math.PI * 2, r = 180 + rnd() * 60, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r; if (!blockedAt(x, y, 4) && x > 0 && y > 0 && x < 44 * T && y < MH * T) return { x, y, a: 0 }; } return { x: S.x + 200, y: S.y, a: Math.PI }; }
-function ticket() { const fine = Math.max(25, Math.floor(S.cash * .2)); S.cash = Math.max(0, S.cash - fine); S.heat = 0; S.maids = []; S.streak = 0; sfx('ticket'); flash('TICKET! -$' + fine, 120); S.v = 0; }
+function ticket() { const fine = Math.max(25, Math.floor(S.cash * .2)); S.cash = Math.max(0, S.cash - fine); S.heat = 0; S.maids = []; S.streak = 0; sfx('ticket'); flash('TICKET! -$' + fine, 120); S.v = 0; S.side = 0; S.boost = 0; }
 
 /* ================= draw ================= */
 const blink = n => (frame >> n) & 1;
@@ -406,6 +440,8 @@ function draw() {
   for (const m of S.maids) { const x = m.x - camX + sh, y = m.y - camY; drawSprite(SCOOTER(), x, y, m.a); px(x - 2, y - 2, 4, 4, blink(3) ? P.pink : P.teal); }
   const carX = S.x - camX + sh, carY = S.y - camY;
   drawSprite(PLAYER_CAR(), carX, carY, S.a);
+  for (const q of S.parts) px(q.x - camX + sh - q.size / 2, q.y - camY - q.size / 2, q.size, q.size, q.col);
+  if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 14, 40, 3, P.ink); px(carX - 20, carY + 14, w, 3, c); }
   if (S.v < 0) { px(carX - Math.cos(S.a) * 10 - 1, carY - Math.sin(S.a) * 10 - 1, 3, 3, P.red); }
   if (S.honk) { text('HONK!', carX - 14 + 1, carY - 26 + 1, P.ink); text('HONK!', carX - 14, carY - 26, P.cream); }
   // arrow toward the job when it is off screen
@@ -534,6 +570,8 @@ function sfx(name) {   // chip sounds, kept quiet under the beat
   if (name === 'ticket') { beep(880, 440, .18, 'square', .08); beep(880, 440, .18, 'square', .08, .22); }
   if (name === 'late') beep(330, 160, .35, 'triangle', .1);
   if (name === 'honk') { beep(392, 380, .22, 'sawtooth', .05); beep(494, 480, .22, 'sawtooth', .04); }
+  if (name === 'boost') { beep(220, 880, .35, 'sawtooth', .06); beep(330, 1320, .3, 'square', .04, .05); }
+  if (name === 'skid') { if (!NB) NB = noiseBuf(); const s2 = AC.createBufferSource(); s2.buffer = NB; const f2 = AC.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 900; f2.Q.value = 4; const gn = AC.createGain(); gn.gain.setValueAtTime(.12, t); gn.gain.exponentialRampToValueAtTime(.001, t + .35); s2.connect(f2); f2.connect(gn); gn.connect(master); s2.start(t); s2.stop(t + .4); }
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
 }
 function toggleMusic() { musicOn = !musicOn; try { localStorage.setItem('palmcity8.music', musicOn ? 'on' : 'off'); } catch (e) {} if (musicGain) musicGain.gain.setTargetAtTime(musicOn ? 1 : 0, AC.currentTime, .1); if (S && mode !== 'title') flash(musicOn ? 'MUSIC ON' : 'MUSIC OFF', 60); }
@@ -543,7 +581,7 @@ for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener
 function press(k, down) {
   if (k === 'start' && down) { audioInit(); if (mode === 'title') { newGame(); mode = 'play'; sfx('start'); } else mode = mode === 'play' ? 'paused' : 'play'; return; }
   if (k === 'select' && down) { audioInit(); toggleMusic(); return; }
-  if (k === 'b' && down && mode === 'play') { S.honk = 30; sfx('honk'); }
+  if (k === 'b' && down && mode === 'play' && Math.abs(S.v) < 1.5) { S.honk = 30; sfx('honk'); }
   if ((k === 'a' || k === 'up') && down && mode === 'title') { audioInit(); newGame(); mode = 'play'; sfx('start'); return; }
   if (k in keys) keys[k] = down ? 1 : 0;
 }
