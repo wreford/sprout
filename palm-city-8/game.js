@@ -1747,7 +1747,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
     id = e.pointerId; zone.setPointerCapture(id); zone.classList.add('on');
     const { z, r } = place(); if (!home) home = { left: base.style.left, top: base.style.top };
     cx = e.clientX; cy = e.clientY;
-    base.style.left = (cx - z.left - r) + 'px'; base.style.top = (cy - z.top - r) + 'px';
+    // the stick is centred on its left/top by its CSS margin; keep the whole base inside its area
+    const lx = clamp(cx - z.left, r, z.width - r), ly = clamp(cy - z.top, r, z.height - r);
+    base.style.left = lx + 'px'; base.style.top = ly + 'px';   // the push is measured from where the thumb landed
     move(e); if (navigator.vibrate) navigator.vibrate(6);
   });
   zone.addEventListener('pointermove', e => { if (e.pointerId === id) move(e); });
