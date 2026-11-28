@@ -633,6 +633,7 @@ function update() {
   S.parked = S.parked.filter(c => !(c.wreck === 0));
   updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
+  updateTips();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -788,6 +789,7 @@ function drawHUD() {
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 158, w, 24, P.ink); px(x, 158, w, 2, P.pink); px(x, 180, w, 2, P.teal); ctext(S.flash, 163, P.cream, 2); }
+  drawTip();
   drawRadar();
   const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
   if (!S.onFoot) { px(hx, hy - 10, 52, 6, P.ink); px(hx + 1, hy - 9, Math.max(0, S.carHp) / 2, 4, S.carHp < 35 ? P.sun : P.teal); text('CAR', hx + 55, hy - 11, P.teal); }
@@ -1680,6 +1682,31 @@ function drawTitleMenu() {
   const y = 184, w = items.map(s => tw(s) + 16), total = w.reduce((a, b) => a + b, 0) + (items.length - 1) * 8; let x = (SW - total) / 2;
   items.forEach((s, i) => { const on = i === TITLE.sel; px(x, y - 4, w[i], 15, on ? P.pink : 'rgba(26,7,38,.8)'); text(s, x + 8, y, on ? P.ink : P.cream); x += w[i] + 8; });
   if (TITLE.erase) ctext('PRESS AGAIN TO ERASE YOUR SAVE', 172, P.red); else if (blink(5)) ctext('STICK PICKS  GAS GOES', 172, P.cream);
+}
+
+/* ================= 6. tips, once each ================= */
+const seenTips = (() => { try { return new Set(JSON.parse(localStorage.getItem('palmcity8.tips')) || []); } catch (e) { return new Set(); } })();
+function tip(id, line) {
+  if (seenTips.has(id) || (S.tip && S.tip.t > 60)) return;
+  seenTips.add(id); S.tip = { text: line, t: 300 };
+  try { localStorage.setItem('palmcity8.tips', JSON.stringify([...seenTips])); } catch (e) {}
+}
+function updateTips() {
+  if (S.tip && !--S.tip.t) S.tip = null;
+  const age = S.clock || 0;
+  if (age > 30) tip('steer', 'PUSH THE STICK WHERE YOU WANT TO GO');
+  if (age > 60 * 9) tip('pins', 'DRIVE INTO A PIN TO START A JOB');
+  if (!S.onFoot && S.v > 3) tip('drift', 'HOLD DRIFT IN A TURN, THEN LET GO');
+  if (S.heat > 0) tip('heat', 'LOSE THE HEAT AT A PAINT N SPRAY');
+  if (S.onFoot) tip('foot', 'DOOR NEXT TO ANY CAR TAKES IT');
+  if (S.hp < 45) tip('heal', 'NEW KOLA CANS AND JAZZERCISE HEAL YOU');
+  if (TAPES.some((t, i) => !S.tapes.includes(i) && Math.hypot(t.x - S.x, t.y - S.y) < 220)) tip('tapes', 'PURPLE BLIPS ON THE RADAR ARE TAPES');
+  if (S.cash >= 300) tip('casino', 'FEELING LUCKY? THE CASINO IS ON THE STRIP');
+}
+function drawTip() {
+  if (!S.tip) return;
+  const l = 'TIP: ' + S.tip.text, w = tw(l) + 12, x = (SW - w) / 2, y = 64;
+  px(x, y, w, 14, 'rgba(26,7,38,.9)'); px(x, y, 2, 14, P.sun); text(l, x + 7, y + 4, S.tip.t < 40 && blink(2) ? P.blush : P.sun);
 }
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
