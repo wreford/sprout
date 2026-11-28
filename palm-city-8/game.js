@@ -645,7 +645,7 @@ function update() {
   S.parked = S.parked.filter(c => !(c.wreck === 0));
   updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
-  updateTips(); updateTraps(); updateSeaLife();
+  updateTips(); updateTraps(); updateSeaLife(); updateAtms();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -750,7 +750,7 @@ function draw() {
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
-  drawPickups(); drawProps(); drawTapes(); drawBossPin(); drawTraps();
+  drawPickups(); drawProps(); drawTapes(); drawBossPin(); drawTraps(); drawAtms();
   if (casinoDoor) { const x = casinoDoor.x - camX, y = casinoDoor.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 8, y - 12, 16, 14, '#b3123a'); px(x - 8, y - 12, 16, 1, P.sun); px(x - 8, y + 1, 16, 1, P.sun);
     if (Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 60) { const l = S.onFoot ? 'DOOR: GO IN' : 'GET OUT TO GO IN'; px(x - tw(l) / 2 - 3, y + 8, tw(l) + 6, 10, P.ink); text(l, x - tw(l) / 2, y + 10, blink(4) ? P.sun : P.cream); } } }
   for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
@@ -903,6 +903,7 @@ function door() {
   if (S.down) return;
   { const a = nearAerobics(S.onFoot ? 24 : 40); if (a && (S.onFoot || Math.hypot(S.v, S.side) < 1.2)) { jazzercise(a); return; } }
   if (S.onFoot && nearCasino()) { enterCasino(); return; }
+  if (S.onFoot && nearAtm()) { say('ATM: ' + pick(['CARD DECLINED.', 'INSUFFICIENT FUNDS. TOTALLY BOGUS.', 'PLEASE INSERT CARD. ANY CARD.']), 90); sfx('late'); return; }
   if (!S.onFoot) {
     if (Math.hypot(S.v, S.side) > 1.2 || S.air || S.sink) { flash('SLOW DOWN TO GET OUT', 50); return; }
     S.parked.push({ x: S.x, y: S.y, a: S.a, look: S.rideLook, hp: S.carHp });
@@ -1865,6 +1866,40 @@ function drawTargetArrow() {
   px(lx - 2, ly - 2, tw(l) + 4, 11, P.ink); text(l, lx, ly, col);
   g.globalAlpha = 1;
 }
+
+/* ================= 18. ATMs ================= */
+const ATMS = [];
+function placeAtms() {
+  for (let k = 0; k < 20000 && ATMS.length < 10; k++) {
+    const x = (rnd() * MW) | 0, y = (rnd() * MH) | 0;
+    if (at(x, y) !== WALK || blocked[y * MW + x] || at(x, y - 1) !== BLD || ATMS.some(a => Math.hypot(a.x / T - x, a.y / T - y) < 18)) continue;
+    ATMS.push({ x: x * T + 8, y: y * T + 4, hp: 3, broke: 0 });
+  }
+}
+function bustAtm(a) {
+  a.broke = 60 * 90; const pay = 60 + ((Math.random() * 12) | 0) * 10; S.cash += pay;
+  for (let i = 0; i < 18; i++) S.parts.push({ x: a.x, y: a.y, vx: (Math.random() - .5) * 4, vy: Math.random() * 2 + .5, life: 40 + Math.random() * 30, col: i % 2 ? '#7adf8a' : '#3fae5a', size: 3 });
+  sfx('boom'); addHeat(2, 'ATM BUSTED! +$' + pay);
+}
+function updateAtms() {
+  for (const a of ATMS) {
+    if (a.broke) { if (!--a.broke) a.hp = 3; continue; }
+    for (const b of S.bullets) if (b.mine && Math.abs(b.x - a.x) < 7 && Math.abs(b.y - a.y) < 8) { b.life = 0; a.hp -= b.dmg; puff(a.x, a.y, 3, P.sun, 1.5, 10, 2); if (a.hp <= 0) bustAtm(a); }
+    if (!a.broke && !S.onFoot && Math.hypot(S.v, S.side) > 2.2 && Math.hypot(a.x - S.x, a.y - S.y) < 14) { bustAtm(a); S.v *= .5; }
+  }
+}
+function nearAtm() { return ATMS.find(a => !a.broke && Math.hypot(a.x - S.x, a.y - S.y) < 18); }
+function drawAtms() {
+  for (const a of ATMS) {
+    const x = a.x - camX, y = a.y - camY; if (x < -20 || y < -30 || x > SW + 20 || y > SH + 20) continue;
+    const top = proj(a.x, a.y, 14);
+    g.fillStyle = a.broke ? '#3a3440' : '#5a6a8a'; g.fillRect(Math.round(x - 5), Math.round(Math.min(y, top[1])), 10, Math.max(6, Math.round(Math.abs(y - top[1])) + 4));
+    px(top[0] - 5, top[1] - 1, 10, 4, a.broke ? '#2a2430' : '#8a9ab8');
+    if (!a.broke) { px(x - 3, Math.min(y, top[1]) + 2, 6, 3, blink(4) ? '#7adf8a' : '#3fae5a'); }
+    else if (frame % 8 === 0) puff(a.x, a.y - 6, 1, '#5a5462', .6, 30, 3, .5);
+    if (!a.broke && S.onFoot && Math.hypot(a.x - S.x, a.y - S.y) < 30) { const l = 'ATM'; px(x - 9, y + 8, 18, 9, P.ink); text(l, x - 8, y + 9, '#7adf8a'); }
+  }
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -2068,7 +2103,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 })();
 
 /* ================= loop ================= */
-buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse(); placeTraps(); placeSeaLife();
+buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse(); placeTraps(); placeSeaLife(); placeAtms();
 let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
@@ -2078,4 +2113,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, ATMS, TRAPS, BOATS, SURFERS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
