@@ -614,6 +614,7 @@ function updateMaids() {
 /* ================= update ================= */
 function update() {
   frame++;
+  if (S && mode === 'play') S.clock = (S.clock || 0) + 1;
   if (mode === 'casino') { updateCasino(); return; }
   if (mode !== 'play') return;
   if (S.down) { if (!--S.downT) getUp(); }
@@ -656,8 +657,9 @@ function windows(b, face, along0, along1, fixed, lit) {
   for (let z = b.style === 'house' ? 4 : 6; z + wh < b.h - 3; z += rowH) for (let u = along0 + 3; u + ww <= along1 - 3; u += colW) {
     const p0 = vert ? proj(fixed, u, z) : proj(u, fixed, z), p1 = vert ? proj(fixed, u + ww, z + wh) : proj(u + ww, fixed, z + wh);
     const x = Math.min(p0[0], p1[0]), y = Math.min(p0[1], p1[1]), w = Math.max(1, Math.abs(p1[0] - p0[0])), h = Math.max(1, Math.abs(p1[1] - p0[1]));
-    const on = hash(u + b.seed, z * 7 + face.charCodeAt(0)) < lit;
+    const night = nightLevel(), on = hash(u + b.seed, z * 7 + face.charCodeAt(0)) < lit + night * .3;
     g.fillStyle = on ? (tall ? '#bfe8ff' : '#ffe9a8') : (tall ? '#2a3a5a' : '#3a2a48'); g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    if (on && night > .2) LIT.push([Math.round(x), Math.round(y), Math.round(w), Math.round(h), tall ? '#d8f2ff' : '#ffe08a']);
   }
 }
 function drawBuilding(b) {
@@ -763,6 +765,7 @@ function draw() {
     const ang = Math.atan2(aim.y - S.y, aim.x - S.x), ax = SW / 2 + Math.cos(ang) * 140, ay = SH / 2 + 10 + Math.sin(ang) * 80;
     for (let i = 0; i < 9; i++) { const s = 9 - i; px(ax + Math.cos(ang) * i * 1.6 - s / 2, ay + Math.sin(ang) * i * 1.6 - s / 2, s, s, i < 2 ? P.ink : tc); }
   }
+  drawNight();
   drawHUD();
   if (S.hurtT && S.onFoot) { px(0, 21, SW, 2, P.red); px(0, SH - 2, SW, 2, P.red); px(0, 21, 2, SH, P.red); px(SW - 2, 21, 2, SH, P.red); }
   if (S.down) { const t = S.down === 'busted' ? 'BUSTED' : 'TOTALLY WASTED', sub = S.down === 'busted' ? 'GNARLY. -$' + S.downLoss : 'BOGUS. -$' + S.downLoss; px(0, 80, SW, 56, 'rgba(26,7,38,.85)'); ctext(t, 88, S.down === 'busted' ? '#3a7aff' : P.red, 3, P.ink); ctext(sub, 118, P.cream, 1); }
@@ -787,6 +790,7 @@ function drawHUD() {
   drawRadar();
   const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
   if (!S.onFoot) { px(hx, hy - 10, 52, 6, P.ink); px(hx + 1, hy - 9, Math.max(0, S.carHp) / 2, 4, S.carHp < 35 ? P.sun : P.teal); text('CAR', hx + 55, hy - 11, P.teal); }
+  const ck = clockText(); text(ck, SW - 6 - tw(ck), SH - 33, nightLevel() > .5 ? P.teal : P.sun);
   const wl = S.weapon + (S.weapon === 'PISTOL' ? '' : ' ' + S.ammo); text(wl, SW - 6 - tw(wl), SH - 22, S.weapon === 'PISTOL' ? P.cream : P.sun);
   const kmh = S.onFoot ? 'ON FOOT' : Math.round(Math.hypot(S.v, S.side) * 26) + ' KM/H'; text(kmh, SW - 6 - tw(kmh), SH - 11, P.cream);
 }
@@ -1563,6 +1567,36 @@ function drawBossBar() {
   px(46, 37, SW - 92, 4, '#3a2a48'); px(46, 37, Math.max(0, (SW - 92) * B.hp / B.max), 4, '#3aff7a');
 }
 // extras added one at a time
+
+/* ================= 2. day and night ================= */
+const DAY = 60 * 60 * 6;   // six minutes from midnight to midnight
+const dayHour = () => ((S.clock / DAY) + .7) % 1 * 24;   // a new game starts at about 4:48 PM
+function nightLevel() { const h = dayHour(); if (h >= 7 && h <= 18) return 0; if (h > 18 && h < 20.5) return (h - 18) / 2.5; if (h >= 20.5 || h < 5) return 1; return 1 - (h - 5) / 2; }
+function clockText() { const h = dayHour(), hh = Math.floor(h), mm = Math.floor((h - hh) * 6) * 10; return ((hh % 12) || 12) + ':' + String(mm).padStart(2, '0') + (hh < 12 ? ' AM' : ' PM'); }
+const LIT = [];   // lit windows seen this frame, redrawn bright after the dark
+function headlight(x, y, a, len, k) {
+  const ca = Math.cos(a), sa = Math.sin(a), fx = x + ca * 10, fy = y + sa * 10;
+  g.fillStyle = 'rgba(255,238,190,' + (.2 * k) + ')'; g.beginPath();
+  g.moveTo(fx - sa * 5, fy + ca * 5); g.lineTo(fx + sa * 5, fy - ca * 5); g.lineTo(fx + ca * len + sa * 24, fy + sa * len - ca * 24); g.lineTo(fx + ca * len - sa * 24, fy + sa * len + ca * 24); g.closePath(); g.fill();
+}
+function glow(x, y, r, rgb, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb + ',0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+function drawNight() {
+  const n = nightLevel(); if (n <= 0) { LIT.length = 0; return; }
+  const warm = Math.min(1, n * 2), deep = Math.max(0, n * 2 - 1);
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = 'rgb(' + Math.round(255 - 40 * warm - 150 * deep) + ',' + Math.round(255 - 90 * warm - 100 * deep) + ',' + Math.round(255 - 120 * warm - 10 * deep) + ')';
+  g.fillRect(0, 21, SW, SH - 21);
+  g.globalCompositeOperation = 'lighter';
+  for (const l of LAMPS) { const x = l.x - camX, y = l.y - camY; if (x > -40 && y > -40 && x < SW + 40 && y < SH + 40) glow(x + 4, y + 4, 30, '255,200,130', .32 * n); }
+  if (!S.onFoot && !S.sink) headlight(S.x - camX, S.y - camY, S.a, 80, n);
+  for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (!c.wreck && x > -60 && y > -60 && x < SW + 60 && y < SH + 60) headlight(x, y, Math.atan2(c.dy, c.dx), 56, n * .8); }
+  for (const c of S.cops) if (!c.dead) { const x = c.x - camX, y = c.y - camY; glow(x, y, 26, blink(2) ? '255,40,80' : '60,120,255', .45 * n); }
+  for (const b of BUILDINGS) if (b.sign) { const t = proj((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.h), x = t[0], y = t[1]; if (x > -60 && y > -60 && x < SW + 60 && y < SH + 60) glow(x, y, 44, b.style === 'casino' ? '255,211,107' : '255,62,165', .4 * n); }
+  if (casinoDoor) glow(casinoDoor.x - camX, casinoDoor.y - camY - 6, 34, '255,60,90', .35 * n);
+  g.globalCompositeOperation = 'source-over';
+  for (const w of LIT) { g.fillStyle = w[4]; g.fillRect(w[0], w[1], w[2], w[3]); }
+  LIT.length = 0;
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
