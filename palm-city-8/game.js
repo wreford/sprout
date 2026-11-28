@@ -778,7 +778,7 @@ function draw() {
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 15, 40, 3, P.ink); px(carX - 20, carY + 15, w, 3, c); }
   // arrow toward the job when it is off screen
   drawTargetArrow();
-  drawNight();
+  drawNight(); drawSpeedFx();
   drawHUD();
   if (S.hurtT && S.onFoot) { px(0, 21, SW, 2, P.red); px(0, SH - 2, SW, 2, P.red); px(0, 21, 2, SH, P.red); px(SW - 2, 21, 2, SH, P.red); }
   if (S.down) { const t = S.down === 'busted' ? 'BUSTED' : 'TOTALLY WASTED', sub = S.down === 'busted' ? 'GNARLY. -$' + S.downLoss : 'BOGUS. -$' + S.downLoss; px(0, 80, SW, 56, 'rgba(26,7,38,.85)'); ctext(t, 88, S.down === 'busted' ? '#3a7aff' : P.red, 3, P.ink); ctext(sub, 118, P.cream, 1); }
@@ -952,7 +952,7 @@ function hurt(n, why) {
   else { S.carHp -= n; S.hurtT = 8; if (S.carHp <= 0) explodeRide(); }
 }
 function boom(x, y, big = 1, hitsYou = true) {
-  sfx('boom'); S.shake = 14;
+  sfx('boom'); S.shake = 14; if (Math.abs(x - S.x) < 260 && Math.abs(y - S.y) < 200) S.blast = 14;
   puff(x, y, 26 * big, P.sun, 5 * big, 26, 4); puff(x, y, 16 * big, '#ff7a2a', 4 * big, 32, 4); puff(x, y, 14 * big, '#3a3440', 3, 60, 5, .6);
   for (const c of S.traffic) if (!c.wreck && Math.hypot(c.x - x, c.y - y) < 36) { c.hp = 0; wreckCar(c, true); }
   if (hitsYou && Math.hypot(S.x - x, S.y - y) < 40 && !S.down) hurt(S.onFoot ? 35 : 25);
@@ -1899,6 +1899,23 @@ function drawAtms() {
     else if (frame % 8 === 0) puff(a.x, a.y - 6, 1, '#5a5462', .6, 30, 3, .5);
     if (!a.broke && S.onFoot && Math.hypot(a.x - S.x, a.y - S.y) < 30) { const l = 'ATM'; px(x - 9, y + 8, 18, 9, P.ink); text(l, x - 8, y + 9, '#7adf8a'); }
   }
+}
+
+/* ================= 19. speed lines and explosion flashes ================= */
+const STREAKS = Array.from({ length: 22 }, (_, i) => ({ a: i / 22 * Math.PI * 2 + Math.random() * .2, r: Math.random(), len: 14 + Math.random() * 26 }));
+function drawSpeedFx() {
+  const sp = S.onFoot ? 0 : Math.hypot(S.v, S.side), k = S.boost ? 1 : clamp((sp - 3.4) / 1.2, 0, 1);
+  if (k > 0 && !S.down) {
+    g.strokeStyle = 'rgba(255,245,250,' + (.35 + .45 * k) + ')'; g.lineWidth = 2; g.beginPath();
+    const cx = SW / 2, cy = SH / 2 + 8;
+    for (const s of STREAKS) {
+      s.r -= .06 + .08 * k; if (s.r < .45) { s.r = 1; s.a = Math.random() * Math.PI * 2; }
+      const ca = Math.cos(s.a), sa = Math.sin(s.a), R = Math.hypot(SW, SH) / 2 * s.r;
+      g.moveTo(cx + ca * R, cy + sa * R * .75); g.lineTo(cx + ca * (R + s.len * k), cy + sa * (R + s.len * k) * .75);
+    }
+    g.stroke();
+  }
+  if (S.blast) { g.fillStyle = 'rgba(255,240,200,' + (S.blast / 14) * .55 + ')'; g.fillRect(0, 21, SW, SH - 21); S.blast--; }
 }
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
