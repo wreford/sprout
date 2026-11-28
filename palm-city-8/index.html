@@ -104,31 +104,57 @@ const tw = (s, k = 1) => String(s).length * 6 * k - k;
 function ctext(s, y, c, k = 1, shadow) { const x = Math.round((SW - tw(s, k)) / 2); if (shadow) text(s, x + k, y + k, shadow, k); text(s, x, y, c, k); }
 
 /* ================= the town ================= */
-const MW = 64, MH = 64, T = 16;
-const ROAD = 0, WALK = 1, BLD = 2, PARK = 3, SAND = 4, SEA = 5, PALM = 6, HYD = 7;
+const MW = 106, MH = 92, T = 16;
+const ROAD = 0, WALK = 1, BLD = 2, PARK = 3, SAND = 4, SEA = 5, PALM = 6, HYD = 7, CANAL = 8, BRIDGE = 9, PIER = 10, RAMP = 11, POND = 12, PATH = 13;
 const map = new Uint8Array(MW * MH);
-const at = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? SEA : map[y * MW + x];
+// off the east edge is open sea; the other edges are a wall
+const at = (x, y) => x >= MW ? SEA : (x < 0 || y < 0 || y >= MH) ? BLD : map[y * MW + x];
 const set = (x, y, v) => { map[y * MW + x] = v; };
 let seed = 20260;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-const isBoulevard = x => x === 43 || x === 44;
+const isWater = t => t === SEA || t === CANAL || t === POND;
+// ramps: tile, launch direction, and an id for the stunt list
+const RAMPS = [];
+function addRamp(x, y, a, id) { set(x, y, RAMP); RAMPS.push({ x, y, a, id }); }
+const STUNT_COUNT = 5;
 function buildTown() {
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
     let v;
-    if (x >= 52) v = SEA;
-    else if (x >= 45) v = SAND;
-    else if (x % 9 < 2 || y % 9 < 2 || isBoulevard(x)) v = ROAD;
+    if (x >= 75) v = SEA;
+    else if (x >= 66) v = SAND;
+    else if (x % 9 < 2 || y % 9 < 2) v = ROAD;
     else { const bx = x % 9, by = y % 9; v = (bx === 2 || bx === 8 || by === 2 || by === 8) ? WALK : BLD; }
     set(x, y, v);
   }
-  // a few parks, palms on the beach and in parks, hydrants on the sidewalks
-  for (let by = 0; by < 7; by++) for (let bx = 0; bx < 5; bx++) if (rnd() < .22) for (let y = 3; y < 8; y++) for (let x = 3; x < 8; x++) { const X = bx * 9 + x, Y = by * 9 + y; if (X < 43) set(X, Y, rnd() < .18 ? PALM : PARK); }
-  for (let y = 1; y < MH - 1; y += 3) if (rnd() < .8) set(46 + ((rnd() * 5) | 0), y, PALM);
-  for (let y = 0; y < MH; y++) for (let x = 0; x < 43; x++) if (at(x, y) === WALK && rnd() < .035) set(x, y, HYD);
+  // the canal across town and out to sea, with a bridge on every street but one
+  for (let y = 48; y <= 52; y++) for (let x = 0; x < 75; x++) set(x, y, x % 9 < 2 && x <= 64 && x !== 27 && x !== 28 ? BRIDGE : CANAL);
+  // Palm Park: two blocks and the streets between them, a pond with a loop path
+  for (let y = 21; y <= 34; y++) for (let x = 30; x <= 43; x++) {
+    const d = Math.hypot((x - 36.5) / 4.2, (y - 27.5) / 3.2);
+    set(x, y, d < 1 ? POND : d < 1.45 || y === 27 || x === 36 ? PATH : rnd() < .12 ? PALM : PARK);
+  }
+  // a few small parks
+  for (let by = 0; by < 10; by++) for (let bx = 0; bx < 7; bx++) {
+    if (by === 5 || (bx >= 3 && bx <= 4 && by >= 2 && by <= 3) || rnd() > .14) continue;
+    for (let y = 3; y < 8; y++) for (let x = 3; x < 8; x++) { const X = bx * 9 + x, Y = by * 9 + y; if (at(X, Y) === BLD) set(X, Y, rnd() < .18 ? PALM : PARK); }
+  }
+  // the pier and Sandbar Isle, out past the surf
+  for (let x = 66; x <= 87; x++) for (const y of [21, 22]) set(x, y, PIER);
+  for (let y = 12; y <= 31; y++) for (let x = 91; x <= 102; x++) if (Math.hypot((x - 96.5) / 6.6, (y - 21.5) / 10.6) < 1) set(x, y, SAND);
+  for (const [x, y] of [[94, 14], [99, 16], [100, 26], [95, 29], [101, 20]]) set(x, y, PALM);
+  // ramps: over the canal both ways, off the pier to the isle and back, and a dune jump
+  addRamp(27, 47, Math.PI / 2, 0); addRamp(28, 47, Math.PI / 2, 0);
+  addRamp(27, 53, -Math.PI / 2, 1); addRamp(28, 53, -Math.PI / 2, 1);
+  addRamp(87, 21, 0, 2); addRamp(87, 22, 0, 2);
+  addRamp(91, 21, Math.PI, 3); addRamp(91, 22, Math.PI, 3);
+  addRamp(69, 70, -Math.PI / 2, 4); addRamp(70, 70, -Math.PI / 2, 4);
+  // palms on the beach, hydrants on the sidewalks
+  for (let y = 1; y < MH - 1; y += 3) { const x = 67 + ((rnd() * 7) | 0); if (rnd() < .8 && at(x, y) === SAND && !RAMPS.some(r => Math.abs(r.x - x) < 2 && Math.abs(r.y - y) < 3)) set(x, y, PALM); }
+  for (let y = 0; y < MH; y++) for (let x = 0; x < 66; x++) if (at(x, y) === WALK && rnd() < .03) set(x, y, HYD);
   paintTown();
 }
-const solid = t => t === BLD || t === SEA || t === PALM || t === HYD;
-const isRoad = (x, y) => at(x, y) === ROAD;
+const solid = t => t === BLD || t === PALM || t === HYD;
+const isRoad = (x, y) => { const t = at(x, y); return t === ROAD || t === BRIDGE; };
 
 /* ================= painting the town ================= */
 // the town is painted once onto its own picture; only the waves move
@@ -141,10 +167,10 @@ const ROOFS = [['#ff8fcb', '#d9609f', '#a8417a'], ['#7de8e3', '#3fbcbc', '#21808
 function buildingOf(tx, ty) { const bx = Math.floor(tx / 9), by = Math.floor(ty / 9), split = hash(bx, by + 50) < .5, half = split && tx % 9 >= 5 ? 1 : 0; return bx * 2 + half + by * 100; }
 function roofOf(tx, ty) { const b = buildingOf(tx, ty); return ROOFS[Math.floor(hash(b, 7) * ROOFS.length)]; }
 const sameBuilding = (ax, ay, bx, by) => at(bx, by) === BLD && buildingOf(ax, ay) === buildingOf(bx, by);
-const horizStreet = ty => ty % 9 < 2, vertStreet = tx => tx % 9 < 2 || isBoulevard(tx);
+const horizStreet = ty => ty % 9 < 2, vertStreet = tx => tx % 9 < 2;
 
 function paintGround(t, sx, sy, tx, ty) {
-  if (t === SAND || (t === PALM && tx >= 45)) {
+  if (t === SAND || (t === PALM && tx >= 66)) {
     px(sx, sy, 16, 16, P.sand);
     for (let i = 0; i < 3; i++) { const h = hash(tx * 3 + i, ty); px(sx + (h * 14 | 0), sy + (hash(ty, tx + i) * 14 | 0), 2, 1, P.sand2); }
     if (at(tx + 1, ty) === SEA) px(sx + 14, sy, 2, 16, '#fff1e2');
@@ -166,7 +192,7 @@ function paintRoad(sx, sy, tx, ty) {
   const h = horizStreet(ty), v = vertStreet(tx);
   if (h && v) { if (hash(tx, ty + 9) < .15) { px(sx + 5, sy + 5, 6, 6, P.asph2); px(sx + 6, sy + 6, 4, 4, P.ink); } return; }   // crossing, sometimes a manhole
   if (v) {
-    const leftLane = tx === 43 || tx % 9 === 0;
+    const leftLane = tx % 9 === 0;
     px(leftLane ? sx + 15 : sx, sy + 3, 1, 8, P.line);                                // centre line, dashed
     if (horizStreet(ty - 1)) for (let i = 0; i < 4; i++) px(sx + 1 + i * 4, sy + 1, 2, 6, P.cream);   // crosswalks next to the crossing
     if (horizStreet(ty + 1)) for (let i = 0; i < 4; i++) px(sx + 1 + i * 4, sy + 9, 2, 6, P.cream);
@@ -203,11 +229,45 @@ function paintTile(tx, ty) {
   const t = at(tx, ty), sx = tx * T, sy = ty * T;
   if (t === ROAD) paintRoad(sx, sy, tx, ty);
   else if (t === BLD) paintBuilding(sx, sy, tx, ty);
-  else if (t === SEA) px(sx, sy, 16, 16, P.sea);
+  else if (isWater(t)) paintWater(t, sx, sy, tx, ty);
+  else if (t === BRIDGE) paintBridge(sx, sy, tx, ty);
+  else if (t === PIER) paintPier(sx, sy, tx, ty);
+  else if (t === RAMP) paintRamp(sx, sy, tx, ty);
+  else if (t === PATH) { px(sx, sy, 16, 16, '#f0d2b0'); for (let i = 0; i < 3; i++) px(sx + (hash(tx + i, ty) * 14 | 0), sy + (hash(ty, tx + i) * 14 | 0), 2, 2, '#dcb48e'); }
   else paintGround(t, sx, sy, tx, ty);
   if (t === HYD) { px(sx + 4, sy + 12, 9, 2, P.walk2); px(sx + 5, sy + 4, 6, 9, P.red); px(sx + 3, sy + 7, 10, 3, P.red); px(sx + 6, sy + 3, 4, 2, '#b3123a'); px(sx + 6, sy + 5, 2, 2, '#ff9bb0'); }
   if (t === PALM) { px(sx + 3, sy + 11, 11, 3, 'rgba(26,7,38,.25)'); px(sx + 7, sy + 5, 3, 8, P.trunk); px(sx + 7, sy + 7, 3, 1, '#5a2638'); px(sx + 7, sy + 10, 3, 1, '#5a2638'); }
   ctx = g;
+}
+function paintWater(t, sx, sy, tx, ty) {
+  px(sx, sy, 16, 16, t === SEA ? P.sea : t === POND ? '#2bc0c8' : '#18a8b8');
+  if (t === SEA) return;
+  const edge = '#9a7aa8';   // stone banks
+  if (!isWater(at(tx, ty - 1)) && at(tx, ty - 1) !== BRIDGE) px(sx, sy, 16, 2, edge);
+  if (!isWater(at(tx, ty + 1)) && at(tx, ty + 1) !== BRIDGE) px(sx, sy + 14, 16, 2, edge);
+  if (!isWater(at(tx - 1, ty)) && at(tx - 1, ty) !== BRIDGE) px(sx, sy, 2, 16, edge);
+  if (!isWater(at(tx + 1, ty)) && at(tx + 1, ty) !== BRIDGE) px(sx + 14, sy, 2, 16, edge);
+}
+function paintBridge(sx, sy, tx, ty) {
+  px(sx, sy, 16, 16, P.asph2); px(sx, sy + 15, 16, 1, P.asph);
+  px(tx % 9 === 0 ? sx + 15 : sx, sy + 3, 1, 8, P.line);
+  for (const [side, x] of [[-1, sx], [1, sx + 13]]) if (isWater(at(tx + side, ty))) { px(x, sy, 3, 16, P.cream); px(x + 1, sy, 1, 16, P.walk2); for (let y = 0; y < 16; y += 8) px(x, sy + y, 3, 3, P.blush); }
+}
+function paintPier(sx, sy, tx, ty) {
+  px(sx, sy, 16, 16, '#b07a5a');
+  for (let x = 0; x < 16; x += 4) px(sx + x, sy, 1, 16, '#8a5a44');
+  if (hash(tx, ty) < .3) px(sx + 6, sy + 6, 1, 1, '#5a3a2a');
+  if (isWater(at(tx, ty - 1)) || at(tx, ty - 1) === SAND) { px(sx, sy, 16, 2, P.cream); px(sx + 7, sy, 2, 3, P.blush); }
+  if (isWater(at(tx, ty + 1)) || at(tx, ty + 1) === SAND) { px(sx, sy + 14, 16, 2, P.cream); px(sx + 7, sy + 13, 2, 3, P.blush); }
+}
+function paintRamp(sx, sy, tx, ty) {
+  const r = RAMPS.find(q => q.x === tx && q.y === ty), dx = Math.round(Math.cos(r.a)), dy = Math.round(Math.sin(r.a));
+  const under = at(tx - dx, ty - dy);
+  px(sx, sy, 16, 16, under === SAND ? P.sand : under === PIER ? '#b07a5a' : P.asph);
+  const shades = ['#4b1d63', '#5c3399', '#6a3cab', '#7a48bd', '#8a5ad1', '#9b6ae0', '#ad7eea', '#c095f0'];
+  for (let i = 0; i < 8; i++) { if (dx) px(sx + (dx > 0 ? i * 2 : 14 - i * 2), sy + 1, 2, 14, shades[i]); else px(sx + 1, sy + (dy > 0 ? i * 2 : 14 - i * 2), 14, 2, shades[i]); }
+  if (dx) px(dx > 0 ? sx + 14 : sx, sy + 1, 2, 14, P.sun); else px(sx + 1, dy > 0 ? sy + 14 : sy, 14, 2, P.sun);
+  for (let i = 0; i < 3; i++) { const c = 8 + (i - 1) * 4; if (dx) { px(sx + 6, sy + c - 1, 4, 2, P.pink); } else { px(sx + c - 1, sy + 6, 2, 4, P.pink); } }
 }
 // palm tops are painted last so they can hang over the next tile
 function paintPalmTop(tx, ty) {
@@ -221,7 +281,7 @@ function paintTown() {
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (at(x, y) === PALM) paintPalmTop(x, y);
   // beach umbrellas and towels
   ctx = townCtx;
-  for (let y = 2; y < MH - 2; y += 4) { const x = 47 + ((hash(y, 3) * 4) | 0); if (at(x, y) !== SAND) continue; const cx = x * T + 8, cy = y * T + 8, cols = [[P.pink, P.cream], [P.teal, P.cream], [P.sun, P.pink]][y % 3];
+  for (let y = 2; y < MH - 2; y += 4) { const x = 67 + ((hash(y, 3) * 6) | 0); if (at(x, y) !== SAND || RAMPS.some(r => Math.abs(r.x - x) < 2 && Math.abs(r.y - y) < 3)) continue; const cx = x * T + 8, cy = y * T + 8, cols = [[P.pink, P.cream], [P.teal, P.cream], [P.sun, P.pink]][y % 3];
     px(cx - 2, cy + 6, 12, 6, cols[0]); px(cx + 2, cy + 6, 4, 6, cols[1]);   // towel
     px(cx - 7, cy - 4, 14, 3, cols[0]); px(cx - 5, cy - 6, 10, 7, cols[0]); px(cx - 2, cy - 7, 4, 9, cols[1]); px(cx - 1, cy - 1, 2, 2, P.ink); }
   ctx = g;
@@ -268,7 +328,9 @@ function scooterPicture() {
 }
 const SPRITES = {};
 function sprite(name, make) { if (!SPRITES[name]) { const pic = make(); SPRITES[name] = { look: turnSprite(pic), shadow: turnSprite(pic, 16, true) }; } return SPRITES[name]; }
-function drawSprite(sp, x, y, a) { const i = headingIndex(a), pic = sp.look[i], half = pic.width / 2; g.drawImage(sp.shadow[i], Math.round(x - half + 2), Math.round(y - half + 3)); g.drawImage(pic, Math.round(x - half), Math.round(y - half)); }
+function drawSprite(sp, x, y, a, z = 0, shrink = 1) { const i = headingIndex(a), pic = sp.look[i], half = pic.width / 2, k = (1 + z / 36) * shrink, w = Math.round(pic.width * k);
+  if (shrink === 1) g.drawImage(sp.shadow[i], Math.round(x - half + 2 + z * .5), Math.round(y - half + 3 + z * .7));
+  g.drawImage(pic, Math.round(x - w / 2), Math.round(y - w / 2 - z), w, w); }
 const PLAYER_CAR = () => sprite('player', () => carPicture(P.pink, P.cream, P.teal));
 const TRAFFIC_LOOKS = [[P.teal, P.cream, null], [P.cream, P.teal, P.pink], [P.sun, P.cream, null], [P.violet, P.blush, null], [P.blush, P.violet, P.cream], ['#9fe8ff', '#4b1d63', null]];
 const trafficCar = i => sprite('traffic' + i, () => carPicture(...TRAFFIC_LOOKS[i]));
@@ -281,13 +343,14 @@ const keys = { up: 0, down: 0, left: 0, right: 0, a: 0, b: 0 };
 const stick = { x: 0, y: 0, mag: 0 };   // analog stick: direction on screen, 0..1 push
 const angleDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 function newGame() {
-  S = { x: 43.5 * T, y: 4.5 * T, a: Math.PI / 2, v: 0, cash: 0, heat: 0, heatClock: 0, best, stage: 'pickup', target: null, timer: 0,
+  S = { x: 63.5 * T, y: 4.5 * T, a: Math.PI / 2, v: 0, cash: 0, heat: 0, heatClock: 0, best, stage: 'pickup', target: null, timer: 0,
     delivered: 0, streak: 0, flash: null, flashT: 0, traffic: [], maids: [], shake: 0, honk: 0,
-    side: 0, drift: false, charge: 0, boost: 0, parts: [], geysers: [] };
-  for (let i = 0; i < 16; i++) S.traffic.push(spawnTraffic());
+    side: 0, drift: false, charge: 0, boost: 0, parts: [], geysers: [],
+    air: 0, airMax: 0, z: 0, avx: 0, avy: 0, sink: 0, safe: { x: 63.5 * T, y: 4.5 * T, a: Math.PI / 2 }, stunts: [], district: '', banner: null };
+  for (let i = 0; i < 28; i++) S.traffic.push(spawnTraffic());
   nextPickup();
 }
-function randomCurb() { for (;;) { const x = (rnd() * 43) | 0, y = (rnd() * MH) | 0; if (at(x, y) === WALK && (isRoad(x - 1, y) || isRoad(x + 1, y) || isRoad(x, y - 1) || isRoad(x, y + 1))) return { x: x * T + 8, y: y * T + 8 }; } }
+function randomCurb() { for (;;) { const x = (rnd() * 66) | 0, y = (rnd() * MH) | 0; if (at(x, y) === WALK && (isRoad(x - 1, y) || isRoad(x + 1, y) || isRoad(x, y - 1) || isRoad(x, y + 1))) return { x: x * T + 8, y: y * T + 8 }; } }
 function nextPickup() { S.stage = 'pickup'; S.target = randomCurb(); S.timer = 0; }
 function startDelivery() {
   let t; do { t = randomCurb(); } while (Math.hypot(t.x - S.x, t.y - S.y) < 280);
@@ -296,10 +359,10 @@ function startDelivery() {
 // traffic keeps right: put a car in the lane that matches its direction
 function keepRight(c) {
   const tx = Math.floor(c.x / T), ty = Math.floor(c.y / T);
-  if (c.dy) { const left = isBoulevard(tx) ? 43 : tx - tx % 9, lane = c.dy > 0 ? left : left + 1; if (isRoad(lane, ty)) c.x = lane * T + 8; }
+  if (c.dy) { const left = tx - tx % 9, lane = c.dy > 0 ? left : left + 1; if (isRoad(lane, ty)) c.x = lane * T + 8; }
   else { const top = ty - ty % 9, lane = c.dx < 0 ? top : top + 1; if (isRoad(tx, lane)) c.y = lane * T + 8; }
 }
-function spawnTraffic() { for (;;) { const x = (rnd() * 45) | 0, y = (rnd() * MH) | 0; if (isRoad(x, y) && !(horizStreet(y) && vertStreet(x))) { const horiz = horizStreet(y);
+function spawnTraffic() { for (;;) { const x = (rnd() * 65) | 0, y = (rnd() * MH) | 0; if (at(x, y) === ROAD && !(horizStreet(y) && vertStreet(x))) { const horiz = horizStreet(y);
   const c = { x: x * T + 8, y: y * T + 8, dx: horiz ? (rnd() < .5 ? 1 : -1) : 0, dy: horiz ? 0 : (rnd() < .5 ? 1 : -1), sp: 1.1 + rnd() * .6, look: (rnd() * TRAFFIC_LOOKS.length) | 0 };
   keepRight(c); return c; } } }
 function flash(s, t = 90) { S.flash = s; S.flashT = t; }
@@ -307,11 +370,15 @@ function puff(x, y, n, col, spd, life, size = 2, up = 0) { for (let i = 0; i < n
 
 /* ================= update ================= */
 function tileAtPx(x, y) { return at(Math.floor(x / T), Math.floor(y / T)); }
+function chaserBlocked(x, y, r) { return blockedAt(x, y, r) || isWater(tileAtPx(x, y)); }
 function blockedAt(x, y, r) { return solid(tileAtPx(x - r, y - r)) || solid(tileAtPx(x + r, y - r)) || solid(tileAtPx(x - r, y + r)) || solid(tileAtPx(x + r, y + r)); }
 function update() {
   frame++;
   if (mode !== 'play') return;
-  // the car
+  // the car: sinking after a splash, flying off a ramp, or on the ground
+  if (S.sink) { S.sink--; if (frame % 3 === 0) puff(S.x, S.y, 2, P.foam, 2, 20, 2); if (!S.sink) respawn(); }
+  else if (S.air) airStep();
+  else {
   let gas = keys.up || keys.a ? 1 : 0, brake = keys.down, steer = keys.right - keys.left;
   if (stick.mag > .18) {   // point the stick where you want to go; how far you push it is the throttle
     const want = Math.atan2(stick.y, stick.x), diff = angleDiff(want, S.a);
@@ -360,6 +427,14 @@ function update() {
     if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; puff(hx, hy, 6, P.sun, 2.5, 14, 2); if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); S.geysers.push({ x: Math.floor(hx / T) * T + 8, y: Math.floor(hy / T) * T + 8, t: 60 * 8 }); } }
     S.v *= -.25; S.side = 0; S.drift = false; S.boost = 0; }
   else { S.x = nx; S.y = ny; }
+  const under = tileAtPx(S.x, S.y);
+  if (under === RAMP) { const r = RAMPS.find(q => q.x === Math.floor(S.x / T) && q.y === Math.floor(S.y / T)); if (r && S.v > 1.8 && Math.abs(angleDiff(S.a, r.a)) < 1.1) launch(r); }
+  else if (isWater(under)) splash();
+  else if ((under === ROAD || under === BRIDGE) && frame % 20 === 0 && !isWater(tileAtPx(S.x + 20, S.y)) && !isWater(tileAtPx(S.x - 20, S.y)) && !isWater(tileAtPx(S.x, S.y + 20)) && !isWater(tileAtPx(S.x, S.y - 20))) S.safe = { x: S.x, y: S.y, a: S.a };
+  }
+  // which part of town you are in
+  if (frame % 20 === 0) { const d = districtAt(Math.floor(S.x / T), Math.floor(S.y / T)); if (d !== S.district) { S.district = d; S.banner = { text: d, t: 150 }; } }
+  if (S.banner && !--S.banner.t) S.banner = null;
   // particles and broken hydrants
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
@@ -374,7 +449,7 @@ function update() {
     }
     if (!isRoad(Math.floor((c.x + c.dx * 10) / T), Math.floor((c.y + c.dy * 10) / T))) { c.dx = -c.dx; c.dy = -c.dy; keepRight(c); }
     c.x += c.dx * c.sp; c.y += c.dy * c.sp;
-    if (Math.abs(c.x - S.x) < 13 && Math.abs(c.y - S.y) < 13) {
+    if (!S.air && !S.sink && Math.abs(c.x - S.x) < 13 && Math.abs(c.y - S.y) < 13) {
       if (Math.abs(S.v) > 1.4) { sfx('crash'); S.shake = 6; addHeat(1, 'FENDER BENDER'); }
       S.v *= -.4; S.side = 0; S.drift = false; S.x -= Math.cos(S.a) * 6; S.y -= Math.sin(S.a) * 6; c.dx = -c.dx; c.dy = -c.dy; c.x += c.dx * 8; c.y += c.dy * 8; keepRight(c);
     }
@@ -384,16 +459,16 @@ function update() {
   for (const m of S.maids) {
     const dx = S.x - m.x, dy = S.y - m.y, d = Math.hypot(dx, dy) || 1, sp = (.95 + S.heat * .12) * 2;
     let mx = m.x + dx / d * sp, my = m.y + dy / d * sp;
-    if (blockedAt(mx, my, 4)) { if (!blockedAt(mx, m.y, 4)) my = m.y; else if (!blockedAt(m.x, my, 4)) mx = m.x; else { mx = m.x + (rnd() - .5) * 6; my = m.y + (rnd() - .5) * 6; if (blockedAt(mx, my, 4)) { mx = m.x; my = m.y; } } }
+    if (chaserBlocked(mx, my, 4)) { if (!chaserBlocked(mx, m.y, 4)) my = m.y; else if (!chaserBlocked(m.x, my, 4)) mx = m.x; else { mx = m.x + (rnd() - .5) * 6; my = m.y + (rnd() - .5) * 6; if (chaserBlocked(mx, my, 4)) { mx = m.x; my = m.y; } } }
     if (mx !== m.x || my !== m.y) m.a = Math.atan2(my - m.y, mx - m.x);
     m.x = mx; m.y = my;
-    if (d < 13) { ticket(); break; }
+    if (d < 13 && !S.air && !S.sink) { ticket(); break; }
   }
   // heat cools off if nobody is close
   if (S.heat > 0) { const near = S.maids.some(m => Math.hypot(m.x - S.x, m.y - S.y) < 112); S.heatClock = near ? 0 : S.heatClock + 1;
     if (S.heatClock > 60 * 7) { S.heat--; S.heatClock = 0; S.maids.pop(); if (!S.heat) flash('LOST THEM'); } }
   // jobs
-  const td = Math.hypot(S.target.x - S.x, S.target.y - S.y);
+  const td = S.air || S.sink ? 999 : Math.hypot(S.target.x - S.x, S.target.y - S.y);
   if (S.stage === 'pickup' && td < 18) { sfx('pickup'); flash('PACKAGE IN'); startDelivery(); }
   else if (S.stage === 'deliver') {
     S.timer--;
@@ -404,19 +479,61 @@ function update() {
   if (S.flashT) S.flashT--;
   if (S.shake) S.shake--;
 }
+function launch(r) {
+  const sp = Math.min(5.4, Math.hypot(S.v, S.side));
+  S.air = 1; S.airMax = Math.round(10 + sp * 6); S.a = r.a; S.avx = Math.cos(r.a) * sp; S.avy = Math.sin(r.a) * sp;
+  S.drift = false; S.side = 0; S.rampId = r.id; sfx('jump');
+}
+function airStep() {
+  S.air++; S.z = Math.sin(Math.PI * S.air / S.airMax) * Math.min(28, S.airMax * .4);
+  S.x = Math.max(8, Math.min(MW * T - 8, S.x + S.avx)); S.y = Math.max(8, Math.min(MH * T - 8, S.y + S.avy));
+  if (S.air >= S.airMax) land();
+}
+function land() {
+  S.air = 0; S.z = 0; S.v = Math.hypot(S.avx, S.avy) * .8; S.side = 0; S.shake = 6; sfx('land');
+  const t = tileAtPx(S.x, S.y);
+  if (isWater(t)) return splash();
+  if (blockedAt(S.x, S.y, 6)) {   // came down on a roof edge or a palm: slide back off it
+    for (let i = 0; i < 60 && blockedAt(S.x, S.y, 6); i++) { S.x -= S.avx * .5; S.y -= S.avy * .5; }
+    S.v = 0; sfx('crash'); flash('OOF'); return;
+  }
+  puff(S.x, S.y, 10, t === SAND ? P.sand2 : P.cream, 3, 18, 3);
+  const cash = 10 + S.airMax; S.cash += cash;
+  if (!S.stunts.includes(S.rampId)) { S.stunts.push(S.rampId); S.cash += 100; flash('STUNT ' + S.stunts.length + '/' + STUNT_COUNT + ' +$' + (cash + 100), 120); sfx('deliver'); }
+  else flash('BIG AIR +$' + cash);
+}
+function splash() {
+  const fine = Math.min(25, S.cash); S.cash -= fine; S.sink = 50; S.v = 0; S.side = 0; S.boost = 0; S.drift = false;
+  sfx('splash'); puff(S.x, S.y, 30, P.foam, 4, 30, 3, 1); flash(fine ? 'SPLASH! -$' + fine : 'SPLASH!', 100);
+}
+function respawn() { S.x = S.safe.x; S.y = S.safe.y; S.a = S.safe.a; S.v = 0; S.side = 0; }
+function districtAt(tx, ty) {
+  if (tx >= 89) return 'SANDBAR ISLE';
+  if (tx >= 66 && ty >= 20 && ty <= 23) return 'PIER 8';
+  if (tx >= 65) return 'THE BEACH';
+  if (ty >= 47 && ty <= 53) return 'THE CANAL';
+  if (tx >= 29 && tx <= 44 && ty >= 20 && ty <= 35) return 'PALM PARK';
+  if (ty >= 59 && ty <= 68) return 'THE STRIP';
+  if (ty < 20) return 'UPTOWN';
+  if (ty > 53) return 'SOUTH SIDE';
+  return 'MIDTOWN';
+}
 function setTileAtPx(x, y, v) { const tx = Math.floor(x / T), ty = Math.floor(y / T); if (tx >= 0 && ty >= 0 && tx < MW && ty < MH) { set(tx, ty, v); paintTile(tx, ty); } }
 function addHeat(n, why) { S.heat = Math.min(5, S.heat + n); S.heatClock = 0; flash(why); }
-function spawnMaid() { for (let i = 0; i < 200; i++) { const a = rnd() * Math.PI * 2, r = 180 + rnd() * 60, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r; if (!blockedAt(x, y, 4) && x > 0 && y > 0 && x < 44 * T && y < MH * T) return { x, y, a: 0 }; } return { x: S.x + 200, y: S.y, a: Math.PI }; }
+function spawnMaid() { for (let i = 0; i < 200; i++) { const a = rnd() * Math.PI * 2, r = 180 + rnd() * 60, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r; if (!chaserBlocked(x, y, 4) && x > 0 && y > 0 && x < 66 * T && y < MH * T && !isWater(tileAtPx(x, y))) return { x, y, a: 0 }; } return { x: S.x + 200, y: S.y, a: Math.PI }; }
 function ticket() { const fine = Math.max(25, Math.floor(S.cash * .2)); S.cash = Math.max(0, S.cash - fine); S.heat = 0; S.maids = []; S.streak = 0; sfx('ticket'); flash('TICKET! -$' + fine, 120); S.v = 0; S.side = 0; S.boost = 0; }
 
 /* ================= draw ================= */
 const blink = n => (frame >> n) & 1;
 function drawWaves(camX, camY, sh) {
   const tx0 = Math.floor(camX / T), ty0 = Math.floor(camY / T);
-  for (let ty = ty0; ty <= ty0 + SH / T; ty++) for (let tx = Math.max(tx0, 52); tx <= tx0 + SW / T; tx++) {
+  for (let ty = ty0; ty <= ty0 + SH / T; ty++) for (let tx = tx0; tx <= tx0 + SW / T; tx++) {
+    const t = at(tx, ty); if (!isWater(t)) continue;
     const sx = tx * T - camX + sh, sy = ty * T - camY, w = ((frame >> 4) + tx * 3 + ty * 5) % 4;
-    px(sx + w * 3, sy + 4, 7, 1, P.foam); px(sx + ((w + 2) % 4) * 3 + 2, sy + 11, 5, 1, P.sea2);
-    if (tx === 52) px(sx, sy, 2 + ((frame >> 4) + ty) % 3 * 2, 16, P.foam);   // surf on the shore
+    if (t === SEA) { px(sx + w * 3, sy + 4, 7, 1, P.foam); px(sx + ((w + 2) % 4) * 3 + 2, sy + 11, 5, 1, P.sea2); const fw = 2 + ((frame >> 4) + tx + ty) % 3 * 2;
+      if (at(tx - 1, ty) === SAND) px(sx, sy, fw, 16, P.foam); if (at(tx + 1, ty) === SAND) px(sx + 16 - fw, sy, fw, 16, P.foam);
+      if (at(tx, ty - 1) === SAND) px(sx, sy, 16, fw, P.foam); if (at(tx, ty + 1) === SAND) px(sx, sy + 16 - fw, 16, fw, P.foam); }
+    else if ((tx + ty + (frame >> 5)) % 3 === 0) px(sx + 3 + w * 2, sy + 7, 5, 1, '#8ff0f0');
   }
 }
 function drawPin(x, y, c) {
@@ -439,7 +556,8 @@ function draw() {
   for (const c of S.traffic) { const x = c.x - camX + sh, y = c.y - camY; if (x > -16 && y > -16 && x < SW + 16 && y < SH + 16) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
   for (const m of S.maids) { const x = m.x - camX + sh, y = m.y - camY; drawSprite(SCOOTER(), x, y, m.a); px(x - 2, y - 2, 4, 4, blink(3) ? P.pink : P.teal); }
   const carX = S.x - camX + sh, carY = S.y - camY;
-  drawSprite(PLAYER_CAR(), carX, carY, S.a);
+  if (S.sink) { const r = 8 + (50 - S.sink) / 3; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; px(carX + Math.cos(a) * r, carY + Math.sin(a) * r * .6, 2, 1, P.foam); } if (S.sink > 25) drawSprite(PLAYER_CAR(), carX, carY, S.a, 0, (S.sink - 25) / 25); }
+  else drawSprite(PLAYER_CAR(), carX, carY, S.a, S.z);
   for (const q of S.parts) px(q.x - camX + sh - q.size / 2, q.y - camY - q.size / 2, q.size, q.size, q.col);
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 14, 40, 3, P.ink); px(carX - 20, carY + 14, w, 3, c); }
   if (S.v < 0) { px(carX - Math.cos(S.a) * 10 - 1, carY - Math.sin(S.a) * 10 - 1, 3, 3, P.red); }
@@ -458,6 +576,7 @@ function draw() {
   text('HEAT', SW - 6 - 5 * 11 - 26, 7, P.blush);
   for (let i = 0; i < 5; i++) { const on = i < S.heat, x = SW - 6 - 5 * 11 + i * 11; px(x, 5, 9, 9, on ? (blink(3) ? P.pink : P.cream) : P.purp); if (on) px(x + 2, 7, 2, 2, '#fff'); }
   if (S.streak > 1) text('STREAK X' + S.streak, 6, 28, P.sun);
+  if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 34, P.cream, 2, P.ink);
   if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 240, w, 26, P.ink); px(x, 240, w, 2, P.pink); px(x, 264, w, 2, P.teal); ctext(S.flash, 246, P.cream, 2); }
   if (mode === 'paused') { px(50, 100, 220, 84, P.ink); px(50, 100, 220, 3, P.teal); px(50, 181, 220, 3, P.pink); ctext('PAUSED', 116, P.teal, 4, P.purp); ctext('START TO GO ON', 160, P.cream, 2); }
   document.getElementById('lamp').classList.toggle('on', S.heat > 0 && !!blink(4));
@@ -572,6 +691,9 @@ function sfx(name) {   // chip sounds, kept quiet under the beat
   if (name === 'honk') { beep(392, 380, .22, 'sawtooth', .05); beep(494, 480, .22, 'sawtooth', .04); }
   if (name === 'boost') { beep(220, 880, .35, 'sawtooth', .06); beep(330, 1320, .3, 'square', .04, .05); }
   if (name === 'skid') { if (!NB) NB = noiseBuf(); const s2 = AC.createBufferSource(); s2.buffer = NB; const f2 = AC.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 900; f2.Q.value = 4; const gn = AC.createGain(); gn.gain.setValueAtTime(.12, t); gn.gain.exponentialRampToValueAtTime(.001, t + .35); s2.connect(f2); f2.connect(gn); gn.connect(master); s2.start(t); s2.stop(t + .4); }
+  if (name === 'jump') { beep(200, 600, .25, 'square', .06); }
+  if (name === 'land') { beep(120, 60, .12, 'triangle', .14); }
+  if (name === 'splash') { if (!NB) NB = noiseBuf(); const s3 = AC.createBufferSource(); s3.buffer = NB; const f3 = AC.createBiquadFilter(); f3.type = 'lowpass'; f3.frequency.setValueAtTime(3000, t); f3.frequency.exponentialRampToValueAtTime(300, t + .6); const gn = AC.createGain(); gn.gain.setValueAtTime(.3, t); gn.gain.exponentialRampToValueAtTime(.001, t + .7); s3.connect(f3); f3.connect(gn); gn.connect(master); s3.start(t); s3.stop(t + .4); beep(600, 150, .4, 'sine', .08); }
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
 }
 function toggleMusic() { musicOn = !musicOn; try { localStorage.setItem('palmcity8.music', musicOn ? 'on' : 'off'); } catch (e) {} if (musicGain) musicGain.gain.setTargetAtTime(musicOn ? 1 : 0, AC.currentTime, .1); if (S && mode !== 'title') flash(musicOn ? 'MUSIC ON' : 'MUSIC OFF', 60); }
