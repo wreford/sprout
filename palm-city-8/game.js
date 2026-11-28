@@ -901,8 +901,8 @@ function updateFoot() {
 // DOOR: get out when slow, or get into the nearest car: one you left, or anyone's (they run off)
 function door() {
   if (S.down) return;
+  if (S.onFoot && nearCasino()) { enterCasino(); return; }   // the casino door wins over anything next to it
   { const a = nearAerobics(S.onFoot ? 24 : 40); if (a && (S.onFoot || Math.hypot(S.v, S.side) < 1.2)) { jazzercise(a); return; } }
-  if (S.onFoot && nearCasino()) { enterCasino(); return; }
   if (S.onFoot && nearAtm()) { say('ATM: ' + pick(['CARD DECLINED.', 'INSUFFICIENT FUNDS. TOTALLY BOGUS.', 'PLEASE INSERT CARD. ANY CARD.']), 90); sfx('late'); return; }
   if (!S.onFoot) {
     if (Math.hypot(S.v, S.side) > 1.2 || S.air || S.sink) { flash('SLOW DOWN TO GET OUT', 50); return; }
@@ -1361,7 +1361,7 @@ function bubble(s, x, y) { const w = tw(s) + 6; px(x - w / 2, y - 9, w, 10, P.cr
 const AEROBICS = [];
 const AERO_LINES = ['WE TEACH STEP CLASS. THAT IS ALL.', 'FEEL THE BURN!', 'LEG WARMERS ARE NOT A CRY FOR HELP', 'AND FIVE, SIX, SEVEN, EIGHT!', 'GRAPEVINE LEFT! GRAPEVINE RIGHT!', 'HYDRATE, BABE. WITH NEW KOLA.'];
 function placeAerobics() {
-  for (const bi of [4, 6, 8]) { const x0 = blockOrigin(bi), y = blockOrigin(5) + 8; if (at(x0 + 3, y) === WALK) AEROBICS.push({ x: (x0 + 3) * T + 8, y: y * T + 8, cool: 0, look: AEROBICS.length }); }
+  for (const bi of [4, 6, 8]) { const x0 = blockOrigin(bi), y = blockOrigin(5) + 8; if (at(x0 + 1, y) === WALK) AEROBICS.push({ x: (x0 + 1) * T + 8, y: y * T + 8, cool: 0, look: AEROBICS.length }); }
 }
 const aeroSprites = i => personSprites('aero' + i, [P.pink, P.teal, P.violet][i % 3], [P.teal, P.pink, P.sun][i % 3], SKINS[(i * 3 + 1) % 4], [P.sun, '#2b1a12', '#7a3b2e'][i % 3]);
 function nearAerobics(r) { return AEROBICS.find(a => Math.hypot(a.x - S.x, a.y - S.y) < r); }
