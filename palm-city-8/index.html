@@ -92,7 +92,7 @@ Object.entries({
   0: '0e11131519110e', 1: '040c040404040e', 2: '0e11010204081f', 3: '1f02040201110e', 4: '02060a121f0202', 5: '1f101e0101110e', 6: '0608101e11110e',
   7: '1f010204080808', 8: '0e11110e11110e', 9: '0e11110f01020c',
   '$': '040f140e051e04', '!': '04040404040004', ':': '000c0c000c0c00', '.': '00000000000c0c', '-': '0000001f000000', '?': '0e110102040004',
-  "'": '04040800000000', ',': '000000000c0408', '/': '01010204081010', '+': '0004041f040400', ' ': '00000000000000'
+  "'": '04040800000000', ',': '000000000c0408', '/': '01010204081010', '+': '0004041f040400', '*': '0015 0e1f0e1500', ' ': '00000000000000'
 }).forEach(([ch, hex]) => { hex = hex.replace(/ /g, ''); FONT[ch] = [0, 1, 2, 3, 4, 5, 6].map(r => parseInt(hex.substr(r * 2, 2), 16)); });
 function text(s, x, y, c, k = 1) {
   s = String(s).toUpperCase(); let cx = Math.round(x);
@@ -151,7 +151,7 @@ function buildTown() {
   // palms on the beach, hydrants on the sidewalks
   for (let y = 1; y < MH - 1; y += 3) { const x = 67 + ((rnd() * 7) | 0); if (rnd() < .8 && at(x, y) === SAND && !RAMPS.some(r => Math.abs(r.x - x) < 2 && Math.abs(r.y - y) < 3)) set(x, y, PALM); }
   for (let y = 0; y < MH; y++) for (let x = 0; x < 66; x++) if (at(x, y) === WALK && rnd() < .03) set(x, y, HYD);
-  paintTown();
+  paintTown(); paintRadar();
 }
 const solid = t => t === BLD || t === PALM || t === HYD;
 const isRoad = (x, y) => { const t = at(x, y); return t === ROAD || t === BRIDGE; };
@@ -346,15 +346,101 @@ function newGame() {
   S = { x: 63.5 * T, y: 4.5 * T, a: Math.PI / 2, v: 0, cash: 0, heat: 0, heatClock: 0, best, stage: 'pickup', target: null, timer: 0,
     delivered: 0, streak: 0, flash: null, flashT: 0, traffic: [], maids: [], shake: 0, honk: 0,
     side: 0, drift: false, charge: 0, boost: 0, parts: [], geysers: [],
+    job: null, say: null, fares: 0, races: 0,
     air: 0, airMax: 0, z: 0, avx: 0, avy: 0, sink: 0, safe: { x: 63.5 * T, y: 4.5 * T, a: Math.PI / 2 }, stunts: [], district: '', banner: null };
   for (let i = 0; i < 28; i++) S.traffic.push(spawnTraffic());
-  nextPickup();
+  S.markers = {}; for (const k of JOB_KINDS) placeMarker(k);
 }
 function randomCurb() { for (;;) { const x = (rnd() * 66) | 0, y = (rnd() * MH) | 0; if (at(x, y) === WALK && (isRoad(x - 1, y) || isRoad(x + 1, y) || isRoad(x, y - 1) || isRoad(x, y + 1))) return { x: x * T + 8, y: y * T + 8 }; } }
-function nextPickup() { S.stage = 'pickup'; S.target = randomCurb(); S.timer = 0; }
-function startDelivery() {
-  let t; do { t = randomCurb(); } while (Math.hypot(t.x - S.x, t.y - S.y) < 280);
-  S.stage = 'deliver'; S.target = t; S.timer = Math.round(Math.hypot(t.x - S.x, t.y - S.y) / 68 + 12) * 60;
+// ---------- jobs: drive into a pin to start one ----------
+const JOB_KINDS = ['deliver', 'taxi', 'race'];
+const JOB_COLOUR = { deliver: P.pink, taxi: P.teal, race: P.sun };
+const RIDERS = ['BRENDA', 'DUSTIN', 'MARIO', 'KAYLEE', 'DOUG', 'PRIYA', 'CHAD', 'NANA ROSE', 'GORD', 'TASHA'];
+const SAY_START = ['TAKE ME TO BRUNCH. I AM LATE', 'NO SHORTCUTS THROUGH THE PARK', 'MY CAR GOT TOWED. LONG STORY', 'DRIVE LIKE MY NANA IS WATCHING', 'I HAVE A JOB INTERVIEW. HURRY', 'IS THIS A CAB OR A FLAMINGO?'];
+const SAY_BUMP = ['MY SMOOTHIE!', 'EASY!', 'I JUST GOT MY NAILS DONE', 'WAS THAT A HYDRANT?', 'I HAVE A BAD BACK', 'IS THIS PART OF THE TOUR?', 'MY HAIR!'];
+const SAY_GOOD = ['SMOOTH. HERE IS A TIP', 'FIVE STARS. NO NOTES', 'NICE DRIVING. TELL NOBODY I SAID THAT'];
+const SAY_BAD = ['I AM WALKING NEXT TIME', 'KEEP THE CHANGE. JUST LET ME OUT', 'I NEED A MINUTE'];
+const pick = list => list[(Math.random() * list.length) | 0];
+function say(textLine, t = 150) { S.say = { text: textLine, t }; }
+function farCurb(min) { let t = randomCurb(); for (let i = 0; i < 300 && Math.hypot(t.x - S.x, t.y - S.y) < min; i++) t = randomCurb(); return t; }
+function placeMarker(kind) {
+  let t = farCurb(160);
+  for (let i = 0; i < 100 && Object.values(S.markers).some(m => m && Math.hypot(m.x - t.x, m.y - t.y) < 200); i++) t = farCurb(160);
+  S.markers[kind] = t;
+}
+// a race route: a walk along the street grid from the nearest corner, no doubling back, no streets through water or the park
+function streetOK(i0, j0, i1, j1) {
+  if (i0 === i1) { for (let y = Math.min(j0, j1) * 9; y <= Math.max(j0, j1) * 9 + 1; y++) if (!isRoad(i0 * 9, y)) return false; }
+  else for (let x = Math.min(i0, i1) * 9; x <= Math.max(i0, i1) * 9 + 1; x++) if (!isRoad(x, j0 * 9)) return false;
+  return true;
+}
+function buildRoute(x, y) {
+  for (let tries = 0; tries < 30; tries++) {
+    let i = Math.max(0, Math.min(7, Math.round((x / T - 1) / 9))), j = Math.max(0, Math.min(10, Math.round((y / T - 1) / 9))), pdx = 0, pdy = 0;
+    const pts = [];
+    for (let n = 0; n < 12 && pts.length < 6; n++) {
+      const opts = [];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (dx === -pdx && dy === -pdy) continue;
+        const len = 1 + ((Math.random() * 2) | 0), ni = i + dx * len, nj = j + dy * len;
+        if (ni < 0 || nj < 0 || ni > 7 || nj > 10 || !streetOK(i, j, ni, nj)) continue;
+        opts.push([dx, dy, len]);
+      }
+      if (!opts.length) break;
+      const [dx, dy, len] = pick(opts); i += dx * len; j += dy * len; pdx = dx; pdy = dy;
+      pts.push({ x: (9 * i + 1) * T, y: (9 * j + 1) * T });
+    }
+    if (pts.length >= 5) return pts;
+  }
+  return [{ x: (9 * 7 + 1) * T, y: (9 * 1 + 1) * T }];
+}
+function startJob(kind) {
+  const from = S.markers[kind];
+  if (kind === 'deliver') {
+    const t = farCurb(380); S.job = { kind, target: t, timer: Math.round(Math.hypot(t.x - S.x, t.y - S.y) / 70 + 14) * 60 };
+    sfx('pickup'); flash('PACKAGE IN. DROP IT OFF');
+  } else if (kind === 'taxi') {
+    const t = farCurb(340); S.job = { kind, target: t, timer: Math.round(Math.hypot(t.x - S.x, t.y - S.y) / 60 + 20) * 60, bumps: 0, rider: pick(RIDERS) };
+    sfx('pickup'); flash('HOP IN'); say(S.job.rider + ': ' + pick(SAY_START));
+  } else {
+    const cps = buildRoute(from.x, from.y); let len = Math.hypot(cps[0].x - S.x, cps[0].y - S.y);
+    for (let i = 1; i < cps.length; i++) len += Math.hypot(cps[i].x - cps[i - 1].x, cps[i].y - cps[i - 1].y);
+    S.job = { kind, cps, i: 0, time: 0, count: 180, par: Math.round(len / (2.3 * 60) + 4) };
+    S.v = 0; S.side = 0;
+  }
+  S.job.target = S.job.target || S.job.cps[0];
+  S.markers[kind] = null;
+}
+function endJob() { const kind = S.job.kind; S.job = null; placeMarker(kind); }
+function jobBump() { if (S.job && S.job.kind === 'taxi') { S.job.bumps++; say(S.job.rider + ': ' + pick(SAY_BUMP), 100); } }
+function updateJobs() {
+  const near = p => !S.air && !S.sink && Math.hypot(p.x - S.x, p.y - S.y) < 20;
+  if (!S.job) { for (const k of JOB_KINDS) if (S.markers[k] && near(S.markers[k])) { startJob(k); break; } return; }
+  const J = S.job;
+  if (J.kind === 'race') {
+    if (J.count > 0) { if (J.count % 60 === 0) sfx('count'); J.count--; S.v = 0; S.side = 0; if (!J.count) { sfx('go'); flash('GO!', 40); } return; }
+    J.time++;
+    if (near(J.cps[J.i])) {
+      J.i++; sfx('pickup');
+      if (J.i >= J.cps.length) {
+        const secs = J.time / 60;
+        if (secs <= J.par) { const pay = 150 + Math.round((J.par - secs) * 10); S.cash += pay; S.races++; sfx('deliver'); flash('WIN ' + secs.toFixed(1) + 'S +$' + pay, 150); }
+        else { S.cash += 25; sfx('late'); flash('TOO SLOW ' + secs.toFixed(1) + 'S +$25', 150); }
+        return endJob();
+      }
+      J.target = J.cps[J.i];
+    }
+    return;
+  }
+  J.timer--;
+  if (near(J.target)) {
+    const secs = Math.max(0, Math.floor(J.timer / 60));
+    if (J.kind === 'deliver') { S.streak++; const pay = 50 + secs * 2 + (S.streak - 1) * 10; S.cash += pay; S.delivered++; flash('DELIVERED +$' + pay); }
+    else { const fare = 60 + secs * 2, tip = Math.max(0, 60 - J.bumps * 20), stars = Math.max(1, 5 - J.bumps); S.cash += fare + tip; S.fares++;
+      flash('*'.repeat(stars) + ' +$' + (fare + tip), 150); say(J.rider + ': ' + pick(J.bumps < 2 ? SAY_GOOD : SAY_BAD)); }
+    sfx('deliver'); return endJob();
+  }
+  if (J.timer <= 0) { S.streak = 0; sfx('late'); flash(J.kind === 'taxi' ? 'TOO SLOW. THEY GOT OUT' : 'LATE! TRY ANOTHER'); if (J.kind === 'taxi') say(J.rider + ': ' + pick(SAY_BAD)); endJob(); }
 }
 // traffic keeps right: put a car in the lane that matches its direction
 function keepRight(c) {
@@ -424,7 +510,7 @@ function update() {
   if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(vx) > .2) { S.x = nx; S.v *= .9; S.side *= .5; }        // scrape along a wall
   else if (blockedAt(nx, ny, 6) && !blockedAt(S.x, ny, 6) && Math.abs(vy) > .2) { S.y = ny; S.v *= .9; S.side *= .5; }
   else if (blockedAt(nx, ny, 6)) { const hx = nx + ca * 7, hy = ny + sa * 7, t = tileAtPx(hx, hy);
-    if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; puff(hx, hy, 6, P.sun, 2.5, 14, 2); if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); S.geysers.push({ x: Math.floor(hx / T) * T + 8, y: Math.floor(hy / T) * T + 8, t: 60 * 8 }); } }
+    if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; jobBump(); puff(hx, hy, 6, P.sun, 2.5, 14, 2); if (t === HYD) { addHeat(1, 'HYDRANT!'); setTileAtPx(hx, hy, WALK); S.geysers.push({ x: Math.floor(hx / T) * T + 8, y: Math.floor(hy / T) * T + 8, t: 60 * 8 }); } }
     S.v *= -.25; S.side = 0; S.drift = false; S.boost = 0; }
   else { S.x = nx; S.y = ny; }
   const under = tileAtPx(S.x, S.y);
@@ -450,7 +536,7 @@ function update() {
     if (!isRoad(Math.floor((c.x + c.dx * 10) / T), Math.floor((c.y + c.dy * 10) / T))) { c.dx = -c.dx; c.dy = -c.dy; keepRight(c); }
     c.x += c.dx * c.sp; c.y += c.dy * c.sp;
     if (!S.air && !S.sink && Math.abs(c.x - S.x) < 13 && Math.abs(c.y - S.y) < 13) {
-      if (Math.abs(S.v) > 1.4) { sfx('crash'); S.shake = 6; addHeat(1, 'FENDER BENDER'); }
+      if (Math.abs(S.v) > 1.4) { sfx('crash'); S.shake = 6; addHeat(1, 'FENDER BENDER'); jobBump(); }
       S.v *= -.4; S.side = 0; S.drift = false; S.x -= Math.cos(S.a) * 6; S.y -= Math.sin(S.a) * 6; c.dx = -c.dx; c.dy = -c.dy; c.x += c.dx * 8; c.y += c.dy * 8; keepRight(c);
     }
   }
@@ -468,13 +554,8 @@ function update() {
   if (S.heat > 0) { const near = S.maids.some(m => Math.hypot(m.x - S.x, m.y - S.y) < 112); S.heatClock = near ? 0 : S.heatClock + 1;
     if (S.heatClock > 60 * 7) { S.heat--; S.heatClock = 0; S.maids.pop(); if (!S.heat) flash('LOST THEM'); } }
   // jobs
-  const td = S.air || S.sink ? 999 : Math.hypot(S.target.x - S.x, S.target.y - S.y);
-  if (S.stage === 'pickup' && td < 18) { sfx('pickup'); flash('PACKAGE IN'); startDelivery(); }
-  else if (S.stage === 'deliver') {
-    S.timer--;
-    if (td < 18) { const bonus = Math.max(0, Math.floor(S.timer / 60)) * 2; S.streak++; const pay = 50 + bonus + (S.streak - 1) * 10; S.cash += pay; S.delivered++; sfx('deliver'); flash('+$' + pay); nextPickup(); }
-    else if (S.timer <= 0) { S.streak = 0; sfx('late'); flash('LATE! TRY ANOTHER'); nextPickup(); }
-  }
+  updateJobs();
+  if (S.say && !--S.say.t) S.say = null;
   if (S.honk) S.honk--;
   if (S.flashT) S.flashT--;
   if (S.shake) S.shake--;
@@ -504,7 +585,7 @@ function land() {
 }
 function splash() {
   const fine = Math.min(25, S.cash); S.cash -= fine; S.sink = 50; S.v = 0; S.side = 0; S.boost = 0; S.drift = false;
-  sfx('splash'); puff(S.x, S.y, 30, P.foam, 4, 30, 3, 1); flash(fine ? 'SPLASH! -$' + fine : 'SPLASH!', 100);
+  jobBump(); sfx('splash'); puff(S.x, S.y, 30, P.foam, 4, 30, 3, 1); flash(fine ? 'SPLASH! -$' + fine : 'SPLASH!', 100);
 }
 function respawn() { S.x = S.safe.x; S.y = S.safe.y; S.a = S.safe.a; S.v = 0; S.side = 0; }
 function districtAt(tx, ty) {
@@ -536,12 +617,43 @@ function drawWaves(camX, camY, sh) {
     else if ((tx + ty + (frame >> 5)) % 3 === 0) px(sx + 3 + w * 2, sy + 7, 5, 1, '#8ff0f0');
   }
 }
-function drawPin(x, y, c) {
+function drawPin(x, y, c, icon) {
   const r = 6 + ((frame >> 2) % 8);
   for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; px(x + Math.cos(a) * r - 1, y + Math.sin(a) * r * .5, 2, 1, c); }
-  const by = y - 22 - blink(3) * 3;
-  [4, 8, 10, 10, 10, 8, 6, 4, 2].forEach((w, i) => px(x - w / 2, by + i, w, 1, c));
-  px(x - 2, by + 2, 4, 4, P.cream); px(x - 1, by + 9, 2, 6, c);
+  const by = y - 26 - blink(3) * 3;
+  [6, 10, 12, 12, 12, 12, 10, 8, 6, 4, 2].forEach((w, i) => px(x - w / 2, by + i, w, 1, c));
+  px(x - 1, by + 11, 2, 6, c);
+  if (icon === 'deliver') { px(x - 3, by + 2, 6, 5, '#c98a5a'); px(x - 3, by + 4, 6, 1, '#8a5a3a'); }
+  else if (icon === 'taxi') { px(x - 1, by + 1, 3, 3, '#f2c9a0'); px(x - 2, by + 4, 5, 4, P.purp); px(x + 3, by + 1, 1, 4, '#f2c9a0'); }
+  else if (icon === 'race') { for (let i = 0; i < 3; i++) for (let k = 0; k < 2; k++) px(x - 3 + i * 2, by + 2 + k * 2, 2, 2, (i + k) & 1 ? P.ink : P.cream); }
+  else px(x - 2, by + 3, 4, 4, P.cream);
+}
+function drawRing(x, y, c, label) {
+  const r = 18 + blink(3);
+  for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2; px(x + Math.cos(a) * r - 1, y + Math.sin(a) * r - 1, 3, 3, c); }
+  if (label) { text(label, x - tw(label) / 2 + 1, y - 3 + 1, P.ink); text(label, x - tw(label) / 2, y - 3, c); }
+}
+// radar: one pixel per tile, centred on the car
+const radarPic = document.createElement('canvas'); radarPic.width = MW; radarPic.height = MH;
+function paintRadar() {
+  const rc = radarPic.getContext('2d'), img = rc.createImageData(MW, MH);
+  const col = { [ROAD]: '#f4d3e6', [BRIDGE]: '#f4d3e6', [WALK]: '#8a5a9a', [HYD]: '#8a5a9a', [BLD]: '#2b0f3a', [PARK]: '#1a8f80', [PALM]: '#1a8f80', [PATH]: '#c9a98a', [SAND]: '#d9b89a', [SEA]: '#0d6f86', [CANAL]: '#0d6f86', [POND]: '#0d6f86', [PIER]: '#b07a5a', [RAMP]: '#ffd36b' };
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { const h = col[at(x, y)] || '#000000', i = (y * MW + x) * 4; img.data[i] = parseInt(h.substr(1, 2), 16); img.data[i + 1] = parseInt(h.substr(3, 2), 16); img.data[i + 2] = parseInt(h.substr(5, 2), 16); img.data[i + 3] = 255; }
+  rc.putImageData(img, 0, 0);
+}
+function drawRadar() {
+  const RW = 72, RH = 56, rx = 4, ry = SH - RH - 4, cx = Math.floor(S.x / T), cy = Math.floor(S.y / T), x0 = cx - RW / 2, y0 = cy - RH / 2;
+  px(rx - 2, ry - 2, RW + 4, RH + 4, P.ink); px(rx, ry, RW, RH, '#0d6f86');
+  const sx = Math.max(0, x0), sy = Math.max(0, y0), ex = Math.min(MW, x0 + RW), ey = Math.min(MH, y0 + RH);
+  if (ex > sx && ey > sy) g.drawImage(radarPic, sx, sy, ex - sx, ey - sy, rx + sx - x0, ry + sy - y0, ex - sx, ey - sy);
+  const dot = (wx, wy, c, size = 3, clampIt = true) => { let dx = wx / T - x0, dy = wy / T - y0;
+    if (!clampIt && (dx < 0 || dy < 0 || dx >= RW || dy >= RH)) return;
+    dx = Math.max(1, Math.min(RW - 2, dx)); dy = Math.max(1, Math.min(RH - 2, dy)); px(rx + dx - size / 2, ry + dy - size / 2, size, size, c); };
+  if (S.job) { dot(S.job.target.x, S.job.target.y, blink(3) ? JOB_COLOUR[S.job.kind] : P.cream, 4); if (S.job.cps) for (let i = S.job.i + 1; i < S.job.cps.length; i++) dot(S.job.cps[i].x, S.job.cps[i].y, P.sun, 2, false); }
+  else for (const k of JOB_KINDS) if (S.markers[k]) dot(S.markers[k].x, S.markers[k].y, JOB_COLOUR[k], 4);
+  for (const m of S.maids) dot(m.x, m.y, blink(2) ? P.pink : P.teal, 2, false);
+  px(rx + RW / 2 - 1, ry + RH / 2 - 1, 3, 3, '#ffffff'); px(rx + RW / 2 + Math.round(Math.cos(S.a) * 3), ry + RH / 2 + Math.round(Math.sin(S.a) * 3), 1, 1, '#ffffff');
+  px(rx - 2, ry - 2, RW + 4, 1, P.teal); px(rx - 2, ry + RH + 1, RW + 4, 1, P.pink);
 }
 function draw() {
   if (mode === 'title') return drawTitle();
@@ -551,8 +663,10 @@ function draw() {
   px(0, 0, SW, SH, P.sea);
   g.drawImage(townPic, camX, camY, SW, SH, sh, 0, SW, SH);
   drawWaves(camX, camY, sh);
-  const tc = S.stage === 'pickup' ? P.pink : P.teal;
-  drawPin(S.target.x - camX + sh, S.target.y - camY, tc);
+  const tc = S.job ? JOB_COLOUR[S.job.kind] : P.cream;
+  if (!S.job) { for (const k of JOB_KINDS) if (S.markers[k]) drawPin(S.markers[k].x - camX + sh, S.markers[k].y - camY, JOB_COLOUR[k], k); }
+  else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX + sh, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX + sh, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
+  else drawPin(S.job.target.x - camX + sh, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX + sh, y = c.y - camY; if (x > -16 && y > -16 && x < SW + 16 && y < SH + 16) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
   for (const m of S.maids) { const x = m.x - camX + sh, y = m.y - camY; drawSprite(SCOOTER(), x, y, m.a); px(x - 2, y - 2, 4, 4, blink(3) ? P.pink : P.teal); }
   const carX = S.x - camX + sh, carY = S.y - camY;
@@ -563,21 +677,26 @@ function draw() {
   if (S.v < 0) { px(carX - Math.cos(S.a) * 10 - 1, carY - Math.sin(S.a) * 10 - 1, 3, 3, P.red); }
   if (S.honk) { text('HONK!', carX - 14 + 1, carY - 26 + 1, P.ink); text('HONK!', carX - 14, carY - 26, P.cream); }
   // arrow toward the job when it is off screen
-  const ox = S.target.x - camX, oy = S.target.y - camY;
-  if (ox < 0 || oy < 22 || ox > SW || oy > SH) {
-    const ang = Math.atan2(S.target.y - S.y, S.target.x - S.x), ax = SW / 2 + Math.cos(ang) * 128, ay = SH / 2 + 10 + Math.sin(ang) * 108;
+  const aim = S.job && S.job.target;
+  if (aim && (aim.x - camX < 0 || aim.y - camY < 22 || aim.x - camX > SW || aim.y - camY > SH)) {
+    const ang = Math.atan2(aim.y - S.y, aim.x - S.x), ax = SW / 2 + Math.cos(ang) * 128, ay = SH / 2 + 10 + Math.sin(ang) * 108;
     for (let i = 0; i < 9; i++) { const s = 9 - i; px(ax + Math.cos(ang) * i * 1.6 - s / 2, ay + Math.sin(ang) * i * 1.6 - s / 2, s, s, i < 2 ? P.ink : tc); }
   }
   // HUD
   px(0, 0, SW, 20, P.ink); px(0, 20, SW, 2, P.pink); px(0, 22, SW, 1, P.teal);
   text('$' + S.cash, 6, 3, P.cream, 2);
-  if (S.stage === 'deliver') { const s = Math.max(0, Math.ceil(S.timer / 60)); ctext(s + 'S', 3, s <= 5 && blink(3) ? P.pink : P.teal, 2); }
-  else ctext('PICKUP', 3, P.pink, 2);
+  const J = S.job;
+  if (!J) ctext('PICK A PIN', 7, P.blush);
+  else if (J.kind === 'race') ctext(J.count ? 'GET READY' : (J.time / 60).toFixed(1) + '/' + J.par + 'S', 3, J.time / 60 > J.par ? P.pink : P.sun, 2);
+  else { const s = Math.max(0, Math.ceil(J.timer / 60)); ctext((J.kind === 'taxi' ? 'FARE ' : 'DROP ') + s + 'S', 3, s <= 5 && blink(3) ? P.pink : JOB_COLOUR[J.kind], 2); }
   text('HEAT', SW - 6 - 5 * 11 - 26, 7, P.blush);
   for (let i = 0; i < 5; i++) { const on = i < S.heat, x = SW - 6 - 5 * 11 + i * 11; px(x, 5, 9, 9, on ? (blink(3) ? P.pink : P.cream) : P.purp); if (on) px(x + 2, 7, 2, 2, '#fff'); }
   if (S.streak > 1) text('STREAK X' + S.streak, 6, 28, P.sun);
   if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 34, P.cream, 2, P.ink);
-  if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 240, w, 26, P.ink); px(x, 240, w, 2, P.pink); px(x, 264, w, 2, P.teal); ctext(S.flash, 246, P.cream, 2); }
+  if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 54, w, 13, P.ink); px(x, 54, 2, 13, P.teal); ctext(S.say.text, 57, P.cream); }
+  if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 34, 96, 68, 80, P.ink); px(SW / 2 - 34, 96, 68, 3, P.sun); px(SW / 2 - 34, 173, 68, 3, P.pink); ctext(String(n), 108, n === 1 ? P.pink : P.sun, 8); }
+  drawRadar();
+  if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 196, w, 26, P.ink); px(x, 196, w, 2, P.pink); px(x, 220, w, 2, P.teal); ctext(S.flash, 202, P.cream, 2); }
   if (mode === 'paused') { px(50, 100, 220, 84, P.ink); px(50, 100, 220, 3, P.teal); px(50, 181, 220, 3, P.pink); ctext('PAUSED', 116, P.teal, 4, P.purp); ctext('START TO GO ON', 160, P.cream, 2); }
   document.getElementById('lamp').classList.toggle('on', S.heat > 0 && !!blink(4));
 }
@@ -694,6 +813,8 @@ function sfx(name) {   // chip sounds, kept quiet under the beat
   if (name === 'jump') { beep(200, 600, .25, 'square', .06); }
   if (name === 'land') { beep(120, 60, .12, 'triangle', .14); }
   if (name === 'splash') { if (!NB) NB = noiseBuf(); const s3 = AC.createBufferSource(); s3.buffer = NB; const f3 = AC.createBiquadFilter(); f3.type = 'lowpass'; f3.frequency.setValueAtTime(3000, t); f3.frequency.exponentialRampToValueAtTime(300, t + .6); const gn = AC.createGain(); gn.gain.setValueAtTime(.3, t); gn.gain.exponentialRampToValueAtTime(.001, t + .7); s3.connect(f3); f3.connect(gn); gn.connect(master); s3.start(t); s3.stop(t + .4); beep(600, 150, .4, 'sine', .08); }
+  if (name === 'count') beep(440, 440, .12, 'square', .07);
+  if (name === 'go') beep(880, 880, .3, 'square', .08);
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
 }
 function toggleMusic() { musicOn = !musicOn; try { localStorage.setItem('palmcity8.music', musicOn ? 'on' : 'off'); } catch (e) {} if (musicGain) musicGain.gain.setTargetAtTime(musicOn ? 1 : 0, AC.currentTime, .1); if (S && mode !== 'title') flash(musicOn ? 'MUSIC ON' : 'MUSIC OFF', 60); }
@@ -754,7 +875,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ":" + stepN : "none"; }, press, at, MW, MH, T, stick };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ":" + stepN : "none"; }, press, at, MW, MH, T, stick, jobBump };
 </script>
 </body>
 </html>
