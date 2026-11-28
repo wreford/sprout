@@ -433,6 +433,7 @@ function drawTitle() {
   if (blink(5)) ctext('PRESS START', 240, P.cream, 2, P.ink);
   px(0, 260, SW, 18, P.ink); ctext('AN 8-BIT BEACH TOWN JOYRIDE', 266, P.blush);
   if (best) text('BEST $' + best, 6, 6, P.cream);
+  const ml = 'MUSIC ' + (musicOn ? 'ON' : 'OFF'); text(ml, SW - 6 - tw(ml), 6, musicOn ? P.teal : P.blush);
 }
 
 /* ================= lo-fi beats (Web Audio) ================= */
@@ -441,8 +442,26 @@ const BPM = 78, STEP = 60 / BPM / 4;
 const CHORDS = [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60, 64], [48, 52, 55, 59]];   // Fmaj7, Em7, Dm9, Cmaj7
 const BASS = [41, 40, 38, 36];
 const hz = n => 440 * Math.pow(2, (n - 69) / 12);
+// iPhones mute web audio when the silent switch is on, unless the page asks to be treated as media playback.
+// Newer Safari has audioSession for that; older ones need a silent <audio> element playing alongside.
+let silentTrack = null;
+function silentWav() {   // half a second of silence as a WAV file
+  const n = 4000, b = new ArrayBuffer(44 + n), v = new DataView(b), w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+// called on every finished tap, click or key press: iOS only lets sound start from those
+function unlockAudio() {
+  if (!AC) return;
+  if (AC.state !== 'running') AC.resume().catch(() => {});
+  const b = AC.createBuffer(1, 1, 22050), s = AC.createBufferSource(); s.buffer = b; s.connect(AC.destination); s.start(0);
+  if (!(navigator.audioSession) && !silentTrack) { try { silentTrack = new Audio(silentWav()); silentTrack.loop = true; silentTrack.setAttribute('playsinline', ''); silentTrack.play().catch(() => { silentTrack = null; }); } catch (e) {} }
+}
 function audioInit() {
-  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  if (AC) { unlockAudio(); return; }
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
   try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
   master = AC.createGain(); master.gain.value = .55;
   const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200;   // the lo-fi dullness
@@ -456,6 +475,7 @@ function audioInit() {
   crackle.connect(bp); bp.connect(cg); cg.connect(musicGain); crackle.start();
   nextStep = AC.currentTime + .1;
   sched = setInterval(schedule, 25);
+  unlockAudio();
 }
 function noiseBuf() { const b = AC.createBuffer(1, AC.sampleRate * .4, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; }
 let NB = null;
@@ -500,9 +520,10 @@ function sfx(name) {   // chip sounds, kept quiet under the beat
   if (name === 'honk') { beep(392, 380, .22, 'sawtooth', .05); beep(494, 480, .22, 'sawtooth', .04); }
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
 }
-function toggleMusic() { musicOn = !musicOn; try { localStorage.setItem('palmcity8.music', musicOn ? 'on' : 'off'); } catch (e) {} if (musicGain) musicGain.gain.setTargetAtTime(musicOn ? 1 : 0, AC.currentTime, .1); }
+function toggleMusic() { musicOn = !musicOn; try { localStorage.setItem('palmcity8.music', musicOn ? 'on' : 'off'); } catch (e) {} if (musicGain) musicGain.gain.setTargetAtTime(musicOn ? 1 : 0, AC.currentTime, .1); if (S && mode !== 'title') flash(musicOn ? 'MUSIC ON' : 'MUSIC OFF', 60); }
 
 /* ================= input ================= */
+for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, () => { audioInit(); }, { capture: true, passive: true });
 function press(k, down) {
   if (k === 'start' && down) { audioInit(); if (mode === 'title') { newGame(); mode = 'play'; sfx('start'); } else mode = mode === 'play' ? 'paused' : 'play'; return; }
   if (k === 'select' && down) { audioInit(); toggleMusic(); return; }
