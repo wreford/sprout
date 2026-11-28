@@ -521,9 +521,9 @@ function driveInput() {
 function updateCar() {
   let { gas, brake, steer } = driveInput();
   const ground = tileAtPx(S.x, S.y), soft = ground === SAND || ground === GRASS || ground === FAIRWAY || ground === BUNKER, boosting = S.boost > 0;
-  const top = (3.6 + (boosting ? 1.8 : 0)) * (gas || 1) * (soft ? .82 : 1);
+  const car = rideStats(), top = (car.top + (boosting ? 1.8 : 0)) * (gas || 1) * (soft ? .82 : 1);
   if (boosting) { S.boost--; gas = 1; }
-  if (gas && S.v < top) S.v = Math.min(top, S.v + (boosting ? .2 : .095) * Math.max(.5, gas));
+  if (gas && S.v < top) S.v = Math.min(top, S.v + (boosting ? .2 : car.acc) * Math.max(.5, gas));
   else if (brake) S.v = S.v > .3 ? S.v - .16 : Math.max(-1.5, S.v - .07);
   else S.v *= S.v > top ? .985 : .975;
   // drift: hold DRIFT while turning; the back end slides and a charge builds; let go for a boost
@@ -533,7 +533,7 @@ function updateCar() {
     if (lvl && !keys.b) { S.boost = lvl === 2 ? 90 : 50; sfx('boost'); flash(lvl === 2 ? 'MEGA BOOST!' : 'BOOST!', 50); }
     S.drift = false; S.charge = 0;
   }
-  const turn = .062 * (S.drift ? 1.3 : 1) * (S.v < -.05 ? -1 : 1) * Math.max(.35, Math.min(1, Math.abs(S.v) / 1.2));
+  const turn = car.turn * (S.drift ? 1.3 : 1) * (S.v < -.05 ? -1 : 1) * Math.max(.35, Math.min(1, Math.abs(S.v) / 1.2));
   const vx0 = Math.cos(S.a) * S.v - Math.sin(S.a) * S.side, vy0 = Math.sin(S.a) * S.v + Math.cos(S.a) * S.side;
   S.a += steer * turn;
   const ca = Math.cos(S.a), sa = Math.sin(S.a);
@@ -789,7 +789,7 @@ function drawHUD() {
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 158, w, 24, P.ink); px(x, 158, w, 2, P.pink); px(x, 180, w, 2, P.teal); ctext(S.flash, 163, P.cream, 2); }
-  drawTip();
+  drawTip(); drawCarBanner();
   drawRadar();
   const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
   if (!S.onFoot) { px(hx, hy - 10, 52, 6, P.ink); px(hx + 1, hy - 9, Math.max(0, S.carHp) / 2, 4, S.carHp < 35 ? P.sun : P.teal); text('CAR', hx + 55, hy - 11, P.teal); }
@@ -913,7 +913,7 @@ function door() {
     const away = S.a + Math.PI / 2; S.runners.push({ x: best.x + Math.cos(away) * 12, y: best.y + Math.sin(away) * 12, a: away, t: 150, look: (Math.random() * 6) | 0, step: 0 });
     flash('CAR JACKED', 50);
   }
-  S.onFoot = false; S.v = 0; S.side = 0; sfx('door');
+  S.onFoot = false; S.v = 0; S.side = 0; sfx('door'); carBanner();
 }
 const rideSprite = () => S.rideLook === -1 ? PLAYER_CAR() : S.rideLook === 'cop' ? COP_CAR() : trafficCar(S.rideLook);
 
@@ -1708,6 +1708,30 @@ function drawTip() {
   const l = 'TIP: ' + S.tip.text, w = tw(l) + 12, x = (SW - w) / 2, y = 64;
   px(x, y, w, 14, 'rgba(26,7,38,.9)'); px(x, y, 2, 14, P.sun); text(l, x + 7, y + 4, S.tip.t < 40 && blink(2) ? P.blush : P.sun);
 }
+
+/* ================= 7. each car handles its own way ================= */
+const CAR_STATS = {
+  player: { name: 'PALM 6 TURBO', top: 3.9, acc: .105, turn: .064 },
+  cop: { name: 'SQUAD CAR', top: 4, acc: .1, turn: .06 },
+  sports: { name: 'SPORTSTER', top: 4.1, acc: .11, turn: .066 },
+  sedan: { name: 'SEDAN', top: 3.4, acc: .088, turn: .06 },
+  taxi: { name: 'PALM CAB', top: 3.5, acc: .09, turn: .06 },
+  van: { name: 'SURF VAN', top: 3, acc: .072, turn: .052 }
+};
+const LOOK_NAMES = ['GRANDPA SEDAN', 'BLUE SEDAN', 'PALM CAB', 'SURF VAN', 'RED SEDAN', 'SPORTSTER', 'PURPLE SEDAN', 'PEACH VAN', 'BLACK SEDAN'];
+function rideStats() {
+  if (S.rideLook === -1) return CAR_STATS.player;
+  if (S.rideLook === 'cop') return CAR_STATS.cop;
+  return CAR_STATS[TRAFFIC_LOOKS[S.rideLook][0]];
+}
+function rideName() { return S.rideLook === -1 ? CAR_STATS.player.name : S.rideLook === 'cop' ? 'SQUAD CAR' : LOOK_NAMES[S.rideLook]; }
+function carBanner() { S.carBanner = { name: rideName(), t: 170 }; }
+function drawCarBanner() {
+  const B = S.carBanner; if (!B || S.onFoot) return; if (!--B.t) { S.carBanner = null; return; }
+  const y = SH - 72, st = musicOn ? 'RADIO: ' + radioName() : 'RADIO OFF';
+  text(B.name, SW - 8 - tw(B.name, 2) + 1, y + 1, P.ink, 2); text(B.name, SW - 8 - tw(B.name, 2), y, B.t < 30 && blink(2) ? P.blush : P.cream, 2);
+  text(st, SW - 8 - tw(st), y + 17, P.teal);
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1852,7 +1876,7 @@ function toggleMusic() {
 
 
 /* ================= input ================= */
-function startGame() { audioInit(); newGame(); mode = 'play'; sfx('start'); }
+function startGame() { audioInit(); newGame(); mode = 'play'; sfx('start'); carBanner(); }
 function press(k, down) {
   if (k in keys) keys[k] = down ? 1 : 0;
   if (!down) return;
