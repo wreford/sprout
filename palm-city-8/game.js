@@ -567,10 +567,12 @@ function updateCar() {
 }
 function launch(a, id) {
   const sp = Math.min(5.4, Math.hypot(S.v, S.side));
-  S.air = 1; S.airMax = Math.round(10 + sp * 6); S.a = a; S.avx = Math.cos(a) * sp; S.avy = Math.sin(a) * sp; S.drift = false; S.side = 0; S.rampId = id; sfx('jump');
+  S.air = 1; S.airMax = Math.round(10 + sp * 6); S.a = a; S.avx = Math.cos(a) * sp; S.avy = Math.sin(a) * sp; S.drift = false; S.side = 0; S.rampId = id; S.spin = 0; sfx('jump');
 }
 function airStep() {
-  S.air++; S.z = Math.sin(Math.PI * S.air / S.airMax) * Math.min(30, S.airMax * .45);
+  S.air++;
+  // 17. steer in the air to spin
+  const turnIn = stick.mag > .3 ? clamp(stick.x * 1.4, -1, 1) : keys.right - keys.left; S.spin += turnIn * .2; S.z = Math.sin(Math.PI * S.air / S.airMax) * Math.min(30, S.airMax * .45);
   S.x = clamp(S.x + S.avx, 8, MW * T - 8); S.y = clamp(S.y + S.avy, 8, MH * T - 8);
   if (S.air >= S.airMax) land();
 }
@@ -580,7 +582,10 @@ function land() {
   if (isWater(t)) return splash();
   if (blockedAt(S.x, S.y, 6)) { for (let i = 0; i < 60 && blockedAt(S.x, S.y, 6); i++) { S.x -= S.avx * .5; S.y -= S.avy * .5; } S.v = 0; sfx('crash'); flash('OOF'); return; }
   puff(S.x, S.y, 10, t === SAND ? P.sand2 : P.cream, 3, 18, 3);
-  const cash = 10 + S.airMax; S.cash += cash;
+  let cash = 10 + S.airMax;
+  const turns = Math.floor(Math.abs(S.spin) / (Math.PI * 2) + .2), off = Math.abs(angleDiff(S.spin, 0)); S.spin = 0;
+  if (turns > 0) { const bonus = turns * 120 / (off > 1 ? 2 : 1); cash += bonus; S.cash += cash; flash(['360!', '720!!', '1080!!!', 'INSANE!!!!'][Math.min(3, turns - 1)] + (off > 1 ? ' SLOPPY LANDING' : '') + ' +$' + cash, 140); sfx('deliver'); if (!S.stunts.includes(S.rampId)) { S.stunts.push(S.rampId); S.cash += 100; } return; }
+  S.cash += cash;
   if (!S.stunts.includes(S.rampId)) { S.stunts.push(S.rampId); S.cash += 100; flash('STUNT ' + S.stunts.length + '/' + STUNT_IDS.size + ' +$' + (cash + 100), 120); sfx('deliver'); }
   else flash('BIG AIR +$' + cash);
 }
@@ -769,7 +774,7 @@ function draw() {
   for (const [, o, k] of tall) k === 0 ? drawBuilding(o) : k === 1 ? drawPalm(o) : drawLamp(o);
   drawGulls(); drawStreetLabels();
   for (const c of S.traffic) if (c.honk) bubble(c.honkLine, c.x - camX, c.y - camY - 12);
-  if (S.air) drawSprite(rideSprite(), carX, carY, S.a, S.z);   // in the air you fly over everything
+  if (S.air) drawSprite(rideSprite(), carX, carY, S.a + (S.spin || 0), S.z);   // in the air you fly over everything
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 15, 40, 3, P.ink); px(carX - 20, carY + 15, w, 3, c); }
   // arrow toward the job when it is off screen
   drawTargetArrow();
