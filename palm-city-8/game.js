@@ -399,8 +399,11 @@ function updateTraffic() {
     if (c.wreck) { if (frame % 6 === 0) puff(c.x, c.y, 1, '#3a3440', 1, 40, 4, .5); if (!--c.wreck) Object.assign(c, spawnTraffic(true)); continue; }
     // queue behind whatever is ahead
     const ax = c.x + c.dx * 20, ay = c.y + c.dy * 20;
-    let stop = S.traffic.some(o => o !== c && Math.abs(o.x - ax) < 10 && Math.abs(o.y - ay) < 10) || (!S.air && Math.abs(S.x - ax) < 13 && Math.abs(S.y - ay) < 13);
+    const byYou = !S.air && Math.abs(S.x - ax) < 13 && Math.abs(S.y - ay) < 13;
+    let stop = byYou || S.traffic.some(o => o !== c && Math.abs(o.x - ax) < 10 && Math.abs(o.y - ay) < 10);
     if (stop) c.wait++; else c.wait = 0;
+    if (c.honk) c.honk--;
+    if (byYou && c.wait === 45) { c.honk = 50; c.honkLine = pick(['HONK!', 'MOVE IT!', 'BEEP BEEP', 'HELLO?']); if (Math.abs(c.x - S.x) < 200) sfx('honk'); }
     if (c.wait > 120) stop = false;   // nobody waits forever
     c.v = stop ? Math.max(0, c.v - .12) : Math.min(c.sp, c.v + .05);
     const tx = Math.floor(c.x / T), ty = Math.floor(c.y / T);
@@ -765,6 +768,7 @@ function draw() {
   tall.sort((a, b) => b[0] - a[0]);
   for (const [, o, k] of tall) k === 0 ? drawBuilding(o) : k === 1 ? drawPalm(o) : drawLamp(o);
   drawGulls(); drawStreetLabels();
+  for (const c of S.traffic) if (c.honk) bubble(c.honkLine, c.x - camX, c.y - camY - 12);
   if (S.air) drawSprite(rideSprite(), carX, carY, S.a, S.z);   // in the air you fly over everything
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 15, 40, 3, P.ink); px(carX - 20, carY + 15, w, 3, c); }
   // arrow toward the job when it is off screen
@@ -1986,6 +1990,7 @@ function sfx(name) {
   if (name === 'smash') { if (!NB) NB = noiseBuf(); const s6 = AC.createBufferSource(); s6.buffer = NB; const f6 = AC.createBiquadFilter(); f6.type = 'highpass'; f6.frequency.value = 2000; const gn = AC.createGain(); gn.gain.setValueAtTime(.18, t); gn.gain.exponentialRampToValueAtTime(.001, t + .18); s6.connect(f6); f6.connect(gn); gn.connect(master); s6.start(t); s6.stop(t + .2); beep(500, 900, .06, 'square', .04); }
   if (name === 'boing') beep(260, 620, .18, 'sine', .12);
   if (name === 'tape') [784, 988, 1175, 1568].forEach((f, i) => beep(f, f, .08, 'triangle', .08, i * .06));
+  if (name === 'honk') { beep(392, 380, .25, 'sawtooth', .045); beep(494, 480, .25, 'sawtooth', .035); }
   if (name === 'count') beep(440, 440, .12, 'square', .07);
   if (name === 'go') beep(880, 880, .3, 'square', .08);
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
