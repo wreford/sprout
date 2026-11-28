@@ -47,12 +47,14 @@ function ctext(s, y, c, k = 1, shadow) { const x = Math.round((SW - tw(s, k)) / 
 
 /* ================= the island ================= */
 const MW = 164, MH = 142, T = 16;
-const SEA = 0, SAND = 1, ROAD = 2, WALK = 3, BLD = 4, GRASS = 5, POND = 6, PATH = 7, LOT = 8, RUNWAY = 9, RAMP = 10, FAIRWAY = 11, BUNKER = 12, PIER = 13, PLAZA = 14;
+const SEA = 0, SAND = 1, ROAD = 2, WALK = 3, BLD = 4, GRASS = 5, POND = 6, PATH = 7, LOT = 8, RUNWAY = 9, RAMP = 10, FAIRWAY = 11, BUNKER = 12, PIER = 13, PLAZA = 14, SPRAY = 15;
+const SPRAYS = [];   // Paint N Spray pads: drive on to lose the heat and fix the car
 const map = new Uint8Array(MW * MH), blocked = new Uint8Array(MW * MH), ring = new Uint8Array(MW * MH), rampDir = new Float32Array(MW * MH);
 const inMap = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH;
 const at = (x, y) => inMap(x, y) ? map[y * MW + x] : SEA;
 const set = (x, y, v) => { if (inMap(x, y)) map[y * MW + x] = v; };
 const isWater = t => t === SEA || t === POND;
+const isGridRoadT = (x, y) => at(x, y) === ROAD && !ring[y * MW + x];
 const solidTile = (x, y) => inMap(x, y) && (map[y * MW + x] === BLD || blocked[y * MW + x] === 1);
 let seed = 20260;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -126,6 +128,8 @@ function buildIsland() {
     } else if (kind === 'strip') {
       if (bi === 6) addBuilding(x0 + 1, y0 + 1, 7, 7, 46, 'casino', { sign: 'CASINO' });
       else addBuilding(x0 + 1, y0 + 1, 7, 7, 34 + (rnd() * 18 | 0), 'deco', { sign: SIGNS[(bi * 3 + bj) % SIGNS.length], neon: true });
+    } else if ((bi === 3 && bj === 2) || (bi === 9 && bj === 4) || (bi === 8 && bj === 8)) {   // a few parking lots, some with a Paint N Spray
+      for (let y = y0 + 1; y < y0 + 8; y++) for (let x = x0 + 1; x < x0 + 8; x++) set(x, y, LOT);
     } else if (r < .14) {   // plaza with palms and a fountain
       for (let y = y0 + 1; y < y0 + 8; y++) for (let x = x0 + 1; x < x0 + 8; x++) set(x, y, PLAZA);
       set(x0 + 4, y0 + 4, POND); for (const [ox, oy] of [[2, 2], [6, 2], [2, 6], [6, 6]]) addPalm(x0 + ox, y0 + oy);
@@ -180,6 +184,9 @@ function buildIsland() {
   addRamp(ic - 4, py, Math.PI, 5); addRamp(ic - 4, py + 1, Math.PI, 5);
   addPalm(ic + 1, py - 5, 42); addPalm(ic + 2, py + 6, 36); addPalm(ic - 1, py + 3, 30); SANDBAR_X = ic - 6;
   for (let i = 0; i < 40; i++) { const x = (rnd() * MW) | 0, y = (rnd() * MH) | 0; if (at(x, y) === SAND && !blocked[y * MW + x]) DECOR.push({ kind: 'towel', x: x * T + 8, y: y * T + 8, c: i % 4 }); }
+  // three Paint N Spray pads on parking lots next to a street
+  for (let y = 0; y < MH && SPRAYS.length < 4; y++) for (let x = 0; x < MW && SPRAYS.length < 4; x++)
+    if (at(x, y) === LOT && at(x + 1, y) === LOT && (isGridRoadT(x, y + 1) || (at(x, y + 1) === WALK && isGridRoadT(x, y + 2))) && SPRAYS.every(s => Math.hypot(s.x / T - x, s.y / T - y) > 30)) { set(x, y, SPRAY); set(x + 1, y, SPRAY); SPRAYS.push({ x: (x + 1) * T, y: y * T + 8 }); }
   paintGround(); paintRadar();
   for (const b of BUILDINGS) b.roof = paintRoof(b);
 }
@@ -214,6 +221,7 @@ function paintTile(x, y) {
     case PIER: px(sx, sy, 16, 16, P.plank); for (let i = 0; i < 16; i += 4) px(sx + i, sy, 1, 16, P.plank2); if (at(x, y - 1) !== PIER) px(sx, sy, 16, 2, P.white); if (at(x, y + 1) !== PIER) px(sx, sy + 14, 16, 2, P.white); break;
     case RAMP: paintRamp(x, y, sx, sy); break;
     case BLD: px(sx, sy, 16, 16, '#2a2430'); break;
+    case SPRAY: px(sx, sy, 16, 16, P.lot); for (let i = 0; i < 4; i++) px(sx, sy + i * 4, 16, 4, [P.pink, P.sun, P.teal, P.violet][(i + x) % 4]); px(sx, sy, 16, 1, P.white); px(sx, sy + 15, 16, 1, P.white); break;
   }
 }
 function paintRoad(x, y, sx, sy) {
@@ -352,7 +360,9 @@ function newGame() {
   S = { x: START.x, y: START.y, a: -Math.PI / 2, v: 0, side: 0, cash: 0, heat: 0, heatClock: 0, best, streak: 0, delivered: 0, fares: 0, races: 0,
     flash: null, flashT: 0, traffic: [], maids: [], shake: 0, drift: false, charge: 0, boost: 0, parts: [], geysers: [],
     air: 0, airMax: 0, z: 0, avx: 0, avy: 0, sink: 0, safe: { x: START.x, y: START.y, a: -Math.PI / 2 }, stunts: [], district: '', banner: null,
-    job: null, say: null, markers: {}, cam: { x: START.x, y: START.y }, tapes: [] };
+    job: null, say: null, markers: {}, cam: { x: START.x, y: START.y }, tapes: [],
+    onFoot: false, fa: 0, step: 0, knock: 0, kvx: 0, kvy: 0, hp: 100, carHp: 100, rideLook: -1, parked: [], runners: [], bullets: [], cops: [], weapon: 'PISTOL', ammo: 0, fireCool: 0, hurtT: 0, down: null, downT: 0, maidCool: 0 };
+  placePickups();
   for (let i = 0; i < 34; i++) S.traffic.push(spawnTraffic());
   for (const k of JOB_KINDS) placeMarker(k);
 }
@@ -384,6 +394,7 @@ function spawnTraffic(far) {
 }
 function updateTraffic() {
   for (const c of S.traffic) {
+    if (c.wreck) { if (frame % 6 === 0) puff(c.x, c.y, 1, '#3a3440', 1, 40, 4, .5); if (!--c.wreck) Object.assign(c, spawnTraffic(true)); continue; }
     // queue behind whatever is ahead
     const ax = c.x + c.dx * 20, ay = c.y + c.dy * 20;
     let stop = S.traffic.some(o => o !== c && Math.abs(o.x - ax) < 10 && Math.abs(o.y - ay) < 10) || (!S.air && Math.abs(S.x - ax) < 13 && Math.abs(S.y - ay) < 13);
@@ -406,12 +417,13 @@ function updateTraffic() {
     const l = laneOf(c);
     if (l.x !== null) c.x += clamp(l.x - c.x, -1, 1); else c.y += clamp(l.y - c.y, -1, 1);
     c.x += c.dx * c.v; c.y += c.dy * c.v;
-    if (!S.air && !S.sink && Math.abs(c.x - S.x) < 14 && Math.abs(c.y - S.y) < 14) {
-      if (Math.hypot(S.v, S.side) > 1.6) { sfx('crash'); S.shake = 6; jobBump(); if (Math.hypot(S.v, S.side) > 2.6) addHeat(1, 'FENDER BENDER'); }
+    if (S.onFoot && !S.down && c.v > .6 && Math.abs(c.x - S.x) < 10 && Math.abs(c.y - S.y) < 10 && !S.knock) { hurt(Math.round(c.v * 8)); S.knock = 14; S.kvx = c.dx * 3 + (S.x - c.x) * .2; S.kvy = c.dy * 3 + (S.y - c.y) * .2; c.v = 0; flash('WATCH IT!', 40); }
+    else if (!S.onFoot && !S.air && !S.sink && Math.abs(c.x - S.x) < 14 && Math.abs(c.y - S.y) < 14) {
+      if (Math.hypot(S.v, S.side) > 1.6) { sfx('crash'); S.shake = 6; jobBump(); if (Math.hypot(S.v, S.side) > 2.6) addHeat(1, 'FENDER BENDER'); hurt(Math.round(Math.hypot(S.v, S.side) * 3)); }
       S.v *= -.35; S.side = 0; S.drift = false; S.x -= Math.cos(S.a) * 6; S.y -= Math.sin(S.a) * 6; c.v = 0; c.wait = 0;
     }
     // cars far behind you come back somewhere nearer
-    if (Math.abs(c.x - S.x) > 900 || Math.abs(c.y - S.y) > 700) Object.assign(c, spawnTraffic(true));
+    if (Math.abs(c.x - S.x) > 900 || Math.abs(c.y - S.y) > 700) Object.assign(c, spawnTraffic(true), { hp: 6 });
   }
 }
 
@@ -467,7 +479,7 @@ function endJob() { const kind = S.job.kind; S.job = null; placeMarker(kind); }
 function jobBump() { if (S.job && S.job.kind === 'taxi') { S.job.bumps++; say(S.job.rider + ': ' + pick(SAY_BUMP), 100); } }
 function updateJobs() {
   const near = (p, r = 22) => !S.air && !S.sink && Math.hypot(p.x - S.x, p.y - S.y) < r;
-  if (!S.job) { for (const k of JOB_KINDS) if (S.markers[k] && near(S.markers[k])) { startJob(k); break; } return; }
+  if (!S.job) { for (const k of JOB_KINDS) if (S.markers[k] && near(S.markers[k])) { if (S.onFoot) { if (frame % 60 === 0) flash('GET A CAR FIRST', 50); break; } startJob(k); break; } return; }
   const J = S.job;
   if (J.kind === 'race') {
     if (J.count > 0) { if (J.count % 60 === 0) sfx('count'); J.count--; S.v = 0; S.side = 0; if (!J.count) { sfx('go'); flash('GO!', 40); } return; }
@@ -485,7 +497,7 @@ function updateJobs() {
     return;
   }
   J.timer--;
-  if (near(J.target)) {
+  if (near(J.target) && !S.onFoot) {
     const secs = Math.max(0, Math.floor(J.timer / 60));
     if (J.kind === 'deliver') { S.streak++; const pay = 60 + secs * 2 + (S.streak - 1) * 10; S.cash += pay; S.delivered++; flash('DELIVERED +$' + pay); }
     else { const fare = 70 + secs * 2, tip = Math.max(0, 60 - J.bumps * 20), stars = Math.max(1, 5 - J.bumps); S.cash += fare + tip; S.fares++; flash('*'.repeat(stars) + ' +$' + (fare + tip), 150); say(J.rider + ': ' + pick(J.bumps < 2 ? SAY_GOOD : SAY_BAD)); }
@@ -537,7 +549,7 @@ function updateCar() {
   const nx = S.x + vx, ny = S.y + vy;
   if (blockedAt(nx, ny, 6) && !blockedAt(nx, S.y, 6) && Math.abs(vx) > .2) { S.x = nx; S.v *= .9; S.side *= .5; }
   else if (blockedAt(nx, ny, 6) && !blockedAt(S.x, ny, 6) && Math.abs(vy) > .2) { S.y = ny; S.v *= .9; S.side *= .5; }
-  else if (blockedAt(nx, ny, 6)) { if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; jobBump(); puff(nx + ca * 8, ny + sa * 8, 6, P.sun, 2.5, 14, 2); } S.v *= -.25; S.side = 0; S.drift = false; S.boost = 0; }
+  else if (blockedAt(nx, ny, 6)) { if (Math.abs(S.v) > 1.8) { sfx('crash'); S.shake = 8; jobBump(); puff(nx + ca * 8, ny + sa * 8, 6, P.sun, 2.5, 14, 2); hurt(Math.round(Math.abs(S.v) * 3)); } S.v *= -.25; S.side = 0; S.drift = false; S.boost = 0; }
   else { S.x = nx; S.y = ny; }
   const under = tileAtPx(S.x, S.y), i = Math.floor(S.y / T) * MW + Math.floor(S.x / T);
   if (under === RAMP && S.v > 1.8 && Math.abs(angleDiff(S.a, rampDir[i])) < 1.1) launch(rampDir[i], RAMP_ID[i]);
@@ -581,26 +593,40 @@ function addHeat(n, why) { S.heat = Math.min(5, S.heat + n); S.heatClock = 0; fl
 function spawnMaid() { for (let i = 0; i < 200; i++) { const a = Math.random() * Math.PI * 2, r = 200 + Math.random() * 60, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r; if (!chaserBlocked(x, y, 4) && inMap(x / T, y / T)) return { x, y, a: 0 }; } return { x: S.x + 220, y: S.y, a: Math.PI }; }
 function ticket() { const fine = Math.min(S.cash, Math.max(15, Math.floor(S.cash * .1))); S.cash -= fine; S.heat = 0; S.maids = []; S.streak = 0; sfx('ticket'); flash('TICKET! -$' + fine, 120); S.v = 0; S.side = 0; S.boost = 0; }
 function updateMaids() {
-  while (S.maids.length < Math.min(3, S.heat)) S.maids.push(spawnMaid());
+  if (S.maidCool) S.maidCool--;
+  while (!S.maidCool && S.maids.length < Math.min(3, S.heat)) S.maids.push(spawnMaid());
   for (const m of S.maids) {
+    if (m.spin) { m.a += .4; if (!--m.spin) { m.dead = true; S.maidCool = 300; } continue; }
     const dx = S.x - m.x, dy = S.y - m.y, d = Math.hypot(dx, dy) || 1, sp = 1.7 + S.heat * .2;
     let mx = m.x + dx / d * sp, my = m.y + dy / d * sp;
     if (chaserBlocked(mx, my, 4)) { if (!chaserBlocked(mx, m.y, 4)) my = m.y; else if (!chaserBlocked(m.x, my, 4)) mx = m.x; else { mx = m.x + (Math.random() - .5) * 6; my = m.y + (Math.random() - .5) * 6; if (chaserBlocked(mx, my, 4)) { mx = m.x; my = m.y; } } }
     if (mx !== m.x || my !== m.y) m.a = Math.atan2(my - m.y, mx - m.x);
     m.x = mx; m.y = my;
-    if (d < 13 && !S.air && !S.sink) { ticket(); break; }
+    if (d < 13 && !S.air && !S.sink && !S.down) { ticket(); break; }
   }
-  if (S.heat > 0) { const near = S.maids.some(m => Math.hypot(m.x - S.x, m.y - S.y) < 130); S.heatClock = near ? 0 : S.heatClock + 1;
-    if (S.heatClock > 60 * 5) { S.heat--; S.heatClock = 0; S.maids.pop(); if (!S.heat) flash('LOST THEM'); } }
+  S.maids = S.maids.filter(m => !m.dead);
+  if (S.heat > 0) { const near = [...S.maids, ...S.cops.filter(c => !c.dead && !c.parked)].some(m => Math.hypot(m.x - S.x, m.y - S.y) < 150); S.heatClock = near ? 0 : S.heatClock + 1;
+    if (S.heatClock > 60 * 5) { S.heat--; S.heatClock = 0; S.maids.pop(); const live = S.cops.filter(c => !c.dead); if (live.length > Math.max(0, S.heat - 2)) S.cops.splice(S.cops.indexOf(live[live.length - 1]), 1); if (!S.heat) { flash('LOST THEM'); S.shotsSeen = false; } } }
 }
 
 /* ================= update ================= */
 function update() {
   frame++;
   if (mode !== 'play') return;
-  if (S.sink) { S.sink--; if (frame % 3 === 0) puff(S.x, S.y, 2, P.foam, 2, 20, 2); if (!S.sink) respawn(); }
+  if (S.down) { if (!--S.downT) getUp(); }
+  else if (S.onFoot) updateFoot();
+  else if (S.sink) { S.sink--; if (frame % 3 === 0) puff(S.x, S.y, 2, P.foam, 2, 20, 2); if (!S.sink) respawn(); }
   else if (S.air) airStep();
   else updateCar();
+  if (S.fireCool) S.fireCool--;
+  if (keys.fire && !S.down) fire();
+  if (S.hurtT) S.hurtT--;
+  if (!S.onFoot && S.carHp < 35 && frame % 5 === 0) puff(S.x, S.y, 1, S.carHp < 15 ? '#ff7a2a' : '#5a5462', 1, 40, 4, .5);
+  for (const r of S.runners) { r.x += Math.cos(r.a) * 2; r.y += Math.sin(r.a) * 2; r.step++; if (walkBlocked(r.x, r.y)) r.a += 1.6; r.t--; }
+  S.runners = S.runners.filter(r => r.t > 0);
+  for (const c of S.parked) if (c.wreck) { c.wreck--; if (frame % 6 === 0) puff(c.x, c.y, 1, '#3a3440', 1, 40, 4, .5); }
+  S.parked = S.parked.filter(c => !(c.wreck === 0));
+  updateBullets(); updateCops(); updatePickups();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -611,7 +637,7 @@ function update() {
   if (S.shake) S.shake--;
   // the camera looks ahead of the car
   const vx = Math.cos(S.a) * S.v - Math.sin(S.a) * S.side, vy = Math.sin(S.a) * S.v + Math.cos(S.a) * S.side;
-  S.cam.x += (S.x + vx * 22 - S.cam.x) * .08; S.cam.y += (S.y + vy * 16 - S.cam.y) * .08;
+  const lead = S.onFoot ? 0 : 1; S.cam.x += (S.x + vx * 22 * lead - S.cam.x) * .08; S.cam.y += (S.y + vy * 16 * lead - S.cam.y) * .08;
 }
 
 /* ================= drawing: fake 3D ================= */
@@ -701,10 +727,17 @@ function draw() {
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
+  drawPickups();
+  for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
+  for (const c of S.parked) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(c.wreck ? WRECK() : c.look === -1 ? PLAYER_CAR() : c.look === 'cop' ? COP_CAR() : trafficCar(c.look), x, y, c.a); }
+  for (const c of S.cops) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) { drawSprite(c.dead ? WRECK() : COP_CAR(), x, y, c.a); if (!c.dead) { px(x - 2, y - 2, 2, 3, blink(2) ? P.red : '#3a7aff'); px(x, y - 2, 2, 3, blink(2) ? '#3a7aff' : P.red); } } }
+  for (const r of S.runners) drawPerson(personSprites('runner' + r.look, SHIRTS[r.look], '#3a3a44', SKINS[r.look % 4], HAIRS[r.look % 6]), r.x - camX, r.y - camY, r.a, r.step);
   for (const m of S.maids) { const x = m.x - camX, y = m.y - camY; drawSprite(SCOOTER(), x, y, m.a); px(x - 2, y - 2, 4, 4, blink(3) ? P.red : '#3a7aff'); }
   const carX = S.x - camX, carY = S.y - camY;
   if (S.sink) { const r = 8 + (50 - S.sink) / 3; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; px(carX + Math.cos(a) * r, carY + Math.sin(a) * r * .6, 2, 1, P.foam); } if (S.sink > 25) drawSprite(PLAYER_CAR(), carX, carY, S.a, 0, (S.sink - 25) / 25); }
-  else if (!S.air) drawSprite(PLAYER_CAR(), carX, carY, S.a, 0);
+  else if (S.onFoot) { if (!S.down || blink(2)) drawPerson(PLAYER_FOOT(), carX, carY, S.fa, S.step, S.down === 'wasted'); }
+  else if (!S.air) drawSprite(rideSprite(), carX, carY, S.a, 0);
+  for (const b of S.bullets) { const x = b.x - camX, y = b.y - camY; if (b.laser) { px(x - b.vx * .6, y - b.vy * .6, 3, 3, P.teal); px(x - 1, y - 1, 3, 3, '#ffffff'); } else { px(x - b.vx * .3, y - b.vy * .3, 1, 1, P.sun); px(x - 1, y - 1, 2, 2, b.mine ? '#fff6c8' : P.red); } }
   for (const q of S.parts) px(q.x - camX - q.size / 2, q.y - camY - q.size / 2, q.size, q.size, q.col);
   // tall things, farthest from the middle first, so nearer ones cover them
   const tall = [];
@@ -713,7 +746,7 @@ function draw() {
   for (const l of LAMPS) if (Math.abs(l.x - camCX) < SW && Math.abs(l.y - camCY) < SH) tall.push([Math.hypot(l.x - camCX, l.y - camCY), l, 2]);
   tall.sort((a, b) => b[0] - a[0]);
   for (const [, o, k] of tall) k === 0 ? drawBuilding(o) : k === 1 ? drawPalm(o) : drawLamp(o);
-  if (S.air) drawSprite(PLAYER_CAR(), carX, carY, S.a, S.z);   // in the air you fly over everything
+  if (S.air) drawSprite(rideSprite(), carX, carY, S.a, S.z);   // in the air you fly over everything
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 15, 40, 3, P.ink); px(carX - 20, carY + 15, w, 3, c); }
   // arrow toward the job when it is off screen
   const aim = S.job && S.job.target;
@@ -722,6 +755,8 @@ function draw() {
     for (let i = 0; i < 9; i++) { const s = 9 - i; px(ax + Math.cos(ang) * i * 1.6 - s / 2, ay + Math.sin(ang) * i * 1.6 - s / 2, s, s, i < 2 ? P.ink : tc); }
   }
   drawHUD();
+  if (S.hurtT && S.onFoot) { px(0, 21, SW, 2, P.red); px(0, SH - 2, SW, 2, P.red); px(0, 21, 2, SH, P.red); px(SW - 2, 21, 2, SH, P.red); }
+  if (S.down) { const t = S.down === 'busted' ? 'BUSTED' : 'TOTALLY WASTED', sub = S.down === 'busted' ? 'GNARLY. -$' + S.downLoss : 'BOGUS. -$' + S.downLoss; px(0, 80, SW, 56, 'rgba(26,7,38,.85)'); ctext(t, 88, S.down === 'busted' ? '#3a7aff' : P.red, 3, P.ink); ctext(sub, 118, P.cream, 1); }
   if (mode === 'map') drawMap();
   if (mode === 'paused') { px(68, 66, 200, 84, P.ink); px(68, 66, 200, 3, P.teal); px(68, 147, 200, 3, P.pink); ctext('PAUSED', 82, P.teal, 4, P.purp); ctext('PAUSE TO GO ON', 124, P.cream, 2); }
   document.getElementById('lamp').classList.toggle('on', S.heat > 0 && !!blink(4));
@@ -741,7 +776,10 @@ function drawHUD() {
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
   if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 158, w, 24, P.ink); px(x, 158, w, 2, P.pink); px(x, 180, w, 2, P.teal); ctext(S.flash, 163, P.cream, 2); }
   drawRadar();
-  const kmh = Math.round(Math.hypot(S.v, S.side) * 26) + ' KM/H'; text(kmh, SW - 6 - tw(kmh), SH - 11, P.cream);
+  const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
+  if (!S.onFoot) { px(hx, hy - 10, 52, 6, P.ink); px(hx + 1, hy - 9, Math.max(0, S.carHp) / 2, 4, S.carHp < 35 ? P.sun : P.teal); text('CAR', hx + 55, hy - 11, P.teal); }
+  const wl = S.weapon + (S.weapon === 'PISTOL' ? '' : ' ' + S.ammo); text(wl, SW - 6 - tw(wl), SH - 22, S.weapon === 'PISTOL' ? P.cream : P.sun);
+  const kmh = S.onFoot ? 'ON FOOT' : Math.round(Math.hypot(S.v, S.side) * 26) + ' KM/H'; text(kmh, SW - 6 - tw(kmh), SH - 11, P.cream);
 }
 // radar: one pixel per tile around the car
 const radarPic = document.createElement('canvas'); radarPic.width = MW; radarPic.height = MH;
@@ -794,6 +832,196 @@ function drawTitle() {
   if (best) text('BEST $' + best, 6, 6, P.cream);
   const ml = musicOn ? radioName() : 'RADIO OFF'; text(ml, SW - 6 - tw(ml), 6, musicOn ? P.teal : P.blush);
 }
+
+/* ================= people ================= */
+// a person seen from above, facing east; four walking frames
+function personPicture(shirt, pants, skin, hair, f) {
+  return makeSprite(11, 11, () => {
+    const l = [-2, 0, 2, 0][f];
+    px(4 + l, 2, 3, 2, pants); px(4 - l, 7, 3, 2, pants);          // legs
+    px(3 - l, 0, 3, 2, skin); px(3 + l, 9, 3, 2, skin);             // hands swing against the legs
+    px(2, 1, 5, 9, shirt); px(2, 1, 5, 1, shade(shirt, 1.2));       // shoulders
+    px(4, 3, 5, 5, skin); px(3, 3, 3, 5, hair); px(4, 3, 2, 1, hair);   // head and hair
+  });
+}
+const SKINS = ['#f2c9a0', '#d9a877', '#a8714a', '#7a4a2e'], SHIRTS = [P.pink, P.teal, P.sun, P.violet, '#ffffff', '#9fd3f0', P.blush, '#3a3a44', '#ff7a2a'], HAIRS = ['#2b1a12', '#5a2638', '#ffd36b', '#7a3b2e', '#e9d6f0', '#1a1a1a'];
+function personSprites(key, shirt, pants, skin, hair) { return [0, 1, 2, 3].map(f => sprite(key + f, () => personPicture(shirt, pants, skin, hair, f))); }
+const PLAYER_FOOT = () => personSprites('you', '#ffffff', '#3a5a9a', '#f2c9a0', '#2b1a12');   // white tee, blue jeans
+function drawPerson(sp, x, y, a, step, lying) {
+  const s = sp[lying ? 0 : (step >> 3) & 3], i = headingIndex(a), pic = s.look[i], half = pic.width / 2;
+  g.drawImage(s.shadow[i], Math.round(x - half + 1), Math.round(y - half + 2)); g.drawImage(pic, Math.round(x - half), Math.round(y - half));
+}
+
+/* ================= on foot ================= */
+const FOOT_R = 4;
+function walkBlocked(x, y) { return blockedAt(x, y, FOOT_R) || isWater(tileAtPx(x, y)); }
+function updateFoot() {
+  let mx = keys.right - keys.left, my = keys.down - keys.up, run = 1;
+  if (stick.mag > .18) { mx = stick.x; my = stick.y; run = stick.mag; }
+  const m = Math.hypot(mx, my);
+  if (m > .1) {
+    S.fa = Math.atan2(my, mx); const sp = (m > 1 ? 1 : m) * (run > .85 ? 2.1 : 1.4);
+    const nx = S.x + Math.cos(S.fa) * sp, ny = S.y + Math.sin(S.fa) * sp;
+    if (!walkBlocked(nx, S.y)) S.x = nx; if (!walkBlocked(S.x, ny)) S.y = ny;
+    S.step++;
+  }
+  if (S.knock) { S.x += S.kvx; S.y += S.kvy; S.kvx *= .85; S.kvy *= .85; if (walkBlocked(S.x, S.y)) { S.x -= S.kvx * 2; S.y -= S.kvy * 2; } S.knock--; }
+}
+// DOOR: get out when slow, or get into the nearest car: one you left, or anyone's (they run off)
+function door() {
+  if (S.down) return;
+  if (!S.onFoot) {
+    if (Math.hypot(S.v, S.side) > 1.2 || S.air || S.sink) { flash('SLOW DOWN TO GET OUT', 50); return; }
+    S.parked.push({ x: S.x, y: S.y, a: S.a, look: S.rideLook, hp: S.carHp });
+    if (S.parked.length > 6) S.parked.shift();
+    for (const side of [-1, 1, 0]) { const ox = S.x + Math.cos(S.a + side * Math.PI / 2) * 15, oy = S.y + Math.sin(S.a + side * Math.PI / 2) * 15; if (!walkBlocked(ox, oy) || side === 0) { S.x = ox; S.y = oy; break; } }
+    S.onFoot = true; S.fa = S.a; S.v = 0; S.side = 0; S.drift = false; S.boost = 0; sfx('door'); return;
+  }
+  let best = null, bd = 26, from = null;
+  for (const c of S.parked) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'parked'; } }
+  for (const c of S.traffic) if (!c.wreck) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'traffic'; } }
+  for (const c of S.cops) if (c.parked) { const d = Math.hypot(c.x - S.x, c.y - S.y); if (d < bd) { bd = d; best = c; from = 'cop'; } }
+  if (!best) { flash('NO CAR HERE', 40); return; }
+  if (from === 'parked') { S.parked.splice(S.parked.indexOf(best), 1); S.x = best.x; S.y = best.y; S.a = best.a; S.rideLook = best.look; S.carHp = best.hp; }
+  else if (from === 'cop') { S.cops.splice(S.cops.indexOf(best), 1); S.x = best.x; S.y = best.y; S.a = best.a; S.rideLook = 'cop'; S.carHp = 70; addHeat(2, 'STOLE A COP CAR!'); }
+  else {
+    const i = S.traffic.indexOf(best); S.traffic[i] = spawnTraffic(true);
+    S.x = best.x; S.y = best.y; S.a = Math.atan2(best.dy, best.dx); S.rideLook = best.look; S.carHp = best.hp || 100;
+    const away = S.a + Math.PI / 2; S.runners.push({ x: best.x + Math.cos(away) * 12, y: best.y + Math.sin(away) * 12, a: away, t: 150, look: (Math.random() * 6) | 0, step: 0 });
+    flash('CAR JACKED', 50);
+  }
+  S.onFoot = false; S.v = 0; S.side = 0; sfx('door');
+}
+const rideSprite = () => S.rideLook === -1 ? PLAYER_CAR() : S.rideLook === 'cop' ? COP_CAR() : trafficCar(S.rideLook);
+
+/* ================= guns ================= */
+const GUNS = { PISTOL: { cool: 14, dmg: 1, speed: 7, spread: .03 }, UZI: { cool: 5, dmg: 1, speed: 8, spread: .1 }, BLASTER: { cool: 22, dmg: 4, speed: 9, spread: 0, laser: true } };
+function fire() {
+  if (S.fireCool > 0 || S.down || S.sink) return;
+  const gun = GUNS[S.weapon];
+  let a = S.onFoot ? S.fa : S.a;
+  if (S.onFoot) {   // a little aim help toward anything worth shooting
+    let bestD = 220, best = null;
+    for (const o of [...S.cops, ...S.maids, ...(S.boss ? [S.boss] : []), ...(S.goons || [])]) { if (o.dead) continue; const d = Math.hypot(o.x - S.x, o.y - S.y), da = Math.abs(angleDiff(Math.atan2(o.y - S.y, o.x - S.x), a)); if (d < bestD && da < .45) { bestD = d; best = o; } }
+    if (best) a = Math.atan2(best.y - S.y, best.x - S.x);
+  }
+  a += (Math.random() - .5) * gun.spread * 2;
+  const ox = S.x + Math.cos(a) * (S.onFoot ? 7 : 14), oy = S.y + Math.sin(a) * (S.onFoot ? 7 : 14);
+  S.bullets.push({ x: ox, y: oy, vx: Math.cos(a) * gun.speed, vy: Math.sin(a) * gun.speed, life: 50, dmg: gun.dmg, laser: gun.laser, mine: true });
+  S.fireCool = gun.cool; sfx(gun.laser ? 'laser' : 'shot');
+  if (S.weapon !== 'PISTOL' && --S.ammo <= 0) { S.weapon = 'PISTOL'; S.ammo = 0; flash('OUT OF AMMO', 40); }
+  if (S.heat < 1 && !S.shotsSeen) { S.shotsSeen = true; addHeat(1, 'SHOTS FIRED'); }
+}
+function hurt(n, why) {
+  if (S.down) return;
+  if (S.onFoot) { S.hp -= n; S.hurtT = 12; sfx('hurt'); if (S.hp <= 0) goDown('wasted'); }
+  else { S.carHp -= n; S.hurtT = 8; if (S.carHp <= 0) explodeRide(); }
+}
+function boom(x, y, big = 1, hitsYou = true) {
+  sfx('boom'); S.shake = 14;
+  puff(x, y, 26 * big, P.sun, 5 * big, 26, 4); puff(x, y, 16 * big, '#ff7a2a', 4 * big, 32, 4); puff(x, y, 14 * big, '#3a3440', 3, 60, 5, .6);
+  for (const c of S.traffic) if (!c.wreck && Math.hypot(c.x - x, c.y - y) < 36) { c.hp = 0; wreckCar(c, true); }
+  if (hitsYou && Math.hypot(S.x - x, S.y - y) < 40 && !S.down) hurt(S.onFoot ? 35 : 25);
+}
+function wreckCar(c, quiet) { c.wreck = 60 * 10; c.v = 0; if (!quiet) boom(c.x, c.y); }
+function explodeRide() {
+  S.parked.push({ x: S.x, y: S.y, a: S.a, look: S.rideLook, hp: 0, wreck: 60 * 10 });
+  boom(S.x, S.y, 1.4, false);
+  S.onFoot = true; S.fa = S.a; S.v = 0; S.side = 0; S.carHp = 100; S.hp -= 30; S.x += Math.cos(S.a + Math.PI / 2) * 16; S.y += Math.sin(S.a + Math.PI / 2) * 16;
+  flash('YOUR RIDE BLEW UP', 90); if (S.hp <= 0) goDown('wasted');
+}
+function updateBullets() {
+  for (const b of S.bullets) {
+    for (let k = 0; k < 2 && b.life > 0; k++) {   // two half steps so fast bullets do not skip through things
+      b.x += b.vx / 2; b.y += b.vy / 2;
+      if (solidAtPx(b.x, b.y)) { puff(b.x, b.y, 3, P.sun, 1.5, 10, 2); b.life = 0; break; }
+      if (b.mine) {
+        for (const c of S.traffic) if (!c.wreck && Math.abs(c.x - b.x) < 10 && Math.abs(c.y - b.y) < 10) { c.hp = (c.hp ?? 6) - b.dmg; c.v = 0; c.wait = 0; b.life = 0; puff(b.x, b.y, 3, P.cream, 1.5, 10, 2); if (c.hp <= 0) { wreckCar(c); addHeat(1, 'KABOOM'); } break; }
+        for (const c of S.cops) if (!c.dead && Math.abs(c.x - b.x) < 11 && Math.abs(c.y - b.y) < 11) { c.hp -= b.dmg; b.life = 0; puff(b.x, b.y, 3, P.cream, 1.5, 10, 2); if (c.hp <= 0) { c.dead = 60 * 8; boom(c.x, c.y); addHeat(1, 'COP CAR DOWN'); } break; }
+        for (const m of S.maids) if (Math.abs(m.x - b.x) < 8 && Math.abs(m.y - b.y) < 8) { m.spin = 40; b.life = 0; sfx('hurt'); flash('SCOOTER DOWN', 40); break; }
+        if (S.hitTargets) S.hitTargets(b);
+      } else if (Math.abs(S.x - b.x) < (S.onFoot ? 6 : 11) && Math.abs(S.y - b.y) < (S.onFoot ? 6 : 11)) { hurt(b.dmg); b.life = 0; }
+    }
+    b.life--;
+  }
+  S.bullets = S.bullets.filter(b => b.life > 0);
+}
+
+/* ================= cops ================= */
+const COP_CAR = () => sprite('cop', () => { const c = carPicture('sedan', '#f3eee6', '#23328a'); ctx = c.getContext('2d'); px(11, 3, 2, 3, P.red); px(11, 7, 2, 3, '#3a7aff'); ctx = g; return c; });
+function spawnCop() {
+  for (let k = 0; k < 400; k++) { const a = Math.random() * Math.PI * 2, r = 260 + Math.random() * 80, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r, tx = Math.floor(x / T), ty = Math.floor(y / T);
+    if (at(tx, ty) === ROAD) return { x: tx * T + 8, y: ty * T + 8, a: Math.atan2(S.y - y, S.x - x), v: 0, hp: 6, stuck: 0, back: 0, bump: 0 }; }
+  return null;
+}
+function updateCops() {
+  const want = S.heat >= 3 ? S.heat - 2 : 0;
+  if (S.cops.filter(c => !c.dead && !c.parked).length < want && frame % 30 === 0) { const c = spawnCop(); if (c) S.cops.push(c); }
+  for (const c of S.cops) {
+    if (c.dead) { c.dead--; if (frame % 6 === 0) puff(c.x, c.y, 1, '#3a3440', 1, 40, 4, .5); continue; }
+    if (c.parked) continue;
+    const top = 2.9 + S.heat * .18, want = Math.atan2(S.y - c.y, S.x - c.x), d = Math.hypot(S.x - c.x, S.y - c.y);
+    if (c.back > 0) { c.back--; c.v = -1.2; c.a += .05; }
+    else { c.a += clamp(angleDiff(want, c.a), -.07, .07); c.v = Math.min(top, c.v + .08); if (d < 40 && S.onFoot) c.v = Math.min(c.v, 1.2); }
+    const nx = c.x + Math.cos(c.a) * c.v, ny = c.y + Math.sin(c.a) * c.v;
+    if (blockedAt(nx, ny, 6) || isWater(tileAtPx(nx, ny))) { if (!blockedAt(nx, c.y, 6) && !isWater(tileAtPx(nx, c.y))) c.x = nx; else if (!blockedAt(c.x, ny, 6) && !isWater(tileAtPx(c.x, ny))) c.y = ny; else { c.v = 0; } c.stuck++; }
+    else { c.x = nx; c.y = ny; c.stuck = Math.max(0, c.stuck - 1); }
+    if (c.stuck > 40) { c.back = 30; c.stuck = 0; }
+    if (c.bump) c.bump--;
+    if (d < 16 && !c.bump && !S.air && !S.down) {
+      c.bump = 40;
+      if (S.onFoot) { goDown('busted'); return; }
+      hurt(8); sfx('crash'); S.shake = 6; const k = Math.atan2(S.y - c.y, S.x - c.x); S.x += Math.cos(k) * 6; S.y += Math.sin(k) * 6; c.v = -.5;
+    }
+    if (S.heat >= 5 && d < 180 && frame % 50 === (c.hp * 7) % 50) { const a = want + (Math.random() - .5) * .2; S.bullets.push({ x: c.x, y: c.y, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5, life: 50, dmg: 5 }); sfx('shot'); }
+  }
+  S.cops = S.cops.filter(c => !(c.dead === 0) && Math.hypot(c.x - S.x, c.y - S.y) < 900);
+}
+
+/* ================= pickups, spray shops, going down ================= */
+function placePickups() {
+  S.pickups = [];
+  const kinds = ['UZI', 'UZI', 'UZI', 'BLASTER', 'BLASTER', 'COLA', 'COLA', 'COLA', 'COLA', 'COLA', 'COLA'];
+  for (const kind of kinds) { const t = randomCurb(); S.pickups.push({ x: t.x, y: t.y, kind, gone: 0 }); }
+}
+function updatePickups() {
+  for (const q of S.pickups) {
+    if (q.gone) { q.gone--; continue; }
+    if (Math.hypot(q.x - S.x, q.y - S.y) < 14 && S.onFoot === true || (Math.hypot(q.x - S.x, q.y - S.y) < 16 && !S.onFoot && q.kind !== 'COLA')) {
+      if (q.kind === 'COLA') { if (S.hp >= 100) continue; S.hp = Math.min(100, S.hp + 40); flash('NEW KOLA +40 HP', 60); }
+      else { S.weapon = q.kind; S.ammo = q.kind === 'UZI' ? 160 : 24; flash(q.kind === 'UZI' ? 'UZI! 160 ROUNDS' : 'BLASTER 2000!', 70); }
+      sfx('pickup'); q.gone = 60 * 45;
+    }
+  }
+  for (const s of SPRAYS) if (!S.onFoot && Math.hypot(s.x - S.x, s.y - S.y) < 18) {
+    if (S.sprayLock) continue; S.sprayLock = true;
+    const fixed = S.heat > 0 || S.carHp < 100; S.heat = 0; S.maids = []; S.cops = S.cops.filter(c => c.dead); S.carHp = 100; S.shotsSeen = false; S.heatClock = 0;
+    sfx('deliver'); flash(fixed ? 'PAINT N SPRAY: HEAT GONE' : 'PAINT N SPRAY', 90); puff(S.x, S.y, 20, pick([P.pink, P.teal, P.sun]), 3, 30, 3);
+  }
+  if (S.sprayLock && SPRAYS.every(s => Math.hypot(s.x - S.x, s.y - S.y) > 40)) S.sprayLock = false;
+}
+function goDown(why) {
+  if (S.down) return;
+  S.down = why; S.downT = 170; S.v = 0; S.side = 0;
+  const loss = Math.floor(S.cash * (why === 'busted' ? .2 : .1)); S.cash -= loss; S.downLoss = loss;
+  sfx(why === 'busted' ? 'ticket' : 'late');
+  if (S.job) { S.job = null; for (const k of JOB_KINDS) if (!S.markers[k]) placeMarker(k); }
+}
+function getUp() {
+  S.down = null; S.heat = 0; S.maids = []; S.cops = []; S.bullets = []; S.hp = 100; S.carHp = 100; S.shotsSeen = false;
+  S.onFoot = false; S.rideLook = -1; S.x = START.x; S.y = START.y; S.a = -Math.PI / 2; S.cam.x = S.x; S.cam.y = S.y; S.weapon = 'PISTOL'; S.ammo = 0;
+}
+function drawPickups() {
+  for (const q of S.pickups) {
+    if (q.gone) continue; const x = q.x - camX, y = q.y - camY - 4 - blink(3) * 2; if (x < -10 || y < -10 || x > SW + 10 || y > SH + 10) continue;
+    px(x - 5, y + 6, 10, 3, 'rgba(26,7,38,.3)');
+    if (q.kind === 'COLA') { px(x - 3, y - 5, 6, 10, P.red); px(x - 3, y - 2, 6, 3, P.cream); px(x - 2, y - 6, 4, 1, '#c8c2cc'); }
+    else if (q.kind === 'UZI') { px(x - 5, y - 2, 10, 3, '#2a2430'); px(x - 1, y + 1, 3, 4, '#2a2430'); px(x + 3, y - 3, 2, 1, '#6a6472'); }
+    else { px(x - 6, y - 2, 11, 3, P.teal); px(x - 6, y - 2, 11, 1, '#c8fffb'); px(x - 2, y + 1, 3, 4, P.violet); px(x + 5, y - 1, 2, 1, P.pink); }
+    if (blink(4)) px(x + 4, y - 7, 2, 2, '#ffffff');
+  }
+}
+const WRECK = () => sprite('wreck', () => carPicture('sedan', '#3a3440', '#2a2430'));
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -913,6 +1141,11 @@ function sfx(name) {   // chip sounds, kept quiet under the beat
   if (name === 'jump') { beep(200, 600, .25, 'square', .06); }
   if (name === 'land') { beep(120, 60, .12, 'triangle', .14); }
   if (name === 'splash') { if (!NB) NB = noiseBuf(); const s3 = AC.createBufferSource(); s3.buffer = NB; const f3 = AC.createBiquadFilter(); f3.type = 'lowpass'; f3.frequency.setValueAtTime(3000, t); f3.frequency.exponentialRampToValueAtTime(300, t + .6); const gn = AC.createGain(); gn.gain.setValueAtTime(.3, t); gn.gain.exponentialRampToValueAtTime(.001, t + .7); s3.connect(f3); f3.connect(gn); gn.connect(master); s3.start(t); s3.stop(t + .4); beep(600, 150, .4, 'sine', .08); }
+  if (name === 'shot') { if (!NB) NB = noiseBuf(); const s4 = AC.createBufferSource(); s4.buffer = NB; const f4 = AC.createBiquadFilter(); f4.type = 'bandpass'; f4.frequency.value = 1400; const gn = AC.createGain(); gn.gain.setValueAtTime(.22, t); gn.gain.exponentialRampToValueAtTime(.001, t + .12); s4.connect(f4); f4.connect(gn); gn.connect(master); s4.start(t); s4.stop(t + .15); beep(300, 80, .08, 'square', .05); }
+  if (name === 'laser') { beep(1800, 200, .22, 'sawtooth', .05); beep(1200, 120, .2, 'square', .04); }
+  if (name === 'hurt') beep(220, 110, .15, 'square', .07);
+  if (name === 'door') { beep(140, 90, .06, 'square', .06); beep(90, 60, .08, 'square', .05, .08); }
+  if (name === 'boom') { if (!NB) NB = noiseBuf(); const s5 = AC.createBufferSource(); s5.buffer = NB; const f5 = AC.createBiquadFilter(); f5.type = 'lowpass'; f5.frequency.setValueAtTime(1800, t); f5.frequency.exponentialRampToValueAtTime(120, t + .8); const gn = AC.createGain(); gn.gain.setValueAtTime(.5, t); gn.gain.exponentialRampToValueAtTime(.001, t + .9); s5.connect(f5); f5.connect(gn); gn.connect(master); s5.start(t); s5.stop(t + .4); beep(90, 30, .6, 'sine', .3); }
   if (name === 'count') beep(440, 440, .12, 'square', .07);
   if (name === 'go') beep(880, 880, .3, 'square', .08);
   if (name === 'start') { [392, 523, 659].forEach((f, i) => beep(f, f, .08, 'square', .07, i * .06)); }
@@ -939,7 +1172,7 @@ function press(k, down) {
   if (mode === 'title') { if (k === 'start' || k === 'a' || k === 'up' || k === 'door') startGame(); return; }
   if (k === 'start') { mode = mode === 'paused' || mode === 'map' ? 'play' : 'paused'; sfx('pickup'); return; }
   if (k === 'map') { if (mode === 'play' || mode === 'map') { mode = mode === 'map' ? 'play' : 'map'; sfx('pickup'); } return; }
-  if ((k === 'fire' || k === 'door') && mode === 'play') flash(k === 'fire' ? 'GUNS: NEXT UPDATE' : 'ON FOOT: NEXT UPDATE', 50);
+  if (k === 'door' && mode === 'play') door();
 }
 const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'a', x: 'b', c: 'fire', ' ': 'fire', e: 'door', f: 'door', Enter: 'door', p: 'start', Escape: 'start', m: 'map', r: 'select' };
 const keyOf = e => KEYMAP[e.key] || KEYMAP[e.key && e.key.toLowerCase()];
@@ -990,4 +1223,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, BUILDINGS, PALMS, ZONES, zoneRect, START };
