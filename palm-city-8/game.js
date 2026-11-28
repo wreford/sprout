@@ -1298,7 +1298,7 @@ function spawnPed() {
   for (let k = 0; k < 200; k++) {
     const a = Math.random() * Math.PI * 2, r = 180 + Math.random() * 160, x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r, tx = Math.floor(x / T), ty = Math.floor(y / T);
     if (!pedWalkable(at(tx, ty)) || blocked[ty * MW + tx]) continue;
-    return { x: tx * T + 8, y: ty * T + 8, a: pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]), look: (Math.random() * PED_LOOKS) | 0, step: 0, state: 'walk', t: 0, say: null, sayT: 0 };
+    return { x: tx * T + 8, y: ty * T + 8, a: pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]), look: (Math.random() * PED_LOOKS) | 0, step: 0, state: 'walk', t: 0, say: null, sayT: 0, ride: Math.random() < .2 ? pick(['board', 'skates']) : null };
   }
   return null;
 }
@@ -1314,7 +1314,7 @@ function updatePeds() {
       const k = Math.atan2(p.y - S.y, p.x - S.x); p.vx = Math.cos(k) * 3; p.vy = Math.sin(k) * 3; p.state = 'dive'; p.t = 18; pedSay(p, PED_PANIC); continue;
     }
     if (S.lastShot && frame - S.lastShot.t < 30 && Math.hypot(p.x - S.lastShot.x, p.y - S.lastShot.y) < 150 && p.state !== 'flee') { p.state = 'flee'; p.t = 120; if (Math.random() < .4) pedSay(p, PED_PANIC); }
-    let sp = .45;
+    let sp = p.ride ? 1.25 : .45;
     if (p.state === 'flee') { sp = 1.7; p.a = Math.atan2(p.y - S.y, p.x - S.x) + Math.sin(frame / 9 + p.look) * .5; if (--p.t <= 0) { p.state = 'walk'; p.a = pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]); } }
     const nx = p.x + Math.cos(p.a) * sp, ny = p.y + Math.sin(p.a) * sp, ahead = tileAtPx(nx + Math.cos(p.a) * 6, ny + Math.sin(p.a) * 6);
     if ((p.state === 'walk' && !pedWalkable(ahead)) || blockedAt(nx, ny, 3) || isWater(ahead)) {
@@ -1328,7 +1328,12 @@ function updatePeds() {
 function drawPeds() {
   for (const p of S.peds) {
     const x = p.x - camX, y = p.y - camY; if (x < -12 || y < -12 || x > SW + 12 || y > SH + 12) continue;
-    drawPerson(pedSprites(p.look), x, y, p.a, p.step, p.state === 'dive');
+    if (p.ride && p.state !== 'dive') {   // 15. skateboards and roller skates
+      const ca = Math.cos(p.a), sa = Math.sin(p.a);
+      if (p.ride === 'board') { for (let i = -5; i <= 5; i += 2) px(x + ca * i - 1, y + sa * i - 1, 3, 3, i === -5 || i === 5 ? '#2a2430' : P.sun); }
+      else for (const s of [-2, 2]) { px(x - sa * s + ca * 3 - 1, y + ca * s + sa * 3 - 1, 2, 2, P.pink); px(x - sa * s - ca * 3 - 1, y + ca * s - sa * 3 - 1, 2, 2, P.pink); }
+      drawPerson(pedSprites(p.look), x, y, p.a, p.ride === 'board' ? 0 : p.step, false);
+    } else drawPerson(pedSprites(p.look), x, y, p.a, p.step, p.state === 'dive');
   }
 }
 // signs and speech go on top of the buildings
