@@ -1955,7 +1955,10 @@ function schedule() {
     nextStep += STEP; stepN++;
   }
 }
-function sfx(name) {   // chip sounds, kept quiet under the beat
+// 14. a buzz to go with the big moments (Android; iPhones ignore it)
+const VIBES = { crash: 35, shot: 8, laser: 12, boom: [90, 40, 90], land: 25, hurt: 20, ticket: [60, 40, 60], late: 120, tape: [20, 30, 20], deliver: [15, 30, 15], splash: 60, boost: 30 };
+function sfx(name) {
+  if (navigator.vibrate && VIBES[name]) try { navigator.vibrate(VIBES[name]); } catch (e) {}   // chip sounds, kept quiet under the beat
   if (!AC) return; const t = AC.currentTime;
   const beep = (f1, f2, dur, type = 'square', vol = .08, at = 0) => { const o = AC.createOscillator(), gn = AC.createGain(); o.type = type;
     o.frequency.setValueAtTime(f1, t + at); o.frequency.exponentialRampToValueAtTime(f2, t + at + dur); gn.gain.setValueAtTime(vol, t + at); gn.gain.exponentialRampToValueAtTime(.001, t + at + dur);
