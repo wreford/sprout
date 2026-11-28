@@ -5,7 +5,15 @@
 /* ================= screen ================= */
 const cv = document.getElementById('c'), g = cv.getContext('2d');
 g.imageSmoothingEnabled = false;
-const SW = 336, SH = 224;
+const SW = 336;
+let SH = 224;
+// held upright, the screen grows taller into the space above the controls, so it is bigger and you see more
+function fitScreen() {
+  const tall = innerHeight > innerWidth, want = tall ? Math.round(Math.max(224, Math.min(296, SW * (innerHeight * .5) / Math.min(innerWidth, 560))) / 2) * 2 : 224;
+  if (want !== SH || cv.height !== want) { SH = want; cv.height = SH; g.imageSmoothingEnabled = false; }
+}
+fitScreen();
+addEventListener('resize', () => fitScreen());
 const P = {
   ink: '#1a0726', deep: '#2b0f3a', purp: '#4b1d63', violet: '#7a2bd1', pink: '#ff3ea5', blush: '#ff8fcb', teal: '#26d9d9', cream: '#ffe8f4', sun: '#ffd36b', red: '#ff2a55',
   road: '#3c3843', road2: '#46414d', road3: '#34303a', line: '#ffd36b', white: '#f3eee6',
