@@ -608,7 +608,7 @@ function updateMaids() {
   }
   S.maids = S.maids.filter(m => !m.dead);
   if (S.heat > 0) { const near = [...S.maids, ...S.cops.filter(c => !c.dead && !c.parked)].some(m => Math.hypot(m.x - S.x, m.y - S.y) < 150); S.heatClock = near ? 0 : S.heatClock + 1;
-    if (S.heatClock > 60 * 5) { S.heat--; S.heatClock = 0; S.maids.pop(); const live = S.cops.filter(c => !c.dead); if (live.length > Math.max(0, S.heat - 2)) S.cops.splice(S.cops.indexOf(live[live.length - 1]), 1); if (!S.heat) { flash('LOST THEM'); S.shotsSeen = false; } } }
+    if (S.heatClock > 60 * 5) { S.heat--; S.heatClock = 0; S.maids.pop(); const live = S.cops.filter(c => !c.dead); if (live.length > Math.max(0, S.heat - 2)) S.cops.splice(S.cops.indexOf(live[live.length - 1]), 1); if (!S.heat) { S.shotsSeen = false; } } }
 }
 
 /* ================= update ================= */
@@ -782,8 +782,7 @@ function drawHUD() {
   if (!J) ctext('PICK A PIN', 6, P.blush);
   else if (J.kind === 'race') ctext(J.count ? 'GET READY' : (J.time / 60).toFixed(1) + '/' + J.par + 'S', 2, J.time / 60 > J.par ? P.pink : P.sun, 2);
   else { const s = Math.max(0, Math.ceil(J.timer / 60)); ctext((J.kind === 'taxi' ? 'FARE ' : 'DROP ') + s + 'S', 2, s <= 5 && blink(3) ? P.pink : JOB_COLOUR[J.kind], 2); }
-  text('HEAT', SW - 6 - 5 * 10 - 26, 6, P.blush);
-  for (let i = 0; i < 5; i++) { const on = i < S.heat, x = SW - 6 - 5 * 10 + i * 10; px(x, 4, 8, 8, on ? (blink(3) ? P.red : '#3a7aff') : P.purp); }
+  drawWanted();
   if (S.streak > 1) text('STREAK X' + S.streak, 6, 26, P.sun);
   if (S.boss) drawBossBar(); else if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
@@ -1741,6 +1740,24 @@ function drawCarBanner() {
   const y = SH - 72, st = musicOn ? 'RADIO: ' + radioName() : 'RADIO OFF';
   text(B.name, SW - 8 - tw(B.name, 2) + 1, y + 1, P.ink, 2); text(B.name, SW - 8 - tw(B.name, 2), y, B.t < 30 && blink(2) ? P.blush : P.cream, 2);
   text(st, SW - 8 - tw(st), y + 17, P.teal);
+}
+
+/* ================= 9. wanted stars ================= */
+const STAR = [4, 4, 31, 14, 14, 27, 17];   // a 5x7 star, one row of bits per line
+function drawStar(x, y, on, k) {
+  STAR.forEach((row, r) => { for (let b = 0; b < 5; b++) if (row & (16 >> b)) px(x + b * k, y + r * k, k, k, on); });
+}
+function drawWanted() {
+  const chased = S.maids.length || S.cops.some(c => !c.dead && !c.parked);
+  if (S.heat > (S.lastHeat || 0)) S.heatPulse = 40;
+  if (S.lastHeat > 0 && S.heat === 0 && !S.down) { const pay = 25 * S.peakHeat; S.cash += pay; flash('ESCAPED! +$' + pay, 120); sfx('deliver'); S.peakHeat = 0; }
+  S.peakHeat = Math.max(S.peakHeat || 0, S.heat); S.lastHeat = S.heat;
+  if (S.heatPulse) S.heatPulse--;
+  for (let i = 0; i < 5; i++) {
+    const on = i < S.heat, x = SW - 6 - (5 - i) * 13, big = on && S.heatPulse && i === S.heat - 1;
+    const col = on ? (chased && blink(3) ? '#ffffff' : P.sun) : '#4b3a5a';
+    drawStar(x + (big ? -2 : 0), 3 + (big ? -1 : 0), col, big ? 2 : 2);
+  }
 }
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
