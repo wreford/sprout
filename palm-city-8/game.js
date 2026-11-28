@@ -364,7 +364,7 @@ function newGame() {
     onFoot: false, fa: 0, step: 0, knock: 0, kvx: 0, kvy: 0, hp: 100, carHp: 100, rideLook: -1, parked: [], runners: [], bullets: [], cops: [], weapon: 'PISTOL', ammo: 0, fireCool: 0, hurtT: 0, down: null, downT: 0, maidCool: 0 };
   placePickups();
   S.peds = []; S.combo = { n: 0, t: 0 }; S.lastShot = null; S.boss = null; S.goons = []; S.hitTargets = bossHit;
-  const saved = loadSave(); if (saved) { S.cash = saved.cash || 0; S.tapes = saved.tapes || []; S.stunts = saved.stunts || []; S.bossBeaten = saved.bossBeaten || 0; }
+  const saved = loadSave(); if (saved) { S.cash = saved.cash || 0; S.tapes = saved.tapes || []; S.stunts = saved.stunts || []; S.bossBeaten = saved.bossBeaten || 0; S.traps = saved.traps || {}; }
   for (let i = 0; i < 34; i++) S.traffic.push(spawnTraffic());
   for (const k of JOB_KINDS) placeMarker(k);
 }
@@ -633,7 +633,7 @@ function update() {
   S.parked = S.parked.filter(c => !(c.wreck === 0));
   updateBullets(); updateCops(); updateBoss(); updatePickups(); updatePeds(); updateProps(); updateTapes();
   if (frame % 600 === 0) save();
-  updateTips();
+  updateTips(); updateTraps();
   for (const q of S.parts) { q.x += q.vx; q.y += q.vy; q.vx *= .93; q.vy *= .93; q.life--; }
   S.parts = S.parts.filter(q => q.life > 0);
   updateTraffic(); updateMaids(); updateJobs();
@@ -736,7 +736,7 @@ function draw() {
   else if (S.job.kind === 'race') { const J = S.job; if (J.cps[J.i + 1]) drawRing(J.cps[J.i + 1].x - camX, J.cps[J.i + 1].y - camY, P.purp); drawRing(J.target.x - camX, J.target.y - camY, P.sun, J.i + 1 + '/' + J.cps.length); }
   else drawPin(S.job.target.x - camX, S.job.target.y - camY, tc, 'drop');
   for (const c of S.traffic) { const x = c.x - camX, y = c.y - camY; if (x > -20 && y > -20 && x < SW + 20 && y < SH + 20) drawSprite(trafficCar(c.look), x, y, Math.atan2(c.dy, c.dx)); }
-  drawPickups(); drawProps(); drawTapes(); drawBossPin();
+  drawPickups(); drawProps(); drawTapes(); drawBossPin(); drawTraps();
   if (casinoDoor) { const x = casinoDoor.x - camX, y = casinoDoor.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 8, y - 12, 16, 14, '#b3123a'); px(x - 8, y - 12, 16, 1, P.sun); px(x - 8, y + 1, 16, 1, P.sun);
     if (Math.hypot(S.x - casinoDoor.x, S.y - casinoDoor.y) < 60) { const l = S.onFoot ? 'DOOR: GO IN' : 'GET OUT TO GO IN'; px(x - tw(l) / 2 - 3, y + 8, tw(l) + 6, 10, P.ink); text(l, x - tw(l) / 2, y + 10, blink(4) ? P.sun : P.cream); } } }
   for (const s of SPRAYS) { const x = s.x - camX, y = s.y - camY; if (x > -40 && x < SW + 40 && y > -30 && y < SH + 30) { px(x - 30, y - 20, 60, 9, P.ink); text('PAINT N SPRAY', x - tw('PAINT N SPRAY') / 2, y - 19, blink(4) ? P.pink : P.teal); } }
@@ -787,7 +787,7 @@ function drawHUD() {
   if (S.boss) drawBossBar(); else if (S.banner && (S.banner.t > 30 || blink(2))) ctext(S.banner.text, 28, P.cream, 2, P.ink);
   if (S.say) { const w = tw(S.say.text) + 10, x = (SW - w) / 2; px(x, 46, w, 13, P.ink); px(x, 46, 2, 13, P.teal); ctext(S.say.text, 49, P.cream); }
   if (J && J.kind === 'race' && J.count) { const n = Math.ceil(J.count / 60); px(SW / 2 - 30, 64, 60, 72, P.ink); px(SW / 2 - 30, 64, 60, 3, P.sun); px(SW / 2 - 30, 133, 60, 3, P.pink); ctext(String(n), 75, n === 1 ? P.pink : P.sun, 7); }
-  if (S.flashT) { const w = tw(S.flash, 2) + 20, x = (SW - w) / 2; px(x, 158, w, 24, P.ink); px(x, 158, w, 2, P.pink); px(x, 180, w, 2, P.teal); ctext(S.flash, 163, P.cream, 2); }
+  if (S.flashT) { const k = tw(S.flash, 2) + 20 > SW - 8 ? 1 : 2, w = tw(S.flash, k) + 20, x = (SW - w) / 2, h = k === 2 ? 24 : 16; px(x, 158, w, h, P.ink); px(x, 158, w, 2, P.pink); px(x, 156 + h, w, 2, P.teal); ctext(S.flash, k === 2 ? 163 : 162, P.cream, k); }
   drawTip(); drawCarBanner();
   drawRadar();
   const hx = 72, hy = SH - 14; px(hx, hy, 52, 8, P.ink); px(hx + 1, hy + 1, Math.max(0, S.hp) / 2, 6, S.hp < 30 && blink(3) ? P.cream : P.red); text('HP', hx + 55, hy + 1, P.blush);
@@ -1451,7 +1451,7 @@ function drawProps() {
 
 /* ================= saving ================= */
 const SAVE_KEY = 'palmcity8.save';
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cash: S.cash, tapes: S.tapes, stunts: S.stunts, bossBeaten: S.bossBeaten || 0 })); } catch (e) {} }
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cash: S.cash, tapes: S.tapes, stunts: S.stunts, bossBeaten: S.bossBeaten || 0, traps: S.traps || {} })); } catch (e) {} }
 function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || null; } catch (e) { return null; } }
 function buildExtras() { placeAerobics(); placeTapes(); placeProps(); }
 
@@ -1640,7 +1640,7 @@ function drawPauseMenu() {
   ctext('PAUSED', 28, P.teal, 3, P.purp);
   const L = 18, R = 182, top = 58;
   text('YOUR RUN', L, top, P.pink); px(L, top + 9, 140, 1, P.pink);
-  const rows = [['CASH', '$' + S.cash], ['TAPES', S.tapes.length + '/' + TAPE_TOTAL], ['STUNTS', S.stunts.length + '/' + STUNT_IDS.size], ['DELIVERIES', S.delivered], ['TAXI FARES', S.fares], ['RACES WON', S.races], ['GAMBLED', '$' + (S.gambled || 0)], ['STREAMERDUDE', S.bossBeaten ? 'BEATEN X' + S.bossBeaten : 'NOT YET']];
+  const rows = [['CASH', '$' + S.cash], ['TAPES', S.tapes.length + '/' + TAPE_TOTAL], ['STUNTS', S.stunts.length + '/' + STUNT_IDS.size], ['DELIVERIES', S.delivered], ['TAXI FARES', S.fares], ['RACES WON', S.races], ['GAMBLED', '$' + (S.gambled || 0)], ['STREAMERDUDE', S.bossBeaten ? 'BEATEN X' + S.bossBeaten : 'NOT YET'], ['TOP SPEED', Math.max(0, ...Object.values(S.traps || {})) + ' KM/H']];
   rows.forEach(([k, v], i) => { text(k, L, top + 16 + i * 12, P.cream); const s = String(v); text(s, L + 140 - tw(s), top + 16 + i * 12, P.sun); });
   text('BUTTONS', R, top, P.teal); px(R, top + 9, 136, 1, P.teal);
   const keysHelp = [['STICK', 'DRIVE OR WALK'], ['GAS', 'GO'], ['DRIFT', 'HOLD IN A TURN'], ['FIRE', 'SHOOT'], ['DOOR', 'IN, OUT, TALK'], ['RADIO', 'NEXT STATION'], ['MAP', 'WHOLE ISLAND'], ['FULL', 'FULL SCREEN']];
@@ -1736,7 +1736,7 @@ function rideStats() {
 function rideName() { return S.rideLook === -1 ? CAR_STATS.player.name : S.rideLook === 'cop' ? 'SQUAD CAR' : LOOK_NAMES[S.rideLook]; }
 function carBanner() { S.carBanner = { name: rideName(), t: 170 }; }
 function drawCarBanner() {
-  const B = S.carBanner; if (!B || S.onFoot) return; if (!--B.t) { S.carBanner = null; return; }
+  const B = S.carBanner; if (!B || S.onFoot || S.flashT) return; if (!--B.t) { S.carBanner = null; return; }
   const y = SH - 72, st = musicOn ? 'RADIO: ' + radioName() : 'RADIO OFF';
   text(B.name, SW - 8 - tw(B.name, 2) + 1, y + 1, P.ink, 2); text(B.name, SW - 8 - tw(B.name, 2), y, B.t < 30 && blink(2) ? P.blush : P.cream, 2);
   text(st, SW - 8 - tw(st), y + 17, P.teal);
@@ -1757,6 +1757,37 @@ function drawWanted() {
     const on = i < S.heat, x = SW - 6 - (5 - i) * 13, big = on && S.heatPulse && i === S.heat - 1;
     const col = on ? (chased && blink(3) ? '#ffffff' : P.sun) : '#4b3a5a';
     drawStar(x + (big ? -2 : 0), 3 + (big ? -1 : 0), col, big ? 2 : 2);
+  }
+}
+
+/* ================= 10. speed traps ================= */
+const TRAPS = [];
+function placeTraps() {
+  const ringFrom = (x, y, dx, dy) => { while (inMap(x, y) && !ring[y * MW + x]) { x += dx; y += dy; } return { x: x * T + 8 + dx * T, y: y * T + 8 + dy * T }; };
+  TRAPS.push({ ...ringFrom(IC.x, 0, 0, 1), name: 'NORTH SHORE' }, { ...ringFrom(IC.x, MH - 1, 0, -1), name: 'SOUTH BEACH' }, { ...ringFrom(0, IC.y, 1, 0), name: 'WEST COAST' }, { ...ringFrom(MW - 1, IC.y + 8, -1, 0), name: 'EAST END' });
+  const z = zoneRect(ZONES.find(q => q.kind === 'drag')); TRAPS.push({ x: (z.x0 + 26) * T, y: (z.y0 + 4.5) * T, name: 'DRAG STRIP' });
+  TRAPS.forEach((t, i) => t.id = i);
+}
+function updateTraps() {
+  if (S.onFoot || S.air) return;
+  S.traps = S.traps || {};
+  for (const t of TRAPS) {
+    if (t.cool) { t.cool--; continue; }
+    if (Math.hypot(t.x - S.x, t.y - S.y) > 22) continue;
+    const kmh = Math.round(Math.hypot(S.v, S.side) * 26); t.cool = 120;
+    if (kmh < 60) continue;
+    const best = S.traps[t.id] || 0; sfx('count');
+    if (kmh > best) { const pay = Math.max(10, (kmh - Math.max(best, 60)) * 2); S.traps[t.id] = kmh; S.cash += pay; flash('SPEED TRAP ' + kmh + ' KM/H! +$' + pay, 120); save(); }
+    else flash('SPEED TRAP ' + kmh + ' KM/H  BEST ' + best, 90);
+  }
+}
+function drawTraps() {
+  for (const t of TRAPS) {
+    const x = t.x - camX, y = t.y - camY; if (x < -40 || y < -40 || x > SW + 40 || y > SH + 40) continue;
+    for (let i = -20; i < 20; i += 4) { px(x + i, y - 1, 2, 2, (i >> 2) & 1 ? P.white : P.ink); px(x - 1, y + i, 2, 2, (i >> 2) & 1 ? P.white : P.ink); }
+    const q = proj(t.x + 22, t.y - 22, 28), b = [t.x + 22 - camX, t.y - 22 - camY];
+    g.fillStyle = '#5a5462'; g.fillRect(Math.round(b[0]), Math.round(Math.min(b[1], q[1])), 2, Math.max(2, Math.round(Math.abs(b[1] - q[1]))));
+    px(q[0] - 4, q[1] - 3, 9, 6, '#2a2430'); px(q[0] - 3, q[1] - 2, 3, 3, blink(4) ? P.red : '#5a1020');
   }
 }
 /* ================= lo-fi beats (Web Audio) ================= */
@@ -1958,7 +1989,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 })();
 
 /* ================= loop ================= */
-buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse();
+buildIsland(); findCasinoDoor(); buildExtras(); setupStreamHouse(); placeTraps();
 let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
@@ -1968,4 +1999,4 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, TRAPS, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
