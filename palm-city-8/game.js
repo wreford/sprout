@@ -768,11 +768,7 @@ function draw() {
   if (S.air) drawSprite(rideSprite(), carX, carY, S.a, S.z);   // in the air you fly over everything
   if (S.drift) { const c = S.charge > 110 ? P.pink : S.charge > 40 ? P.teal : P.cream, w = Math.min(40, S.charge / 110 * 40); px(carX - 20, carY + 15, 40, 3, P.ink); px(carX - 20, carY + 15, w, 3, c); }
   // arrow toward the job when it is off screen
-  const aim = S.job && S.job.target;
-  if (aim && (aim.x - camX < 0 || aim.y - camY < 22 || aim.x - camX > SW || aim.y - camY > SH)) {
-    const ang = Math.atan2(aim.y - S.y, aim.x - S.x), ax = SW / 2 + Math.cos(ang) * 140, ay = SH / 2 + 10 + Math.sin(ang) * 80;
-    for (let i = 0; i < 9; i++) { const s = 9 - i; px(ax + Math.cos(ang) * i * 1.6 - s / 2, ay + Math.sin(ang) * i * 1.6 - s / 2, s, s, i < 2 ? P.ink : tc); }
-  }
+  drawTargetArrow();
   drawNight();
   drawHUD();
   if (S.hurtT && S.onFoot) { px(0, 21, SW, 2, P.red); px(0, SH - 2, SW, 2, P.red); px(0, 21, 2, SH, P.red); px(SW - 2, 21, 2, SH, P.red); }
@@ -1833,6 +1829,27 @@ function drawGulls() {
     const [x, y] = proj(wx, wy, q.z), up = (frame >> 3) & 1;
     px(x - 4, y - (up ? 2 : 0), 3, 1, '#ffffff'); px(x + 2, y - (up ? 2 : 0), 3, 1, '#ffffff'); px(x - 1, y, 3, 1, '#ffffff'); px(x, y + 1, 1, 1, '#c8c2cc');
   }
+}
+
+/* ================= 13. arrow to the target, with distance ================= */
+function drawTargetArrow() {
+  let aim = S.job && S.job.target, col = S.job ? JOB_COLOUR[S.job.kind] : null, faint = false;
+  if (!aim) {   // no job: the nearest pin
+    let bd = 1e9; for (const k of JOB_KINDS) { const m = S.markers[k]; if (m) { const d = Math.hypot(m.x - S.x, m.y - S.y); if (d < bd) { bd = d; aim = m; col = JOB_COLOUR[k]; } } }
+    faint = true;
+  }
+  if (!aim) return;
+  const sx = aim.x - camX, sy = aim.y - camY; if (sx > 10 && sy > 30 && sx < SW - 10 && sy < SH - 10) return;
+  const ang = Math.atan2(aim.y - S.y, aim.x - S.x), ca = Math.cos(ang), sa = Math.sin(ang);
+  // put the arrow on an oval inside the screen edge
+  const ax = SW / 2 + ca * (SW / 2 - 26), ay = SH / 2 + 10 + sa * (SH / 2 - 34);
+  g.globalAlpha = faint ? .55 : 1;
+  const tri = (r, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(ax + ca * r * 1.3, ay + sa * r * 1.3); g.lineTo(ax - ca * r * .7 - sa * r, ay - sa * r * .7 + ca * r); g.lineTo(ax - ca * r * .3, ay - sa * r * .3); g.lineTo(ax - ca * r * .7 + sa * r, ay - sa * r * .7 - ca * r); g.closePath(); g.fill(); };
+  tri(10, P.ink); tri(7 + blink(3), col);
+  const m = Math.round(Math.hypot(aim.x - S.x, aim.y - S.y) / 4), l = m >= 1000 ? (m / 1000).toFixed(1) + ' KM' : m + ' M';
+  const lx = clamp(ax - ca * 20 - tw(l) / 2, 2, SW - tw(l) - 2), ly = clamp(ay - sa * 18 - 3, 24, SH - 9);
+  px(lx - 2, ly - 2, tw(l) + 4, 11, P.ink); text(l, lx, ly, col);
+  g.globalAlpha = 1;
 }
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
