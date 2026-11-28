@@ -1597,6 +1597,30 @@ function drawNight() {
   for (const w of LIT) { g.fillStyle = w[4]; g.fillRect(w[0], w[1], w[2], w[3]); }
   LIT.length = 0;
 }
+
+/* ================= 3. engine and tyres ================= */
+let engine = null;
+function engineInit() {
+  if (!AC || engine) return;
+  if (!NB) NB = noiseBuf();
+  const o = AC.createOscillator(), o2 = AC.createOscillator(), lp = AC.createBiquadFilter(), gn = AC.createGain();
+  o.type = 'sawtooth'; o2.type = 'square'; lp.type = 'lowpass'; lp.frequency.value = 400; gn.gain.value = 0;
+  o.connect(lp); o2.connect(lp); lp.connect(gn); gn.connect(master); o.start(); o2.start();
+  const sq = AC.createBufferSource(), bp = AC.createBiquadFilter(), sg = AC.createGain(); sq.buffer = NB; sq.loop = true; bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 3; sg.gain.value = 0;
+  sq.connect(bp); bp.connect(sg); sg.connect(master); sq.start();
+  engine = { o, o2, lp, gn, sg };
+}
+function updateEngineSound() {
+  if (!AC || AC.state !== 'running') return;
+  engineInit();
+  const t = AC.currentTime, driving = mode === 'play' && S && !S.onFoot && !S.sink && !S.down;
+  const sp = driving ? Math.hypot(S.v, S.side) + (S.air ? 1.5 : 0) + (S.boost ? 1 : 0) : 0;
+  engine.o.frequency.setTargetAtTime(38 + sp * 26, t, .05); engine.o2.frequency.setTargetAtTime(19 + sp * 13, t, .05); engine.lp.frequency.setTargetAtTime(280 + sp * 170, t, .05);
+  engine.gn.gain.setTargetAtTime(driving ? .028 + sp * .008 : 0, t, .08);
+  const braking = driving && keys.down && S.v > 2;
+  const slip = driving && !S.air && (S.drift || braking) ? Math.min(1, Math.abs(S.side) / 2 + (braking ? .5 : 0)) : 0;
+  engine.sg.gain.setTargetAtTime(slip * .08, t, .03);
+}
 /* ================= lo-fi beats (Web Audio) ================= */
 let AC = null, master = null, musicGain = null, nextStep = 0, stepN = 0, sched = null, crackle = null;
 let STEP = 60 / 78 / 4, dubSend = null;
@@ -1801,9 +1825,9 @@ let last = performance.now(), acc = 0;
 function loop(now) {
   acc += Math.min(100, now - last); last = now;
   while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
-  draw();
+  draw(); updateEngineSound();
   if (S && mode === 'play' && S.cash > (S.best || 0)) { S.best = S.cash; try { localStorage.setItem('palmcity8.best', S.cash); } catch (e) {} }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
+window.__pc8 = { get S() { return S; }, get mode() { return mode; }, get audio() { return AC ? AC.state + ':' + stepN : 'none'; }, press, at, MW, MH, T, stick, jobBump, door, goDown, SPRAYS, get C() { return C; }, get engine() { return engine; }, startBoss, get STREAM() { return STREAM; }, TAPES, PROPS, AEROBICS, get casinoDoor() { return casinoDoor; }, BUILDINGS, PALMS, ZONES, zoneRect, START };
